@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { PDFDocument, PDFName, PDFString, StandardFonts, rgb } from 'pdf-lib'
+import { PDFDocument, PDFName, StandardFonts, rgb } from 'pdf-lib'
 
 /** PDF fixtures for the library tests: many small documents with varied text, plus damaged/protected/empty ones. */
 
@@ -179,5 +179,3 @@ export async function generateLibrary(dir: string, count: number, opts: { pagesE
   }
   return out
 }
-
-export { PDFString }

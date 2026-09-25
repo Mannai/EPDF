@@ -19,6 +19,8 @@ export interface SyncDeps {
   assets: ExtractAssets
   /** Sleep between files so a big library does not monopolise a CPU core. Tests turn this off. */
   throttle?: boolean
+  /** Extra pause after every file (test hook: makes a small library slow enough to cancel deterministically). */
+  extraDelayMs?: number
   exists?: (path: string) => Promise<boolean>
   now?: () => number
 }
@@ -174,7 +176,7 @@ export async function syncRoot(deps: SyncDeps, rootId: number, opts: SyncOptions
       }
       done++
       if (done % 25 === 0) opts.onChanged?.()
-      if (deps.throttle !== false) await sleep(Math.min(120, Math.round((Date.now() - started) * 0.35)))
+      if (deps.throttle !== false) await sleep(Math.min(120, Math.round((Date.now() - started) * 0.35)) + (deps.extraDelayMs ?? 0))
     }
 
     // 6. forget files that are really gone (a stat, not just "the scan did not list it": a scan can be incomplete)

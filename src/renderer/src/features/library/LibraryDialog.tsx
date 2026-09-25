@@ -37,7 +37,8 @@ import { Sidebar } from './Sidebar'
 const SORT_LABELS: Record<SortKey, string> = { name: 'Name', folder: 'Folder', size: 'Size', modified: 'Date modified', pages: 'Pages', added: 'Date added', opened: 'Last opened' }
 const FILTER_LABELS: Record<LibraryFilter, string> = { all: 'All files', cloud: 'Cloud only', notIndexable: 'Not searchable (unreadable)', noText: 'No text (scanned)', tooLarge: 'Too large to index' }
 
-const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+const FOCUSABLE =
+  'button:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]):not(button):not(input)'
 
 function scopeTitle(): string {
   const s = useLibrary.getState()
@@ -154,7 +155,7 @@ function ScopeBar(): JSX.Element {
           <label className="flex items-center gap-1 text-sm">
             <span className="text-ink-muted">Sort</span>
             <select className="field" value={sort} onChange={(e) => applySort(e.target.value as SortKey, false)} aria-label="Sort by" disabled={mode === 'content'}>
-              {SORT_KEYS.filter((k) => k !== 'added' || true).map((k) => (
+              {SORT_KEYS.map((k) => (
                 <option key={k} value={k}>
                   {SORT_LABELS[k]}
                 </option>
@@ -382,7 +383,8 @@ export function LibraryDialog(): JSX.Element | null {
       if (e.target === search.current && query) setQuery('')
       else closeLibrary()
     } else if (e.key === 'Tab') {
-      const f = [...el.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((x) => x.offsetParent !== null || x === document.activeElement)
+      // Radio buttons: only the checked one of a group is reachable with Tab.
+      const f = [...el.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((x) => (x.offsetParent !== null || x === document.activeElement) && !(x instanceof HTMLInputElement && x.type === 'radio' && !x.checked))
       if (!f.length) return
       const first = f[0]
       const last = f[f.length - 1]

@@ -70,7 +70,8 @@ export function register(ctx: MainContext): void {
     assets: () => ({ cMapUrl: join(rendererPdfjs, 'cmaps') + '/', standardFontDataUrl: join(rendererPdfjs, 'standard_fonts') + '/' }),
     thumbsDir,
     watchDebounceMs: envNumber('EPDF_LIBRARY_WATCH_MS'),
-    rescanIntervalMs: envNumber('EPDF_LIBRARY_RESCAN_MS')
+    rescanIntervalMs: envNumber('EPDF_LIBRARY_RESCAN_MS'),
+    extraDelayMs: envNumber('EPDF_LIBRARY_THROTTLE_MS')
   })
   ctx.jobs.register('library:sync', 'Indexing library', SyncJobSchema, (payload, job) => service.runJob(payload, job))
   service.start(envNumber('EPDF_LIBRARY_START_MS') ?? 1500)

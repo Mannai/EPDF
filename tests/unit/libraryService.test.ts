@@ -215,15 +215,18 @@ function makeService(over: Partial<ServicePorts> = {}) {
   const kvDb = new FeatureKv(db, 'library')
   let svc: LibraryService
   const engine = new DirectEngine()
+  const ctls = new Map<string, AbortController>()
   const ports: ServicePorts = {
     startJob: (payload) => {
       jobs.push(payload)
-      // Run like the job manager would: asynchronously, with a cancellable signal.
+      // Run like the job manager would: the handler starts at once, with a cancellable signal.
       const ctl = new AbortController()
+      const id = `job${jobs.length}`
+      ctls.set(id, ctl)
       void svc.runJob(payload, { progress: () => undefined, signal: ctl.signal }).catch(() => undefined)
-      return `job${jobs.length}`
+      return id
     },
-    cancelJob: () => true,
+    cancelJob: (id) => (ctls.get(id)?.abort(), true),
     emit: (channel, payload) => events.push({ channel, payload }),
     kv: kvDb,
     createEngine: () => engine,
@@ -257,6 +260,30 @@ describe('library service', () => {
     expect(repo.counts().indexed).toBe(1)
     expect(svc.getStatus()).toMatchObject({ running: false, phase: 'idle' })
     expect(svc.getStatus().message).toBe('Up to date.')
+    svc.dispose()
+  })
+
+  it('cancel stops the running job; watcher/periodic requests do not resume it, an explicit rescan does', async () => {
+    for (let i = 0; i < 30; i++) writeFileSync(join(dir, `f${i}.pdf`), await makeTextPdf([`file number ${i}`]))
+    const { svc, jobs } = makeService({ extraDelayMs: 80 })
+    svc.enqueue([rootId])
+    await waitFor(() => svc.getStatus().phase === 'indexing' && svc.getStatus().done >= 2)
+    expect(svc.getStatus().jobId).toBe('job1') // the id is known even though the handler started synchronously
+    svc.cancel()
+    await waitFor(() => !svc.getStatus().running)
+    expect(svc.getStatus().message).toMatch(/cancelled/)
+    const indexed = repo.counts().indexed
+    expect(indexed).toBeGreaterThan(1)
+    expect(indexed).toBeLessThan(30)
+    // Something else (a change event caused by our own reads, the periodic timer) must not undo the cancel.
+    svc.enqueue([rootId], { auto: true })
+    await new Promise((r) => setTimeout(r, 200))
+    expect(jobs).toHaveLength(1)
+    expect(repo.counts().indexed).toBe(indexed)
+    // The user asking again resumes where it stopped.
+    svc.enqueue([rootId])
+    await waitFor(() => repo.counts().indexed === 30, 30_000)
+    expect(jobs).toHaveLength(2)
     svc.dispose()
   })
 

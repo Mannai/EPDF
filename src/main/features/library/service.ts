@@ -33,6 +33,8 @@ export interface ServicePorts {
   /** Called for every debounced/periodic rescan trigger (tests use a short delay). */
   watchDebounceMs?: number
   rescanIntervalMs?: number
+  /** Extra pause after every indexed file (test hook). */
+  extraDelayMs?: number
 }
 
 export interface SyncJobPayload {
@@ -47,6 +49,9 @@ export class LibraryService {
   private status: LibraryStatus = { ...IDLE }
   private pending = new Set<number>()
   private force = new Set<number>()
+  /** Folders whose indexing the user cancelled: only an explicit request (or a new session) resumes them. */
+  private paused = new Set<number>()
+  private currentRoots: number[] = []
   private owner: number | undefined
   private running = false
   private watchers = new Map<number, FSWatcher>()
@@ -130,10 +135,16 @@ export class LibraryService {
 
   // ---- syncing --------------------------------------------------------------------------------------------------------
 
-  /** Queues folders for a sync (all watched folders when `rootIds` is omitted). */
-  enqueue(rootIds?: number[], opts: { force?: number[]; owner?: number } = {}): void {
+  /**
+   * Queues folders for a sync (all watched folders when `rootIds` is omitted). `auto` marks requests that nobody
+   * asked for (file watcher, periodic rescan): they do not resume a folder whose indexing the user cancelled.
+   * (Reading files can itself raise change events on Windows, so without this a cancel would be undone at once.)
+   */
+  enqueue(rootIds?: number[], opts: { force?: number[]; owner?: number; auto?: boolean } = {}): void {
     if (this.disposed) return
-    const ids = rootIds ?? this.repo.listRoots().map((r) => r.id)
+    let ids = rootIds ?? this.repo.listRoots().map((r) => r.id)
+    if (opts.auto) ids = ids.filter((id) => !this.paused.has(id))
+    else for (const id of ids) this.paused.delete(id)
     for (const id of ids) this.pending.add(id)
     for (const f of opts.force ?? []) this.force.add(f)
     if (opts.owner !== undefined) this.owner = opts.owner
@@ -149,7 +160,9 @@ export class LibraryService {
     this.running = true
     this.status = { ...IDLE, running: true, phase: 'scanning', message: 'Starting…' }
     try {
-      this.status.jobId = this.ports.startJob({ rootIds, force }, this.owner)
+      // The handler runs synchronously up to its first await and replaces `this.status`, so read the id first.
+      const jobId = this.ports.startJob({ rootIds, force }, this.owner)
+      this.status = { ...this.status, jobId }
     } catch (err) {
       this.running = false
       this.status = { ...IDLE, message: `Could not start indexing: ${(err as Error).message}` }
@@ -160,12 +173,14 @@ export class LibraryService {
 
   cancel(): void {
     this.pending.clear()
+    for (const id of this.currentRoots) this.paused.add(id)
     if (this.status.jobId) this.ports.cancelJob(this.status.jobId)
   }
 
   /** The `library:sync` job handler. */
   async runJob(payload: SyncJobPayload, job: JobContext): Promise<SyncSummary[]> {
     const engine = this.ports.createEngine()
+    this.currentRoots = payload.rootIds
     const out: SyncSummary[] = []
     const force = new Set(payload.force ?? [])
     let problems = 0
@@ -175,7 +190,7 @@ export class LibraryService {
         const root = this.repo.getRoot(rootId)
         if (!root) continue
         const summary = await syncRoot(
-          { repo: this.repo, engine, settings: this.settings(), assets: this.ports.assets(), throttle: true },
+          { repo: this.repo, engine, settings: this.settings(), assets: this.ports.assets(), throttle: true, extraDelayMs: this.ports.extraDelayMs },
           rootId,
           {
             signal: job.signal,
@@ -198,6 +213,7 @@ export class LibraryService {
     } finally {
       await engine.close().catch(() => undefined)
       const cancelled = job.signal.aborted
+      this.currentRoots = []
       this.running = false
       this.status = {
         ...IDLE,
@@ -224,7 +240,7 @@ export class LibraryService {
     this.refreshWatchers()
     const every = this.ports.rescanIntervalMs ?? 10 * 60_000
     this.timer = setInterval(() => {
-      if (this.settings().watch) this.enqueue()
+      if (this.settings().watch) this.enqueue(undefined, { auto: true })
     }, every)
     this.timer.unref()
   }
@@ -290,7 +306,7 @@ export class LibraryService {
       rootId,
       setTimeout(() => {
         this.debounce.delete(rootId)
-        this.enqueue([rootId])
+        this.enqueue([rootId], { auto: true })
       }, this.ports.watchDebounceMs ?? 1500)
     )
   }

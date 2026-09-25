@@ -34,6 +34,8 @@ interface LibraryStore {
   hitCapped: boolean
   hitMs: number
   hitError: string | null
+  /** The query the shown results belong to. */
+  hitQuery: string
   searching: boolean
   /** Selected refs (files list) or "ref#page" keys (content hits). */
   selected: string[]
@@ -95,6 +97,7 @@ export const useLibrary = create<LibraryStore>(() => ({
   hitCapped: false,
   hitMs: 0,
   hitError: null,
+  hitQuery: '',
   searching: false,
   selected: [],
   active: -1,
@@ -239,7 +242,7 @@ export async function runSearch(append = false): Promise<void> {
   if (s.mode !== 'content') return
   const seq = ++searchSeq
   if (!query) {
-    set({ hits: [], hitTotal: 0, hitError: null, searching: false, selected: [], active: -1 })
+    set({ hits: [], hitTotal: 0, hitError: null, hitQuery: '', searching: false, selected: [], active: -1 })
     return
   }
   set({ searching: true, ...(append ? {} : { hitError: null }) })
@@ -247,11 +250,11 @@ export async function runSearch(append = false): Promise<void> {
     const r = await libraryApi.search({ query, scope: s.scope, offset: append ? s.hits.length : 0, limit: SEARCH_PAGE })
     if (seq !== searchSeq) return
     if (!r.ok) {
-      set({ hits: append ? s.hits : [], hitTotal: 0, hitError: r.error, searching: false })
+      set({ hits: append ? s.hits : [], hitTotal: 0, hitError: r.error, hitQuery: query, searching: false })
       return
     }
     const hits = append ? [...get().hits, ...r.hits] : r.hits
-    set({ hits, hitTotal: r.total, hitCapped: r.capped, hitMs: r.tookMs, hitError: null, searching: false, ...(append ? {} : { selected: [], active: hits.length ? 0 : -1, anchor: 0 }) })
+    set({ hits, hitTotal: r.total, hitCapped: r.capped, hitMs: r.tookMs, hitError: null, hitQuery: query, searching: false, ...(append ? {} : { selected: [], active: hits.length ? 0 : -1, anchor: 0 }) })
     if (!append) announce(r.total === 0 ? 'No results' : `${r.total.toLocaleString('en-US')}${r.capped ? '+' : ''} result${r.total === 1 ? '' : 's'}`)
   } catch (err) {
     if (seq === searchSeq) set({ searching: false, hitError: errorMessage(err) })

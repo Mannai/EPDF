@@ -12,6 +12,7 @@ export function ContentResults(): JSX.Element {
   const searching = useLibrary((s) => s.searching)
   const active = useLibrary((s) => s.active)
   const query = useLibrary((s) => s.query.trim())
+  const hitQuery = useLibrary((s) => s.hitQuery)
 
   useEffect(() => {
     if (active >= 0) document.getElementById(`lib-hit-${active}`)?.scrollIntoView({ block: 'nearest' })
@@ -53,7 +54,7 @@ export function ContentResults(): JSX.Element {
           : `${total.toLocaleString('en-US')}${capped ? '+' : ''} result${total === 1 ? '' : 's'} · ${ms} ms`
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="content-results" data-query={hitQuery} data-searching={searching}>
       <p className="px-4 py-2 text-sm text-ink-muted" role="status" data-testid="content-status">
         {status}
       </p>
