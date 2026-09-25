@@ -47,7 +47,7 @@ export const ScanAcquireSchema = z.object({
 })
 export type ScanAcquireRequest = z.infer<typeof ScanAcquireSchema>
 
-export const ScanSessionRequestSchema = z.object({})
+export const ScanSessionRequestSchema = z.object({ sessionId: SCAN_SESSION_ID })
 export const PhoneStartSchema = z.object({ sessionId: SCAN_SESSION_ID })
 export const PhoneStopSchema = z.object({ sessionId: SCAN_SESSION_ID })
 
