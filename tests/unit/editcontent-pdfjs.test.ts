@@ -19,7 +19,7 @@ interface Item {
 
 async function pdfjsItems(bytes: Uint8Array, pageNo = 1): Promise<Item[]> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
-  const task = pdfjs.getDocument({ data: bytes.slice(), useSystemFonts: false, isEvalSupported: false, verbosity: 0, disableFontFace: true })
+  const task = pdfjs.getDocument({ data: bytes.slice(), useSystemFonts: false, verbosity: 0, disableFontFace: true })
   const doc = await task.promise
   try {
     const page = await doc.getPage(pageNo)

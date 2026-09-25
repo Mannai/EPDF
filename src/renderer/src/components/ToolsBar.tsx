@@ -30,7 +30,7 @@ export function ToolsBar({ tab }: { tab: Tab }): JSX.Element | null {
               title={t.label}
               data-tool={t.id}
               onClick={() => setActive(active === t.id ? null : t.id, tab.docId)}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-ink outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-accent aria-pressed:bg-accent/15 aria-pressed:text-accent"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-ink outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-accent aria-pressed:bg-accent/10 aria-pressed:text-accent"
             >
               {t.icon}
               <span className="text-xs">{t.label}</span>
