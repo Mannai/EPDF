@@ -1,11 +1,11 @@
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PDFDocument, PDFArray, PDFName } from 'pdf-lib'
 import { pageLabelsOf } from '../unit/pdfTestUtils'
-import { FIX, axeViolations, copyFixture, fixture, launch, menuClick, quitDiscarding } from './helpers'
+import { FIX, axeViolations, copyFixture, fixture, gotoPage, launch, menuClick, quitDiscarding } from './helpers'
 
 test.beforeAll(() => {
   execFileSync(process.execPath, ['tests/fixtures/pages-print.mjs', FIX], { stdio: 'inherit' })
@@ -87,6 +87,12 @@ test.describe('organizer: opening, selecting, reordering', () => {
       await expect(page.getByTestId('organizer')).toBeVisible()
       await page.keyboard.press('Escape')
       await expect(page.getByTestId('organizer')).toHaveCount(0)
+
+      // Escape also works when a toolbar control has the focus.
+      await menuClick(app, 'Document', 'Organize Pages…')
+      await page.getByLabel('Thumbnail size').focus()
+      await page.keyboard.press('Escape')
+      await expect(page.getByTestId('organizer')).toHaveCount(0)
     } finally {
       await app.close()
     }
@@ -139,6 +145,13 @@ test.describe('organizer: opening, selecting, reordering', () => {
       await page.getByRole('button', { name: /^Redo Move 2 pages/ }).click()
       await save(app, page)
       expect(await order(path)).toEqual(['1', '3', '4', '5', '2'])
+
+      // Back in the viewer the document shows the new order.
+      await page.getByRole('button', { name: 'Done' }).click()
+      await gotoPage(page, 2)
+      await expect(page.locator('[data-page="2"] .textLayer')).toContainText('Epdf sample page 3')
+      await gotoPage(page, 5)
+      await expect(page.locator('[data-page="5"] .textLayer')).toContainText('Epdf sample page 2')
     } finally {
       await app.close()
     }
@@ -238,6 +251,8 @@ test.describe('organizer: actions on the selection', () => {
       expect(await order(path)).toEqual(['1', '2', '3', '4', '5'])
       await page.getByRole('button', { name: /^Undo Delete page 3/ }).click()
       await expect(thumbs(page)).toHaveCount(6)
+      await page.getByRole('button', { name: 'Done' }).click()
+      await expect(page.getByText('/ 6', { exact: true })).toBeVisible() // the viewer knows the new page count
     } finally {
       await quitDiscarding(app, page)
     }
@@ -542,7 +557,31 @@ test.describe('split', () => {
     }
   })
 
-  test('splitting a document without bookmarks explains why; a cancelled job leaves no files behind', async () => {
+  test('a running split shows progress, can be cancelled, and leaves no files behind', async () => {
+    const { app, page } = await launch({ files: [copyFixture('large.pdf')] })
+    try {
+      await openOrganizer(app, page, 500)
+      const dlg = await startSplit(page)
+      const dir = await splitTarget(app)
+      await dlg.getByRole('button', { name: 'Choose folder…' }).click()
+      await dlg.getByLabel('Maximum file size').check()
+      await dlg.getByLabel('Largest file').fill('30')
+      await dlg.getByLabel('Unit').selectOption('KB')
+      await dlg.getByRole('button', { name: 'Split', exact: true }).click()
+      const card = page.locator('[data-job="pages:split"]')
+      await expect(card.getByRole('progressbar')).toBeVisible()
+      await expect(dlg.getByText('Splitting…')).toBeVisible()
+      await dlg.getByRole('button', { name: 'Cancel splitting' }).click()
+      await expect(card).toContainText('Cancelled')
+      await expect(dlg.getByRole('button', { name: 'Split', exact: true })).toBeVisible() // back to the setup form
+      expect(readdirSync(dir)).toEqual([])
+      await expect(page.getByTestId('unsaved-dot')).toHaveCount(0)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test('splitting a document without bookmarks explains why', async () => {
     const { app, page } = await launch({ files: [copyFixture('sample.pdf')] })
     try {
       await openOrganizer(app, page)
@@ -913,7 +952,3 @@ test.describe('printing (through the EPDF_PRINT_TO_FILE test hook)', () => {
     }
   })
 })
-
-// keep unused imports honest for rmSync/mkdirSync when tests are trimmed
-void rmSync
-void mkdirSync

@@ -325,7 +325,8 @@ export function dropDanglingOutline(pdf: PDFDocument): number {
   }
 
   fix(root, 0)
-  recount(ctx, root, 0)
+  if (root.has(N('First'))) recount(ctx, root, 0)
+  else pdf.catalog.delete(N('Outlines')) // nothing left: no empty outline
   return removed
 }
 

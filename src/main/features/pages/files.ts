@@ -5,7 +5,7 @@ import type { FeatureCallContext, MainContext } from '../api'
 import { partFileNames, sanitizeFileName, uniqueFileName } from '../../../shared/features/pages/filenames'
 import type { PickedFolder, PickedPdf, SavedFile } from '../../../shared/features/pages'
 import { issueToken } from './tokens'
-import type { SplitPartOut } from './pdfWorker'
+import type { SplitPartOut } from './splitJob'
 
 /** File-system side of the page tools: native dialogs and safe writing. Never takes a path from the renderer. */
 

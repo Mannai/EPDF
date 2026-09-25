@@ -386,7 +386,15 @@ export function Organizer({ tab }: { tab: Tab }): JSX.Element {
   const none = count === 0
 
   return (
-    <div className="flex h-full flex-col bg-surface" data-testid="organizer" aria-busy={busy || !loaded}>
+    <div
+      className="flex h-full flex-col bg-surface"
+      data-testid="organizer"
+      aria-busy={busy || !loaded}
+      onKeyDown={(e) => {
+        // Escape finishes from anywhere in the organizer (the grid handles it itself when it has focus).
+        if (e.key === 'Escape' && !e.defaultPrevented && e.target !== scroller.current) done()
+      }}
+    >
       <div role="toolbar" aria-label="Page organizer actions" className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line bg-surface px-3 py-2">
         <button className="btn-primary" onClick={() => done()}>
           Done

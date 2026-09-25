@@ -1,4 +1,4 @@
-import { PDFArray, PDFDict, PDFDocument, PDFName } from 'pdf-lib'
+import { PDFArray, PDFDict, PDFDocument, PDFName, degrees } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import { buildPrintHtml } from '../../src/shared/features/print/html'
 import {
@@ -136,7 +136,7 @@ describe('preparePrintPdf', () => {
 describe('scalePages', () => {
   const scaled = async (o: Parameters<typeof scalePages>[1], size: [number, number] = [612, 792], rotate = 0): Promise<PDFDocument> => {
     const doc = await makeDoc(1, { sizes: [size] })
-    doc.getPage(0).setRotation({ type: 'degrees' as never, angle: rotate } as never)
+    doc.getPage(0).setRotation(degrees(rotate))
     annotate(doc, 0, 'Highlight')
     scalePages(doc, o)
     return reload(await doc.save())

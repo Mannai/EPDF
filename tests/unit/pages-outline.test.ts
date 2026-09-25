@@ -95,6 +95,8 @@ describe('outline maintenance during page edits', () => {
     const doc = await build()
     await applyPageSpecs(doc, planReorder(6, [5], 0)!.specs)
     expect(flat(await reload(await doc.save()))).toEqual([['One', 1], ['Two', 2], ['Two.a', 3], ['Two.b', 4], ['Three', 5], ['Four', 0]])
+    // the destination's zoom/position parameters survive the move
+    expect(readOutline(await reload(await doc.save())).nodes[0].dest?.tail).toEqual(['XYZ', null, 700, null])
   })
 
   it('deleting a page drops its bookmark; a parent whose page went keeps its title and children', async () => {
@@ -115,7 +117,9 @@ describe('outline maintenance during page edits', () => {
     expect(flat(await reload(await doc2.save()))).toEqual([['Four', 0]])
     const doc3 = await build()
     await applyPageSpecs(doc3, [{ kind: 'blank' }])
-    expect(readOutline(await reload(await doc3.save())).nodes).toEqual([])
+    const bare = await reload(await doc3.save())
+    expect(readOutline(bare).nodes).toEqual([])
+    expect(bare.catalog.has(N('Outlines'))).toBe(false)
   })
 
   it('prev/next/first/last stay consistent after removals', async () => {
@@ -187,9 +191,10 @@ describe('page labels', () => {
 
   it('labels travel with their pages when pages move, and blanks are unlabelled', async () => {
     const doc = await labelled()
-    await applyPageSpecs(doc, [...planReorder(6, [0], 6)!.specs.slice(0, 3), { kind: 'blank' }, ...planReorder(6, [0], 6)!.specs.slice(3)])
+    // move page "i" to the end, then put a blank page after the third page
+    const moved = planReorder(6, [0], 6)!.specs // order: ii iii A-1 A-2 A-3 i
+    await applyPageSpecs(doc, [...moved.slice(0, 3), { kind: 'blank' }, ...moved.slice(3)])
     const out = await reload(await doc.save())
-    // order was [ii, iii, A-1?...] — recompute expectation from the specs used
     expect(shown(readPageLabels(out))).toEqual(['ii', 'iii', 'A-1', '', 'A-2', 'A-3', 'i'])
   })
 
