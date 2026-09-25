@@ -11,7 +11,14 @@ in parallel and merged without conflicts.
    no `pdfjs`-forks with copyleft, no `poppler` bindings. Check the license of every package (and its
    transitive dependencies) before installing; list new dependencies + licenses in the change description. If a
    task seems to need a copyleft library, implement the needed part yourself instead.
-2. **Offline.** All local features work with no network. Never fetch anything at runtime except where a
+2. **Self-contained.** Epdf is an independent program: an end user installs Epdf and nothing else. No
+   feature may *require* LibreOffice, Tesseract, qpdf, Ghostscript, Python, Java or any other program to be
+   installed. Implement it in-house (TypeScript, or WASM shipped inside the app: e.g. `tesseract.js`
+   for OCR, our own AES-256 for encryption). A native helper may only be (a) bundled inside the installer
+   with a permissive license, or (b) an *optional* accelerator that is used only if present and never
+   needed for correctness. Anything that depends on the operating system's own components (e.g. HEIC
+   codecs) must degrade with a clear message. State in your report exactly what is in-house vs optional.
+3. **Offline.** All local features work with no network. Never fetch anything at runtime except where a
    feature explicitly says so (e.g. OCR language packs on demand).
 3. **Never execute PDF-embedded JavaScript.** Never render untrusted HTML with scripts enabled.
 4. **Security model stays intact.** The renderer is sandboxed (`contextIsolation`, no Node). Anything that
@@ -153,10 +160,10 @@ export function register(ctx: MainContext): void {
   (next version number; never edit existing ones; expect merge conflicts there and resolve by renumbering).
   Put queries in your own repo class in your feature folder (take `ctx.repos.db`). Never store secrets in plain text —
   use Electron `safeStorage` to encrypt them.
-* **Native tools:** `requireTool('qpdf', 'Encrypting a PDF')` from `services/tools` returns the executable
-  path (bundled `resources/bin/<platform>-<arch>/`, or `EPDF_TOOL_<NAME>` env override, or PATH) or throws a
-  user-presentable error. Do not commit binaries; document how to obtain them in `docs/features/<name>.md`.
-  Tests that need a tool must `test.skip` with a clear message when it is unavailable (and say so in your report).
+* **Native tools (optional only — see rule 2):** `resolveTool('soffice')` from `services/tools` returns an
+  executable path (bundled `resources/bin/<platform>-<arch>/`, or `EPDF_TOOL_<NAME>` env override, or PATH) or
+  `null`. Use it only for *optional* accelerators; the feature must work without it. Do not commit binaries.
+  Tests that exercise an optional tool must `test.skip` with a clear message when it is unavailable.
 
 ## 5. Background jobs (never block the UI)
 
