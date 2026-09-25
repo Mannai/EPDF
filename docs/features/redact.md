@@ -108,8 +108,10 @@ Apply the committed bytes are checked again, and rolled back if that ever fails.
 * A **glyph is treated as covered at 30 %** of its box; a sliver overlap leaves the character (drawn mark still
   covers it). Text-derived marks (selection, search) use exact glyph boxes, so this only matters for hand-drawn areas.
 * **Ambiguous data such as text stored inside an image** is only destroyed if it lies under a mark; OCR is not run.
-* Encrypted documents must be unlocked first (`ensureEditable`); if the user declines, nothing is done. When the
-  Security feature re-encrypts on save, the redacted file is protected as before.
+* Encrypted documents are unlocked first (`ensureEditable`); if the user declines, nothing is done. The Security
+  feature's in-memory *protection marker* (key material) is kept intact so saving re-encrypts the redacted file
+  with the same settings, is never scanned or copied anywhere else by the redaction, and never reaches the file
+  (covered by `redact-security.test.ts` and an end-to-end test).
 * Object-level residue **outside the file** (undo history in memory before a save, version snapshots, OS
   thumbnails/search indexes, print spool) is not controlled by this feature.
 * JPEG re-encoding is lossy: unmarked parts of a redacted JPEG change slightly (quality 95). Undecodable formats

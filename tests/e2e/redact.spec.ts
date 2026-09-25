@@ -9,6 +9,7 @@ import { decodeImage } from '../../src/renderer/src/features/redact/logic/imageR
 import { FIX, axeViolations, copyFixture, launch, menuClick, quitDiscarding } from './helpers'
 import { decoded, residue } from '../support/redactProof'
 import { flattenText, readPdf } from '../support/pdfText'
+import { openWith } from '../unit/helpers/securityHelpers'
 
 /**
  * Redaction end to end: mark by selection, by area and by search/pattern, review, preview, apply, save, then read
@@ -559,19 +560,32 @@ test.describe('apply dialog', () => {
     }
   })
 
-  test('a password protected document is refused politely (nothing is searched or changed)', async () => {
+  test('an encrypted document is unlocked through Security, redacted, and saved still encrypted (no marker or key leaks)', async () => {
     execFileSync(process.execPath, ['tests/fixtures/forms-signing.mjs', FIX], { stdio: 'ignore' })
-    const { app, page } = await openDoc('forms-encrypted.pdf')
+    const { path, app, page } = await openDoc('forms-encrypted.pdf')
     try {
       await search(page, 'Encrypted')
-      await expect(page.getByTestId('redact-search-status')).toContainText('password protected')
-      await expect(dot(page)).toHaveCount(0)
+      await expect(page.getByTestId('redact-search-status')).toContainText(/match/)
+      await page.getByTestId('redact-mark-all').click()
+      await applyThroughDialog(page, { preview: true })
+      await expect(dot(page)).toBeVisible()
+      await saveNow(page)
+      const dlg = page.getByRole('dialog').filter({ hasText: 'Purge the version history?' })
+      await expect(dlg).toBeVisible()
+      await dlg.getByRole('button', { name: 'Keep it' }).click()
+      const bytes = new Uint8Array(readFileSync(path))
+      const raw = Buffer.from(bytes).toString('latin1')
+      expect(raw).toContain('/Encrypt') // still protected on disk
+      expect(raw).not.toContain('EPDF-SECURITY-MARKER') // the in-memory marker (key material) never reaches the file
+      expect(raw).not.toContain('EpdfSecurity')
+      const opened = await openWith(bytes, '')
+      const { pages } = await readPdf(new Uint8Array(opened.plain))
+      expect(flattenText(pages)).not.toContain('Encrypted')
     } finally {
       await quitDiscarding(app, page)
     }
   })
 })
-
 // ---- accessibility --------------------------------------------------------------------------------------------
 
 test.describe('accessibility of the redaction UI (WCAG 2.1 A/AA, light and dark)', () => {
