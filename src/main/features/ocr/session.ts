@@ -30,6 +30,10 @@ export class OcrSession {
     readonly total: number
   ) {}
 
+  get hasQueued(): boolean {
+    return this.queue.length > 0
+  }
+
   get isClosed(): boolean {
     return this.ended || this.closed !== null
   }

@@ -2,8 +2,8 @@ import { PDFArray, PDFDict, PDFName, PDFRef, PDFStream, PDFString, type PDFDocum
 import { MIN_WORD_CONFIDENCE, type OcrLine } from '@shared/features/ocr'
 import { Charset, buildToUnicode } from './charset'
 import { buildGlyphlessFont } from './glyphlessFont'
-import { normalizeRotation, placeWord, type LayoutOptions, type PageGeometry } from './layout'
-import { LAYER_MARKER, buildLayerStream, collectChars, type LayerLine } from './textLayer'
+import { normalizeRotation, placeLine, type LayoutOptions, type PageGeometry, type PlacedLine } from './layout'
+import { LAYER_MARKER, buildLayerStream, collectChars } from './textLayer'
 
 /** The recognized text of one page, with the geometry of the picture it was recognized in. */
 export interface PageOcr {
@@ -109,7 +109,7 @@ export function applyOcrLayers(pdf: PDFDocument, results: PageOcr[], minConfiden
   const pdfPages = pdf.getPages()
   const skipped: ApplyResult['skipped'] = []
   const charset = new Charset()
-  const prepared: { page: PDFPage; pageIndex: number; lines: LayerLine[] }[] = []
+  const prepared: { page: PDFPage; pageIndex: number; lines: PlacedLine[] }[] = []
   let confSum = 0
   let words = 0
 
@@ -124,12 +124,12 @@ export function applyOcrLayers(pdf: PDFDocument, results: PageOcr[], minConfiden
       skipped.push({ pageIndex: r.pageIndex, reason: why })
       continue
     }
-    const lines: LayerLine[] = []
+    const lines: PlacedLine[] = []
     for (const line of r.lines) {
       const kept = line.words.filter((w) => w.conf >= minConfidence)
-      if (!kept.length) continue
-      const placed = kept.map((w) => placeWord(r.geometry, line, w, { deskew: r.deskew }))
-      lines.push({ words: placed })
+      const placed = placeLine(r.geometry, line, kept, { deskew: r.deskew })
+      if (!placed) continue
+      lines.push(placed)
       for (const w of kept) {
         confSum += w.conf
         words++

@@ -118,10 +118,13 @@ export async function downloadLanguage(opts: DownloadOptions): Promise<string> {
     const out = createWriteStream(partPath)
     let received = 0
     await new Promise<void>((resolve, reject) => {
+      let settled = false
       const fail = (err: Error): void => {
+        if (settled) return
+        settled = true
+        reject(opts.signal?.aborted ? new DownloadError('Cancelled', 'cancelled') : err)
         res.destroy()
         out.destroy()
-        reject(opts.signal?.aborted ? new DownloadError('Cancelled', 'cancelled') : err)
       }
       opts.signal?.addEventListener('abort', () => fail(new DownloadError('Cancelled', 'cancelled')), { once: true })
       res.on('data', (chunk: Buffer) => {

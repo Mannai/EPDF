@@ -115,7 +115,8 @@ export function register(ctx: MainContext): void {
     const s = sessions.get(sessionId)
     if (!s) return
     s.end()
-    sessions.drop(sessionId)
+    // A run whose job has not started yet keeps its entry (the job looks it up); the job drops it when it finishes.
+    if (s.started) sessions.drop(sessionId)
   })
 
   ctx.jobs.register(OCR_JOBS.run, 'Recognizing text', RunJobSchema, async ({ sessionId }, job) => {

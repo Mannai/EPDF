@@ -1,4 +1,6 @@
+import { access } from 'node:fs/promises'
 import { createRequire } from 'node:module'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { OcrLine, OcrPageResult } from '../../../shared/features/ocr'
 
@@ -77,17 +79,30 @@ export class OcrEngine {
     const workerPath = tesseractWorkerPath()
     const workers: Tess[] = []
     try {
+      for (const code of opts.languages) {
+        await access(join(opts.langPath, `${code}.traineddata`)).catch(() => {
+          throw new Error(`the language data for "${code}" is missing`)
+        })
+      }
       for (let i = 0; i < opts.workers; i++) {
-        const w = await T.createWorker(opts.languages, T.OEM?.LSTM_ONLY ?? 1, {
+        // tesseract.js swallows start-up failures (the promise below would never settle), so the error handler
+        // turns them into a rejection until the worker is ready; afterwards it only keeps a bad page from throwing.
+        let ready = false
+        let fail: (e: Error) => void = () => undefined
+        const failed = new Promise<never>((_, reject) => (fail = reject))
+        const started = T.createWorker(opts.languages, T.OEM?.LSTM_ONLY ?? 1, {
           langPath: opts.langPath,
           workerPath,
           gzip: false,
           cacheMethod: 'none', // never write into a cache; never look one up
           workerBlobURL: false,
-          // Without a handler tesseract.js *throws* on a bad image from inside its message callback.
-          errorHandler: () => undefined,
+          errorHandler: (e: unknown) => {
+            if (!ready) fail(new Error(String(e)))
+          },
           logger: () => undefined
         })
+        const w = await Promise.race([started, failed])
+        ready = true
         workers.push(w)
         scheduler.addWorker(w)
       }

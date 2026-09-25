@@ -14,11 +14,7 @@ let fontCache = null
 const loadFont = () => (fontCache ??= fontkit.create(readFileSync(FONT_FILE)))
 
 /** Lines drawn on the letter-size fixtures. `EXPECTED` is what an OCR run should find (one entry per page). */
-export const PAGE_TEXT = [
-  ['Invoice number 48213', 'Payment is due within thirty days', 'Thank you for your business'],
-  ['Quarterly report summary', 'Revenue increased across every region', 'Customers appreciated the faster delivery'],
-  ['Meeting agenda for Monday', 'Review the project timeline together', 'Assign responsibilities before lunch']
-]
+export const PAGE_TEXT = JSON.parse(readFileSync(new URL('./ocr-text.json', import.meta.url), 'utf8'))
 
 const flattenPath = (commands, scale, tx, ty, sin, cos) => {
   // -> array of closed polygons in pixel space (y down); the glyph outline is y-up, so flip it.

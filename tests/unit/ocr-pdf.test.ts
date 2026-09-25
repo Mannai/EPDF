@@ -5,17 +5,20 @@ import { applyOcrLayers, geometryMismatch, visibleBox, type PageOcr } from '../.
 import { advanceOf, buildToUnicode, Charset, cleanWordText, toVisualOrder, utf16Hex } from '../../src/renderer/src/features/ocr/pdf/charset'
 import { buildGlyphlessFont } from '../../src/renderer/src/features/ocr/pdf/glyphlessFont'
 import {
+  baselineSlope,
   baselineY,
-  fontSizePx,
+  lineFontSizePx,
   normalizeRotation,
   pixelsPerUnit,
   pixelToUser,
-  placeWord,
+  placeLine,
   undoDeskew,
+  type LayoutOptions,
   type PageGeometry,
+  type PlacedLine,
   type Rotation
 } from '../../src/renderer/src/features/ocr/pdf/layout'
-import { buildLayerStream, collectChars, LAYER_MARKER } from '../../src/renderer/src/features/ocr/pdf/textLayer'
+import { buildLayerStream, collectChars, LAYER_MARKER, lineScaling, naturalWidth, tiltedScaling } from '../../src/renderer/src/features/ocr/pdf/textLayer'
 import { createScan1, createScanCropped, createScanRotated } from '../fixtures/ocr.mjs'
 
 const word = (text: string, x0: number, y0: number, x1: number, y1: number, conf = 95): OcrWord => ({ text, x0, y0, x1, y1, conf })
@@ -74,10 +77,12 @@ describe('layout: picture pixels -> PDF user space', () => {
     expect(pixelToUser(g(270), 0, 2000)).toEqual({ x: 10, y: 120 })
   })
 
+  const place = (r: Rotation, l: OcrLine, o?: LayoutOptions): PlacedLine => placeLine(g(r), l, l.words, o)!
+
   it('reading direction follows the page rotation', () => {
     const l = line([word('Hello', 100, 100, 300, 140)], { x0: 100, y0: 138, x1: 300, y1: 138 }, 40)
     const dirs = ([0, 90, 180, 270] as Rotation[]).map((r) => {
-      const p = placeWord(g(r), l, l.words[0])
+      const p = place(r, l)
       return [Math.round(p.ux), Math.round(p.uy)]
     })
     expect(dirs).toEqual([
@@ -88,26 +93,45 @@ describe('layout: picture pixels -> PDF user space', () => {
     ])
   })
 
-  it('a placed word starts at the box left edge on the baseline and spans the box width, in points', () => {
+  it('a placed line starts at the first word on the baseline; the word spans its box width, in points', () => {
     const l = line([word('Hello', 100, 100, 300, 140)], { x0: 100, y0: 138, x1: 300, y1: 138 }, 40)
-    const p = placeWord(g(0), l, l.words[0])
+    const p = place(0, l)
     near(p.x, 10 + 100 / 10)
     near(p.y, 120 - 138 / 10)
-    near(p.width, 200 / 10)
+    near(p.words[0].width, 200 / 10)
+    near(p.words[0].offset, 0)
     near(p.fontSize, 40 / 10)
     // sideways page: the baseline runs up the page
-    const q = placeWord(g(90), l, l.words[0])
+    const q = place(90, l)
     near(q.x, 10 + 138 / 10)
     near(q.y, 20 + 100 / 10)
-    near(q.width, 20)
+    near(q.words[0].width, 20)
   })
 
-  it('font size comes from the line height, kept within bounds of the word box', () => {
+  it('later words are placed along the line: their offset is the distance from the first word', () => {
+    const l = line([word('One', 100, 100, 200, 140), word('two', 300, 100, 420, 140), word('three', 500, 100, 700, 140)], { x0: 100, y0: 138, x1: 700, y1: 138 }, 40)
+    expect(place(0, l).words.map((w) => Math.round(w.offset * 1e6) / 1e6)).toEqual([0, 20, 40]) // 200 px and 400 px at 10 px/unit
+    // a right-to-left line reads leftwards: later words have negative offsets
+    const rtl = line([word('b', 500, 100, 700, 140), word('a', 100, 100, 200, 140)], { x0: 100, y0: 138, x1: 700, y1: 138 }, 40)
+    expect(place(0, rtl).words.map((w) => w.offset)).toEqual([0, -40])
+    // on a page turned 90 degrees the offsets are still measured along the reading direction
+    near(place(90, l).words[2].offset, 40, 1e-9)
+  })
+
+  it('font size comes from the line height, kept within bounds of the word boxes', () => {
     const w = word('x', 0, 100, 30, 130)
-    expect(fontSizePx(line([w], null, 40), w)).toBe(40)
-    expect(fontSizePx(line([w], null, 5), w)).toBe(18) // never smaller than 0.6 x the box
-    expect(fontSizePx(line([w], null, 500), w)).toBe(66) // never larger than 2.2 x the box
-    expect(fontSizePx({ ...line([w]), rowHeight: 0 }, w)).toBe(30) // falls back to the line box
+    expect(lineFontSizePx(line([w], null, 40), [w])).toBe(40)
+    expect(lineFontSizePx(line([w], null, 5), [w])).toBe(18) // never smaller than 0.6 x the box
+    expect(lineFontSizePx(line([w], null, 500), [w])).toBe(66) // never larger than 2.2 x the box
+    expect(lineFontSizePx({ ...line([w]), rowHeight: 0 }, [w])).toBe(30) // falls back to the line box
+  })
+
+  it('a negligible baseline slope is written straight (it is recognition noise, and would split lines in readers)', () => {
+    const noise = line([word('a', 100, 100, 130, 130)], { x0: 100, y0: 306, x1: 537, y1: 307 })
+    expect(baselineSlope(noise)).toBe(0)
+    expect(place(0, noise).uy).toBe(0)
+    expect(baselineSlope(line([word('a', 0, 0, 1, 1)], { x0: 0, y0: 0, x1: 100, y1: 3 }))).toBeCloseTo(0.03, 6)
+    expect(baselineSlope(line([word('a', 0, 0, 1, 1)], { x0: 0, y0: 0, x1: 100, y1: 300 }))).toBe(0) // beyond 45 degrees: not a baseline
   })
 
   it('baseline: uses the line baseline (with slope) or falls back to just above the box bottom', () => {
@@ -119,10 +143,10 @@ describe('layout: picture pixels -> PDF user space', () => {
 
   it('a tilted baseline tilts the text, and the tilt survives page rotation', () => {
     const l = line([word('Tilt', 100, 100, 300, 160)], { x0: 100, y0: 150, x1: 300, y1: 150 + 200 * Math.tan((3 * Math.PI) / 180) }, 50)
-    const p = placeWord(g(0), l, l.words[0])
+    const p = place(0, l)
     // 3 degrees clockwise on screen = writing direction turned 3 degrees clockwise = negative angle in y-up space
     near(Math.atan2(p.uy, p.ux), (-3 * Math.PI) / 180, 0.002)
-    const q = placeWord(g(90), l, l.words[0])
+    const q = place(90, l)
     near(Math.atan2(q.uy, q.ux), Math.PI / 2 - (3 * Math.PI) / 180, 0.002)
   })
 
@@ -137,7 +161,7 @@ describe('layout: picture pixels -> PDF user space', () => {
 
   it('deskew: a straight word in the corrected picture becomes a tilted word in the original', () => {
     const l = line([word('Straight', 100, 100, 300, 140)], { x0: 100, y0: 138, x1: 300, y1: 138 }, 40)
-    const p = placeWord(g(0), l, l.words[0], { deskew: { angle: (2 * Math.PI) / 180, cx: 1000, cy: 500 } })
+    const p = place(0, l, { deskew: { angle: (2 * Math.PI) / 180, cx: 1000, cy: 500 } })
     near(Math.atan2(p.uy, p.ux), (-2 * Math.PI) / 180, 0.002)
   })
 })
@@ -252,15 +276,19 @@ describe('glyphless font program', () => {
 // ---- content stream -----------------------------------------------------------------------------------------------
 
 describe('text layer content stream', () => {
-  const placed = (text: string, x: number, y: number, width: number, fontSize = 10) => ({ text, x, y, ux: 1, uy: 0, fontSize, width, conf: 90 })
+  const w = (text: string, offset: number, width: number) => ({ text, offset, width, conf: 90 })
+  const ln = (words: PlacedLine['words'], o: Partial<PlacedLine> = {}): PlacedLine => ({ x: 72, y: 700, ux: 1, uy: 0, fontSize: 10, tilted: false, words, ...o })
 
-  it('uses render mode 3, a text matrix and a horizontal scale that fits the word box', () => {
+  it('uses render mode 3, one text matrix per line, moves between words and character spacing that fits each word', () => {
     const cs = new Charset()
-    const lines = collectChars([{ words: [placed('Hello', 72, 700, 30), placed('world', 110, 700, 33)] }], cs)
+    const lines = collectChars([ln([w('Hello', 0, 30), w('world', 38, 33)])], cs)
     const s = buildLayerStream('F1', cs, lines)
     expect(s.startsWith(LAYER_MARKER)).toBe(true)
     expect(s).toContain('3 Tr')
+    expect(s.match(/ Tm$/gm)).toHaveLength(1) // a single matrix: readers keep the line together
     expect(s).toContain('1 0 0 1 72 700 Tm')
+    expect(s).toContain('38 0 Td') // the second word is 38 units further along the line
+    expect(s).toContain('/F1 10 Tf')
     // natural width of "Hello" at 10pt with Helvetica-like advances: (722+556+222+222+556)/1000*10 = 22.78 -> Tz = 3000/22.78
     const tz = Number(/([\d.]+) Tz/.exec(s)![1])
     near(tz, (100 * 30) / 22.78, 0.01)
@@ -277,17 +305,40 @@ describe('text layer content stream', () => {
 
   it('writes a rotated text matrix for sideways or tilted words', () => {
     const cs = new Charset()
-    const w = { ...placed('Up', 50, 60, 20), ux: 0, uy: 1 }
-    const s = buildLayerStream('F1', cs, collectChars([{ words: [w] }], cs))
+    const s = buildLayerStream('F1', cs, collectChars([ln([w('Up', 0, 20)], { x: 50, y: 60, ux: 0, uy: 1 })], cs))
     expect(s).toContain('0 1 -1 0 50 60 Tm')
   })
 
-  it('clamps extreme horizontal scaling and drops empty words', () => {
+  it('a word ending up empty is dropped from its line, and an empty line disappears', () => {
     const cs = new Charset()
-    const lines = collectChars([{ words: [placed('WWWW', 0, 0, 1), placed('  ', 0, 0, 5), placed('ii', 0, 0, 9999)] }], cs)
-    expect(lines[0].words.map((w) => w.text)).toEqual(['WWWW', 'ii'])
+    const lines = collectChars([ln([w('  ', 0, 5), w('A', 10, 5)]), ln([w('\u0007', 0, 5)])], cs)
+    expect(lines).toHaveLength(1)
+    expect(lines[0].words.map((x) => x.text)).toEqual(['A'])
+  })
+
+  it('clamps extreme horizontal scaling', () => {
+    const cs = new Charset()
+    const lines = collectChars([ln([w('WWWW', 0, 1), w('ii', 5, 9999)])], cs)
+    expect(lines[0].words.map((x) => x.text)).toEqual(['WWWW', 'ii'])
     const tzs = [...buildLayerStream('F1', cs, lines).matchAll(/([\d.]+) Tz/g)].map((m) => Number(m[1]))
     expect(tzs).toEqual([20, 500])
+  })
+
+  it('upright lines fit every word to its own box; tilted lines all share ONE scaling (per page)', () => {
+    const cs = new Charset()
+    const words = [w('Hello', 0, 30), w('there', 40, 12), w('you', 60, 50)]
+    const upright = collectChars([ln(words)], cs)
+    const tilted = collectChars([ln(words, { tilted: true }), ln(words, { tilted: true, y: 650 })], cs)
+    expect(new Set(lineScaling(cs, upright[0], 100)).size).toBe(3)
+    const shared = tiltedScaling(cs, tilted)
+    // the mean: total width over total natural width
+    const natural = words.reduce((sum, x) => sum + naturalWidth(cs, x.text, 10), 0)
+    near(shared, (100 * 92) / natural, 1e-9)
+    expect(lineScaling(cs, tilted[0], shared)).toEqual([shared, shared, shared])
+    // PDF.js takes words or lines with different Tz for separate lines when they are tilted, so only one Tz is written
+    expect(buildLayerStream('F1', cs, tilted).match(/ Tz$/gm)).toHaveLength(1)
+    expect(buildLayerStream('F1', cs, upright).match(/ Tz$/gm)).toHaveLength(3)
+    expect(tiltedScaling(cs, upright)).toBe(100) // no tilted lines: nothing to average
   })
 })
 
@@ -298,6 +349,7 @@ interface Item {
   transform: number[]
   width: number
   height: number
+  hasEOL?: boolean
 }
 
 async function pdfjsText(bytes: Uint8Array, pageNo = 1): Promise<Item[]> {
@@ -341,6 +393,26 @@ describe('applyOcrLayers', () => {
     expect(raw).toContain('/Subtype /Image')
     const reloaded = await PDFDocument.load(out)
     expect(reloaded.getPage(0).node.Resources()!.has(reloaded.context.obj('XObject') as never)).toBe(true)
+  })
+
+  const lineCases = [0, 90, 180, 270].flatMap((rot) => [0, 0.13, 3, -4].map((deg): [number, number] => [rot, deg]))
+  it.each(lineCases)('page /Rotate %i, line tilted by %f degrees: the words stay ONE line in extracted text; the next line starts a new one', async (rot, deg) => {
+    const pdf = await PDFDocument.load(rot === 0 ? await createScan1() : await createScanRotated(rot))
+    const sideways = rot % 180 !== 0
+    const g = geometryOf(pdf.getPage(0), sideways ? 2200 : 1700, sideways ? 1700 : 2200)
+    const slope = Math.tan((deg * Math.PI) / 180)
+    const mk = (y: number, texts: string[]): OcrLine => {
+      const ws = texts.map((t, i) => {
+        const x0 = 200 + i * 260
+        const yy = y + (x0 - 200) * slope
+        return word(t, x0, yy - 32, x0 + t.length * 21, yy) // about 0.5 em per letter at 41 px, like the real scan
+      })
+      return line(ws, { x0: 200, y0: y, x1: 200 + 260 * texts.length, y1: y + 260 * texts.length * slope }, 41)
+    }
+    applyOcrLayers(pdf, [{ pageIndex: 0, geometry: g, lines: [mk(300, ['Invoice', 'number', '48213']), mk(500, ['Payment', 'is', 'due'])] }])
+    const items = await pdfjsText(await pdf.save())
+    const text = items.map((i) => i.str + (i.hasEOL ? '\n' : '')).join('')
+    expect(text.replace(/[ ]+\n/g, '\n').trim()).toBe('Invoice number 48213\nPayment is due')
   })
 
   it('extracts the right Unicode for every script (Latin, Cyrillic, Greek, CJK, Arabic, Devanagari, Hangul)', async () => {

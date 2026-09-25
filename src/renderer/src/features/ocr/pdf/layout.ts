@@ -1,13 +1,16 @@
 import type { OcrLine, OcrWord } from '@shared/features/ocr'
 
 /**
- * Geometry of the invisible text layer: where a recognized word (pixels of the picture we recognized, origin
- * top-left, y down) belongs on the PDF page (user space, points, origin bottom-left, y up).
+ * Geometry of the invisible text layer: where a recognized line and its words (pixels of the picture we
+ * recognized, origin top-left, y down) belong on the PDF page (user space, points, origin bottom-left, y up).
  *
  * The picture is what PDF.js drew for the page: the page's visible box (`view` = CropBox clipped to MediaBox,
  * in unrotated user space) turned by the page's /Rotate. So user space is reached from picture pixels by
  * undoing that rotation; text is then written along the (rotated) reading direction with a rotated text
  * matrix, exactly as the page itself is displayed.
+ *
+ * Each line gets ONE text matrix and its words are then moved along the line: readers such as PDF.js treat a
+ * change of matrix as a new line, so per-word matrices would break phrases apart in extracted text.
  */
 
 export type Rotation = 0 | 90 | 180 | 270
@@ -57,23 +60,34 @@ export function pixelToUser(g: PageGeometry, px: number, py: number): Point {
 
 export interface PlacedWord {
   text: string
-  /** Text origin (baseline start) in user space. */
-  x: number
-  y: number
-  /** Unit vector of the writing direction in user space. */
-  ux: number
-  uy: number
-  /** Font size in user-space units. */
-  fontSize: number
+  /** Distance of the word's start from the line origin, along the writing direction (user units). May be negative. */
+  offset: number
   /** Width the word should span along the writing direction, in user-space units. */
   width: number
   conf: number
 }
 
+export interface PlacedLine {
+  /** Text origin (start of the first word on the baseline) in user space. */
+  x: number
+  y: number
+  /** Unit vector of the writing direction in user space. */
+  ux: number
+  uy: number
+  /** Font size in user-space units (one per line). */
+  fontSize: number
+  /** The writing direction is not one of the four axes (a crooked scan). */
+  tilted: boolean
+  words: PlacedWord[]
+}
+
 export interface LayoutOptions {
-  /** Radians the picture was rotated (clockwise) before recognition, to undo for skew correction. Default 0. */
+  /** The picture was rotated clockwise by `angle` radians (around cx, cy) before recognition; undo that. */
   deskew?: { angle: number; cx: number; cy: number }
 }
+
+/** Baseline slopes below this (about 0.4 degrees) are recognition noise, not skew: the line is written straight. */
+export const MIN_SLOPE = 0.007
 
 /** The y of the line's baseline at picture x (falls back to the word box bottom minus a descender allowance). */
 export function baselineY(line: OcrLine, word: OcrWord, x: number): number {
@@ -82,11 +96,20 @@ export function baselineY(line: OcrLine, word: OcrWord, x: number): number {
   return word.y1 - 0.18 * (word.y1 - word.y0)
 }
 
-/** Font size in picture pixels: Tesseract's em estimate for the line, kept within sane bounds of the word box. */
-export function fontSizePx(line: OcrLine, word: OcrWord): number {
-  const h = Math.max(1, word.y1 - word.y0)
+/** Slope (dy/dx, y down) of the line's baseline, 0 when unknown or negligible. */
+export function baselineSlope(line: OcrLine): number {
+  const b = line.baseline
+  if (!b || b.x1 === b.x0) return 0
+  const s = (b.y1 - b.y0) / (b.x1 - b.x0)
+  return Number.isFinite(s) && Math.abs(s) >= MIN_SLOPE && Math.abs(s) <= 1 ? s : 0
+}
+
+/** Font size in picture pixels for a line: Tesseract's em estimate, kept within sane bounds of the word boxes. */
+export function lineFontSizePx(line: OcrLine, words: OcrWord[]): number {
+  const heights = words.map((w) => Math.max(1, w.y1 - w.y0)).sort((a, b) => a - b)
+  const med = heights[Math.floor(heights.length / 2)] ?? 1
   const base = line.rowHeight > 0 ? line.rowHeight : Math.max(1, line.bbox.y1 - line.bbox.y0)
-  return Math.min(Math.max(base, h * 0.6), h * 2.2)
+  return Math.min(Math.max(base, med * 0.6), med * 2.2)
 }
 
 /** Maps a point recognized in a deskewed picture back to the original picture. */
@@ -100,36 +123,45 @@ export function undoDeskew(d: NonNullable<LayoutOptions['deskew']>, x: number, y
 }
 
 /**
- * Places one word. Skew is taken from the line's baseline slope (so a crooked scan gets crooked text); if the
- * picture was deskewed before recognition, `opts.deskew` maps the boxes back into the original picture first.
+ * Places one recognized line. Skew comes from the line's baseline slope (a crooked scan gets crooked text); if
+ * the picture was deskewed before recognition, `opts.deskew` maps the boxes back into the original picture.
+ * `words` are the words of `line` to keep (already filtered), in reading order.
  */
-export function placeWord(g: PageGeometry, line: OcrLine, word: OcrWord, opts: LayoutOptions = {}): PlacedWord {
+export function placeLine(g: PageGeometry, line: OcrLine, words: OcrWord[], opts: LayoutOptions = {}): PlacedLine | null {
+  if (words.length === 0) return null
   const d = opts.deskew
-  let ox = word.x0
-  let oy = baselineY(line, word, word.x0)
-  let slope = line.baseline && line.baseline.x1 !== line.baseline.x0 ? (line.baseline.y1 - line.baseline.y0) / (line.baseline.x1 - line.baseline.x0) : 0
-  if (!Number.isFinite(slope) || Math.abs(slope) > 1) slope = 0
-  let phi = Math.atan(slope) // picture space, y down: positive = text runs down to the right
-  if (d) {
-    const p = undoDeskew(d, ox, oy)
-    ox = p.x
-    oy = p.y
-    phi += d.angle
+  const slope = baselineSlope(line)
+  const phiLine = Math.atan(slope) // picture space, y down: positive = text runs down to the right
+  const phi = phiLine + (d ? d.angle : 0)
+  const ux = Math.cos(phi)
+  const uy = Math.sin(phi)
+
+  const origin = (w: OcrWord): { x: number; y: number } => {
+    const p = { x: w.x0, y: baselineY(line, w, w.x0) }
+    return d ? undoDeskew(d, p.x, p.y) : p
   }
-  const dirLen = 1000
-  const a = pixelToUser(g, ox, oy)
-  const b = pixelToUser(g, ox + Math.cos(phi) * dirLen, oy + Math.sin(phi) * dirLen)
+  const o0 = origin(words[0])
+  const a = pixelToUser(g, o0.x, o0.y)
+  const b = pixelToUser(g, o0.x + ux * 1000, o0.y + uy * 1000)
   const len = Math.hypot(b.x - a.x, b.y - a.y) || 1
   const s = pixelsPerUnit(g)
-  const wordWidthPx = (word.x1 - word.x0) / Math.max(0.2, Math.cos(Math.atan(slope)))
+  const wordScale = 1 / Math.max(0.2, Math.cos(phiLine))
+
   return {
-    text: word.text,
     x: a.x,
     y: a.y,
     ux: (b.x - a.x) / len,
     uy: (b.y - a.y) / len,
-    fontSize: fontSizePx(line, word) / s,
-    width: wordWidthPx / s,
-    conf: word.conf
+    fontSize: lineFontSizePx(line, words) / s,
+    tilted: Math.abs(phi) > 1e-9,
+    words: words.map((w, i) => {
+      const o = i === 0 ? o0 : origin(w)
+      return {
+        text: w.text,
+        offset: ((o.x - o0.x) * ux + (o.y - o0.y) * uy) / s,
+        width: ((w.x1 - w.x0) * wordScale) / s,
+        conf: w.conf
+      }
+    })
   }
 }

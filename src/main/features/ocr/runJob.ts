@@ -23,6 +23,7 @@ export interface RunJobOptions {
 export async function runOcrJob(o: RunJobOptions): Promise<{ recognized: number }> {
   const { session, signal } = o
   session.started = true
+  if (session.isClosed && !session.hasQueued) return { recognized: 0 } // the renderer had nothing to send
   const langDir = join(o.tempRoot, `epdf-ocr-${randomUUID()}`)
   let engine: OcrEngine | null = null
   const cancelled = new Error('Cancelled')
