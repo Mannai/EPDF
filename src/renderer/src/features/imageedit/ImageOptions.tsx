@@ -33,12 +33,13 @@ export function ImageOptions({ docId }: { docId: string }): JSX.Element {
     void applyImageBox(selected, { x0: x, y0: y, x1: x + w, y1: y + h })
   }
 
-  const field = (label: string, key: 'x' | 'y' | 'w' | 'h', testId: string, disabled = false): JSX.Element => (
-    <label className="flex items-center gap-1 text-xs text-ink">
+  const field = (label: string, long: string, key: 'x' | 'y' | 'w' | 'h', testId: string, disabled = false): JSX.Element => (
+    <label className="flex items-center gap-1 whitespace-nowrap text-xs text-ink" title={long}>
       {label}
       <input
         type="number"
         step="any"
+        aria-label={long}
         className="field h-7 w-[4.5rem] text-xs"
         value={f[key]}
         disabled={!usable || disabled}
@@ -65,7 +66,7 @@ export function ImageOptions({ docId }: { docId: string }): JSX.Element {
     <>
       <button
         type="button"
-        className="btn h-7 text-xs"
+        className="btn h-7 whitespace-nowrap text-xs"
         disabled={busy}
         data-testid="imageedit-add"
         onClick={async () => {
@@ -78,19 +79,19 @@ export function ImageOptions({ docId }: { docId: string }): JSX.Element {
       </button>
       {pending ? (
         <>
-          <button type="button" className="btn-primary h-7 text-xs" disabled={busy} data-testid="imageedit-center" onClick={() => useImageEdit.getState().requestCenter()}>
+          <button type="button" className="btn-primary h-7 whitespace-nowrap text-xs" disabled={busy} data-testid="imageedit-center" onClick={() => useImageEdit.getState().requestCenter()}>
             Place at page center
           </button>
-          <button type="button" className="btn h-7 text-xs" onClick={cancelPlacement}>
+          <button type="button" className="btn h-7 whitespace-nowrap text-xs" onClick={cancelPlacement}>
             Cancel
           </button>
-          <span className="text-xs text-ink-muted">Click the page to place “{pending.name}”.</span>
+          <span className="whitespace-nowrap text-xs text-ink-muted">Click the page to place “{pending.name}”.</span>
         </>
       ) : (
         <>
           <button
             type="button"
-            className="btn h-7 text-xs"
+            className="btn h-7 whitespace-nowrap text-xs"
             disabled={!usable}
             data-testid="imageedit-replace"
             onClick={async () => {
@@ -100,28 +101,28 @@ export function ImageOptions({ docId }: { docId: string }): JSX.Element {
           >
             Replace…
           </button>
-          <label className="flex items-center gap-1 text-xs text-ink">
-            New picture
-            <select className="field h-7 text-xs" value={mode} aria-label="How a replacement picture fills the old box" onChange={(e) => useImageEdit.getState().setMode(e.target.value as 'fit' | 'fill')} data-testid="imageedit-mode">
-              <option value="fit">fits inside the box</option>
-              <option value="fill">fills the box (cropped)</option>
+          <label className="flex items-center gap-1 whitespace-nowrap text-xs text-ink">
+            Replace as
+            <select className="field h-7 text-xs" value={mode} aria-label="How a replacement picture fills the old box: fit inside it or fill it and crop" onChange={(e) => useImageEdit.getState().setMode(e.target.value as 'fit' | 'fill')} data-testid="imageedit-mode">
+              <option value="fit">Fit</option>
+              <option value="fill">Fill (crop)</option>
             </select>
           </label>
-          <button type="button" className="btn h-7 text-xs" disabled={!usable} data-testid="imageedit-delete" onClick={() => selected && void removeImage(selected)}>
+          <button type="button" className="btn h-7 whitespace-nowrap text-xs" disabled={!usable} data-testid="imageedit-delete" onClick={() => selected && void removeImage(selected)}>
             Delete
           </button>
-          {field('X', 'x', 'imageedit-x')}
-          {field('Y', 'y', 'imageedit-y')}
-          {field('Width', 'w', 'imageedit-w', !selected?.resizable)}
-          {field('Height', 'h', 'imageedit-h', !selected?.resizable)}
-          <label className="flex items-center gap-1 text-xs text-ink">
+          {field('X', 'X position in points', 'x', 'imageedit-x')}
+          {field('Y', 'Y position in points, from the bottom', 'y', 'imageedit-y')}
+          {field('W', 'Width in points', 'w', 'imageedit-w', !selected?.resizable)}
+          {field('H', 'Height in points', 'h', 'imageedit-h', !selected?.resizable)}
+          <label className="flex items-center gap-1 whitespace-nowrap text-xs text-ink" title="Keep the proportions when changing the width or height">
             <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} disabled={!usable} />
-            Keep proportions
+            Keep ratio
           </label>
-          <button type="button" className="btn-primary h-7 text-xs" disabled={!usable} data-testid="imageedit-apply" onClick={apply}>
+          <button type="button" className="btn-primary h-7 whitespace-nowrap text-xs" disabled={!usable} data-testid="imageedit-apply" onClick={apply}>
             Apply
           </button>
-          {!selected && <span className="text-xs text-ink-muted">Select an image on the page (units: points, Y from the bottom).</span>}
+          {!selected && <span className="whitespace-nowrap text-xs text-ink-muted">Select an image on the page (units: points, Y from the bottom).</span>}
         </>
       )}
     </>

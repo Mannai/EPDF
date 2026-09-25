@@ -295,6 +295,30 @@ test.describe('edit text', () => {
     }
   })
 
+  test('rotated text and text in a shared form are outlined as not editable and explain why when clicked', async () => {
+    const { app, page } = await openDoc('ec-special.pdf')
+    try {
+      await tool(page, 'edit-text').click()
+      const rotated = textBlock(page, 'Sideways text')
+      await expect(rotated).toHaveAttribute('data-editable', 'false')
+      await rotated.click()
+      await expect(toast(page, /can’t be edited: the text is rotated, mirrored or skewed/)).toBeVisible()
+      await expect(page.getByTestId('textedit-editor')).toHaveCount(0)
+
+      const shared = pageEl(page).getByRole('button', { name: /Can’t edit text: Shared logo text/ }).first()
+      await expect(shared).toBeVisible()
+      await shared.click()
+      await expect(toast(page, /shared element/)).toBeVisible()
+      await expect(dot(page)).toHaveCount(0)
+
+      // ...while ordinary text on the same page is fine
+      await replaceText(page, 'Plain editable line', 'Plain line, edited')
+      await expect(toast(page, 'Edited using the document’s own font')).toBeVisible()
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
   test('the accessibility scan is clean with the tool and the editor open (light and dark)', async () => {
     const { app, page } = await openDoc('ec-text.pdf')
     try {
@@ -684,6 +708,56 @@ test.describe('edit images', () => {
       await tool(page, 'edit-text').click()
       await beginEdit(page, 'Total: 1234')
       expect(await axeViolations(page, 'edit text editing (explicit light)')).toEqual([])
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('images on a rotated page: outlines follow the rotation and edits land in unrotated page space', async () => {
+    const { path, app, page } = await openDoc('ec-images.pdf')
+    try {
+      await tool(page, 'edit-images').click()
+      const before = (await outlines(page).nth(0).boundingBox())!
+      expect(before.width).toBeGreaterThan(before.height) // 200 x 100 landscape box
+      await app.evaluate(({ Menu }) => {
+        const doc = Menu.getApplicationMenu()!.items.find((x) => x.label.replace('&', '') === 'Document')!
+        doc.submenu!.items.find((x) => x.label === 'Rotate Page Clockwise')!.click()
+      })
+      await expect.poll(async () => (await outlines(page).nth(0).boundingBox())!.width).toBeLessThan(before.height * 1.2)
+      const after = (await outlines(page).nth(0).boundingBox())!
+      expect(after.height).toBeGreaterThan(after.width) // now portrait
+      const pb = (await pageEl(page).boundingBox())!
+      expect(after.x).toBeGreaterThanOrEqual(pb.x - 1)
+      expect(after.x + after.width).toBeLessThanOrEqual(pb.x + pb.width + 1)
+      await outlines(page).nth(0).click()
+      await expect(field(page, 'x')).toHaveValue('72') // the fields always speak user space
+      await field(page, 'x').fill('120')
+      await field(page, 'apply').click()
+      await expect(toast(page, 'Image moved')).toBeVisible()
+      await save(page)
+      const doc = await PDFDocument.load(readFileSync(path))
+      expect(doc.getPage(0).getRotation().angle).toBe(90)
+      const red = (await imagesOnDisk(path)).find((i) => i.width === 40)!
+      near(red.bbox.x0, 120, 0.01)
+      near(red.bbox.y0, 600, 0.01)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('text on a rotated page is outlined as not editable, with the reason', async () => {
+    const { app, page } = await openDoc('ec-text.pdf')
+    try {
+      await app.evaluate(({ Menu }) => {
+        const doc = Menu.getApplicationMenu()!.items.find((x) => x.label.replace('&', '') === 'Document')!
+        doc.submenu!.items.find((x) => x.label === 'Rotate Page Clockwise')!.click()
+      })
+      await tool(page, 'edit-text').click()
+      const b = pageEl(page).getByRole('button', { name: /Can’t edit text: Total: 1234/ })
+      await expect(b).toBeVisible()
+      await b.click()
+      await expect(toast(page, /can’t be edited: text editing on rotated pages is not supported/)).toBeVisible()
+      await expect(page.getByTestId('textedit-editor')).toHaveCount(0)
     } finally {
       await quitDiscarding(app, page)
     }

@@ -14,7 +14,7 @@ export function TextOptions({ docId }: { docId: string }): JSX.Element {
       <span id="textedit-hint" className="sr-only">
         Type to change the text. Enter applies the change, Shift+Enter starts a new line, Escape cancels.
       </span>
-      <label className="flex items-center gap-1.5 text-xs text-ink">
+      <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-ink">
         Edit
         <select
           className="field h-7 text-xs"
@@ -27,7 +27,7 @@ export function TextOptions({ docId }: { docId: string }): JSX.Element {
           <option value="paragraph">Paragraph</option>
         </select>
       </label>
-      <label className="flex items-center gap-1.5 text-xs text-ink">
+      <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-ink">
         Font size
         <input
           type="number"
@@ -47,7 +47,7 @@ export function TextOptions({ docId }: { docId: string }): JSX.Element {
           data-testid="textedit-size"
         />
       </label>
-      <label className="flex items-center gap-1.5 text-xs text-ink">
+      <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-ink">
         Color
         <input
           type="color"
@@ -60,15 +60,15 @@ export function TextOptions({ docId }: { docId: string }): JSX.Element {
       </label>
       {editing ? (
         <>
-          <button type="button" className="btn-primary h-7 text-xs" disabled={busy} onClick={() => void commitTextEdit()} data-testid="textedit-apply">
+          <button type="button" className="btn-primary h-7 whitespace-nowrap text-xs" disabled={busy} onClick={() => void commitTextEdit()} data-testid="textedit-apply">
             Apply
           </button>
-          <button type="button" className="btn h-7 text-xs" disabled={busy} onClick={cancelTextEdit} data-testid="textedit-cancel">
+          <button type="button" className="btn h-7 whitespace-nowrap text-xs" disabled={busy} onClick={cancelTextEdit} data-testid="textedit-cancel">
             Cancel
           </button>
         </>
       ) : (
-        <span className="text-xs text-ink-muted">Click text on the page to edit it.</span>
+        <span className="whitespace-nowrap text-xs text-ink-muted">Click text on the page to edit it.</span>
       )}
     </>
   )

@@ -3,7 +3,7 @@ import fontkit from '@pdf-lib/fontkit'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { deflateSync } from 'node:zlib'
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { PDFDocument, PDFName, StandardFonts, rgb } from 'pdf-lib'
 
 const out = resolve(process.argv[2] ?? 'tests/fixtures/out')
 mkdirSync(out, { recursive: true })
@@ -104,7 +104,32 @@ async function images() {
   writeFileSync(join(out, 'ec-not-an-image.png'), 'this is not a png')
 }
 
+/** Text the tool must refuse: rotated text and text inside a Form XObject that is drawn twice. */
+async function special() {
+  const doc = await PDFDocument.create()
+  const font = doc.context.register(doc.context.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica', Encoding: 'WinAnsiEncoding' }))
+  const form = doc.context.register(
+    doc.context.flateStream('BT /F1 14 Tf 0 0 Td (Shared logo text) Tj ET', {
+      Type: 'XObject',
+      Subtype: 'Form',
+      BBox: [0, 0, 200, 30],
+      Resources: { Font: { F1: font } }
+    })
+  )
+  const page = doc.addPage([612, 792])
+  const content = [
+    'BT /F1 14 Tf 72 700 Td (Plain editable line) Tj ET',
+    'BT /F1 12 Tf 0 1 -1 0 300 300 Tm (Sideways text) Tj ET',
+    'q 1 0 0 1 72 600 cm /Fm1 Do Q',
+    'q 1 0 0 1 72 550 cm /Fm1 Do Q'
+  ].join('\n')
+  page.node.set(PDFName.of('Contents'), doc.context.register(doc.context.flateStream(content)))
+  page.node.set(PDFName.of('Resources'), doc.context.obj({ Font: { F1: font }, XObject: { Fm1: form } }))
+  writeFileSync(join(out, 'ec-special.pdf'), await doc.save())
+}
+
 await text()
+await special()
 await embedded()
 await scan()
 await images()
