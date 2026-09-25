@@ -152,7 +152,7 @@ describe('validation / format actions (Acrobat-compatible /AA JavaScript, writte
     const aa = f.acroField.dict.lookup(N('AA'), PDFDict)
     expect(aa.keys().map((k) => k.decodeText()).sort()).toEqual(['F', 'K', 'V'])
     const act = aa.lookup(N('F'), PDFDict)
-    expect(act.lookup(N('S')).toString()).toBe('/JavaScript')
+    expect(act.lookup(N('S'))!.toString()).toBe('/JavaScript')
     expect(readScripts(f).format).toBe('AFNumber_Format(2, 0, 0, 0, "", true);')
     expect(readBuilderModel(back).fields[0].format).toMatchObject({ type: 'number', decimals: 2, min: 0, max: 10 })
     await applyPatch(back, 'amount', { format: { type: 'none' } })

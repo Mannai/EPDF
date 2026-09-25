@@ -81,7 +81,7 @@ describe('createField: real AcroForm objects', () => {
     const name = form.getTextField('full_name')
     expect(name.isRequired()).toBe(true)
     expect(name.getMaxLength()).toBe(40)
-    expect(name.acroField.dict.lookup(N('TU')).toString()).toBeTruthy()
+    expect(name.acroField.dict.lookup(N('TU'))!.toString()).toBeTruthy()
     expect(form.getTextField('notes').isMultiline()).toBe(true)
     const secret = form.getTextField('secret')
     expect(secret.isPassword()).toBe(true)
@@ -129,7 +129,7 @@ describe('createField: real AcroForm objects', () => {
   it('writes /AcroForm /DA and /DR so other readers can edit the fields', async () => {
     const doc = await reload(await build())
     const acro = doc.getForm().acroForm.dict
-    expect(acro.lookup(N('DA')).toString()).toContain('Helv')
+    expect(acro.lookup(N('DA'))!.toString()).toContain('Helv')
     const fonts = acro.lookup(N('DR'), PDFDict).lookup(N('Font'), PDFDict)
     expect(fonts.has(N('Helv'))).toBe(true)
     const da = doc.getForm().getTextField('full_name').acroField.getDefaultAppearance()
@@ -198,7 +198,7 @@ describe('createField: real AcroForm objects', () => {
       const w = form.getTextField('full_name').acroField.getWidgets()[0]
       expect(w.getRectangle()).toEqual({ x: 72, y: 700, width: 200, height: 22 })
       expect(w.dict.lookup(N('MK'), PDFDict).lookup(N('R'), PDFNumber).asNumber()).toBe(rot)
-      const ap = w.dict.lookup(N('AP'), PDFDict).lookup(N('N')) as { dict: PDFDict }
+      const ap = w.dict.lookup(N('AP'), PDFDict).lookup(N('N')) as unknown as { dict: PDFDict }
       const bbox = ap.dict.lookup(N('BBox'), PDFArray)
       const nums = [0, 1, 2, 3].map((i) => (bbox.lookup(i) as PDFNumber).asNumber())
       // The appearance box is the widget's own rectangle; pdf-lib rotates the content inside it by /MK /R.
@@ -244,7 +244,7 @@ describe('radio group semantics', () => {
     g.select('M')
     g.select('L')
     expect(g.getSelected()).toBe('L') // selecting another value deselects the previous one
-    const states = g.acroField.getWidgets().map((w) => w.dict.lookup(N('AS')).toString())
+    const states = g.acroField.getWidgets().map((w) => w.dict.lookup(N('AS'))!.toString())
     expect(states.filter((s) => s !== '/Off')).toHaveLength(1)
     // Off-toggling is disabled: exactly one stays selected in readers.
     expect(g.isOffToggleable()).toBe(false)
@@ -344,7 +344,7 @@ describe('property edits round-trip', () => {
     await setWidgetRects(doc, [{ name: 'full_name', index: 0, rect: rect(100, 300, 120, 30) }])
     const w = doc.getForm().getTextField('full_name').acroField.getWidgets()[0]
     expect(w.getRectangle()).toEqual({ x: 100, y: 300, width: 120, height: 30 })
-    const ap = w.dict.lookup(N('AP'), PDFDict).lookup(N('N')) as { dict: PDFDict }
+    const ap = w.dict.lookup(N('AP'), PDFDict).lookup(N('N')) as unknown as { dict: PDFDict }
     const bbox = ap.dict.lookup(N('BBox'), PDFArray)
     expect([2, 3].map((i) => Math.round((bbox.lookup(i) as PDFNumber).asNumber()))).toEqual([120, 30])
 

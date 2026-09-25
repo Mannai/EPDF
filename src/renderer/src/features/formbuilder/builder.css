@@ -1,0 +1,62 @@
+/* Form builder overlay. Pages are always white paper, so these colours are fixed (not theme tokens). */
+.epdf-fb-frame {
+  box-sizing: border-box;
+  outline: 1.5px solid #2457d6;
+  outline-offset: 0;
+  background: rgb(36 87 214 / 0.1);
+}
+.epdf-fb-frame:hover {
+  background: rgb(36 87 214 / 0.18);
+}
+.epdf-fb-frame:focus-visible {
+  outline: 3px solid #2457d6;
+  outline-offset: 2px;
+}
+.epdf-fb-selected {
+  outline-width: 2.5px;
+  background: rgb(36 87 214 / 0.22);
+}
+.epdf-fb-dashed {
+  outline-style: dashed;
+}
+.epdf-fb-proposal {
+  background: rgb(214 130 20 / 0.14);
+  outline-color: #9a4a00;
+}
+.epdf-fb-proposal.epdf-fb-selected {
+  background: rgb(214 130 20 / 0.28);
+}
+.epdf-fb-sub {
+  border: 1px solid #9a4a00;
+  border-radius: 2px;
+}
+.epdf-fb-tag {
+  background: #2457d6;
+  color: #fff;
+}
+.epdf-fb-proposal .epdf-fb-tag {
+  background: #7a3a00;
+}
+.epdf-fb-handle {
+  background: #2457d6;
+  border: 1px solid #fff;
+}
+.epdf-fb-band {
+  border: 1px dashed #2457d6;
+  background: rgb(36 87 214 / 0.12);
+}
+.epdf-fb-order {
+  background: transparent;
+  outline-style: dotted;
+}
+.epdf-fb-badge {
+  background: #2457d6;
+  color: #fff;
+  border: 1px solid #fff;
+}
+
+/* While building, the form-filling inputs (drawn by the forms feature) must not take the mouse. */
+:root[data-form-builder='edit'] .epdf-field,
+:root[data-form-builder='edit'] .epdf-field-unsupported {
+  pointer-events: none !important;
+}
