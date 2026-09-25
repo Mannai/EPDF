@@ -31,10 +31,21 @@ export function visualKeys(w: WidgetModel): { top: number; left: number } {
 
 const ROW_TOLERANCE = 3
 
-export function compareWidgets(a: WidgetModel, b: WidgetModel): number {
+/**
+ * `pageTabs` = the pages' /Tabs entries (see `FormModel.pageTabs`): `S` follows the page's /Annots array (the
+ * order the form builder's tab-order editor writes), `C` walks column by column, anything else (`R` or no
+ * entry) is reading order, row by row.
+ */
+export function compareWidgets(a: WidgetModel, b: WidgetModel, pageTabs?: FormModel['pageTabs']): number {
   if (a.pageIndex !== b.pageIndex) return a.pageIndex - b.pageIndex
+  const mode = pageTabs?.[a.pageIndex]
+  if (mode === 'S' && a.annotOrder !== undefined && b.annotOrder !== undefined) return a.annotOrder - b.annotOrder
   const ka = visualKeys(a)
   const kb = visualKeys(b)
+  if (mode === 'C') {
+    if (Math.abs(ka.left - kb.left) > ROW_TOLERANCE) return ka.left - kb.left
+    return ka.top - kb.top
+  }
   if (Math.abs(ka.top - kb.top) > ROW_TOLERANCE) return ka.top - kb.top
   return ka.left - kb.left
 }
@@ -44,11 +55,12 @@ const tabbable = (f: FieldModel): boolean => FILLABLE_KINDS.includes(f.kind) && 
 /** The tab stops of a form, in order. */
 export function tabStops(model: FormModel): Stop[] {
   const entries: { widget: WidgetModel; field: FieldModel }[] = []
+  const cmp = (a: WidgetModel, b: WidgetModel): number => compareWidgets(a, b, model.pageTabs)
   for (const field of model.fields) {
     if (!tabbable(field)) continue
     if (field.kind === 'radio') {
       // One stop per group: the checked button if there is one, otherwise the first.
-      const sorted = [...field.widgets].sort(compareWidgets)
+      const sorted = [...field.widgets].sort(cmp)
       const checked = sorted.find((w) => w.onValue !== undefined && w.onValue === field.value)
       const first = sorted[0]
       if (first) entries.push({ widget: { ...first, key: (checked ?? first).key }, field })
@@ -56,7 +68,7 @@ export function tabStops(model: FormModel): Stop[] {
       for (const widget of field.widgets) entries.push({ widget, field })
     }
   }
-  entries.sort((a, b) => compareWidgets(a.widget, b.widget))
+  entries.sort((a, b) => cmp(a.widget, b.widget))
   return entries.map((e) => ({ field: e.field.name, key: e.widget.key, pageIndex: e.widget.pageIndex }))
 }
 

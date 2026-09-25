@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { currentBytes, reloadFromDisk, undo, useEditInfo } from '../edit/session'
-import { isEditableTarget } from '../features/keys'
 import { PasswordCancelledError, loadDoc, type LoadedDoc } from '../pdf/docCache'
 import { useSearch } from '../state/search'
 import { useTabs, type Tab } from '../state/tabs'
@@ -306,9 +305,10 @@ function LoadedViewer({ tab, loaded }: { tab: Tab; loaded: LoadedDoc }): JSX.Ele
 
   const onKeyDown = (e: React.KeyboardEvent): void => {
     if (e.ctrlKey || e.metaKey || e.altKey) return
-    // Keys typed into an input/select/textarea that lives on a page (form fields, signature placement,
-    // text boxes...) belong to that control, not to page navigation.
-    if (isEditableTarget(e.target)) return
+    // Page navigation only applies when the viewer itself has focus. Keys that arrive from something on a
+    // page (a form input, a selected annotation or redaction mark being nudged with the arrows, an image
+    // handle...) belong to that control: they bubble up here, and must not also flip the page.
+    if (e.defaultPrevented || e.target !== e.currentTarget) return
     const el = scrollRef.current
     if (!el) return
     const step = cols

@@ -11,6 +11,13 @@ import { makeFakeJpeg, makePng, solid } from '../support/images'
 // ---- helpers ------------------------------------------------------------------------------------------------------
 
 const B = 'EpdfTestBoundary7MA4YWxkTrZu0gW'
+
+/**
+ * A token guaranteed to differ from the real one in its last character. (Replacing the last character with a
+ * fixed letter is wrong: about 1 time in 64 the real token already ends in that letter, so the "wrong" token
+ * would be the right one.)
+ */
+const wrongToken = (token: string): string => token.slice(0, -1) + (token.endsWith('A') ? 'B' : 'A')
 interface FileSpec {
   name?: string
   filename?: string | null
@@ -181,7 +188,7 @@ describe('phone upload server: routes and token rules', () => {
     const base = new URL(url)
     const unknown = await send(url, { path: '/nothing' })
     expect(unknown.status).toBe(404)
-    for (const path of ['/', '/index.html', `/${server.token.slice(0, -1)}x`, `/${server.token}/../`, `/${server.token}/other`, `/${server.token}/upload/extra`, '/%2e%2e/', `/${server.token}%00`, `/${server.token}\\upload`]) {
+    for (const path of ['/', '/index.html', `/${wrongToken(server.token)}`, `/${server.token}/../`, `/${server.token}/other`, `/${server.token}/upload/extra`, '/%2e%2e/', `/${server.token}%00`, `/${server.token}\\upload`]) {
       const r = await send(url, { path })
       expect([404]).toContain(r.status)
       expect(r.text).toBe(unknown.text)
@@ -307,7 +314,7 @@ describe('phone upload server: uploading', () => {
 
   it('a wrong token uploads nothing and looks like any 404', async () => {
     const { url, got, server } = await start()
-    const r = await upload(url, [{ data: jpeg() }], {}, `/${server.token.slice(0, -1)}A/upload`)
+    const r = await upload(url, [{ data: jpeg() }], {}, `/${wrongToken(server.token)}/upload`)
     expect(r.status).toBe(404)
     expect(got).toHaveLength(0)
   })

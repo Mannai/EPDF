@@ -123,6 +123,38 @@ test.describe('viewer', () => {
     }
   })
 
+  test('arrow keys pressed on a control inside a page do not also flip the page (regression)', async () => {
+    const { app, page } = await launch({ files: [fixture('sample.pdf')] })
+    try {
+      await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
+      // Two controls on the page: one that handles arrows itself (like a selected redaction area / annotation) and
+      // one that ignores them. Neither may trigger page navigation when its key event bubbles to the viewer.
+      await page.evaluate(() => {
+        const host = document.querySelector('[data-page="1"]')!
+        const handled = document.createElement('div')
+        handled.id = 'x-handled'
+        handled.tabIndex = 0
+        handled.addEventListener('keydown', (e) => e.preventDefault())
+        const ignoring = document.createElement('button')
+        ignoring.id = 'x-ignoring'
+        host.append(handled, ignoring)
+      })
+      for (const id of ['#x-handled', '#x-ignoring']) {
+        await page.locator(id).focus()
+        await page.keyboard.press('ArrowRight')
+        await page.keyboard.press('Shift+ArrowRight')
+        await page.waitForTimeout(150)
+        expect(await currentPage(page), `page must not change for ${id}`).toBe('1')
+      }
+      // ...while the same key on the viewer itself still navigates.
+      await page.getByTestId('viewer-scroll').focus()
+      await page.keyboard.press('ArrowRight')
+      await expect.poll(() => currentPage(page)).toBe('2')
+    } finally {
+      await app.close()
+    }
+  })
+
   test('internal links navigate', async () => {
     const { app, page } = await launch({ files: [fixture('sample.pdf')] })
     try {

@@ -12,6 +12,24 @@ export type ValidationResult = { ok: true; value: FieldValue } | { ok: false; er
 const fail = (error: string): ValidationResult => ({ ok: false, error })
 
 /**
+ * Extension point: other features can add rules for text values (the form builder checks number / date /
+ * email / pattern formats stored in a field's /AA scripts). A check returns a message for the user, or null
+ * when the value is fine. Checks must be pure and must never run PDF JavaScript.
+ */
+export type ValueCheck = (field: FieldModel, value: string) => string | null
+const valueChecks: ValueCheck[] = []
+export function registerValueCheck(check: ValueCheck): void {
+  valueChecks.push(check)
+}
+const runValueChecks = (field: FieldModel, value: string): string | null => {
+  for (const c of valueChecks) {
+    const m = c(field, value)
+    if (m) return m
+  }
+  return null
+}
+
+/**
  * Checks (and normalises) a value against a field's rules: read-only, MaxLen, single vs multi line,
  * checkbox = boolean, radio = one of the export values, combo = listed value unless editable, list = subset.
  */
@@ -26,6 +44,8 @@ export function validateValue(field: FieldModel, value: FieldValue): ValidationR
       if (field.maxLength !== undefined && v.length > field.maxLength) {
         return fail(`“${field.label}” accepts at most ${field.maxLength} characters (you entered ${v.length}).`)
       }
+      const problem = runValueChecks(field, v)
+      if (problem) return fail(problem)
       return { ok: true, value: v }
     }
     case 'checkbox':
