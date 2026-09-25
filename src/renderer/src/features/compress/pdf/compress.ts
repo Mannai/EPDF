@@ -2,6 +2,7 @@ import { PDFDocument, PDFRef, PDFStream, type PDFContext } from 'pdf-lib'
 import type { ImageCodec } from './codec'
 import { reachable, trailerRoots } from './graph'
 import { describeImage, optimizeImage, type ImageRole } from './images'
+import { convertInlineImages } from './inline'
 import { sanitizeOptions, type CompressOptions } from './options'
 import { scanImageUsage } from './scan'
 import { applyStrips, computeAliases, pageContentRefs, redeflateStreams, unreachableBytes, type StripReport } from './structure'
@@ -22,6 +23,8 @@ export interface CompressStats {
     flate: number
     bytesBefore: number
     bytesAfter: number
+    /** Large inline images turned into image objects so they could be reduced like any other. */
+    inlineConverted: number
     skipped: Record<string, number>
   }
   streams: { redeflated: number; savedBytes: number }
@@ -55,7 +58,7 @@ const emptyStats = (size: number): CompressStats => ({
   pages: 0,
   objectsBefore: 0,
   objectsAfter: 0,
-  images: { total: 0, replaced: 0, downsampled: 0, jpeg: 0, flate: 0, bytesBefore: 0, bytesAfter: 0, skipped: {} },
+  images: { total: 0, replaced: 0, downsampled: 0, jpeg: 0, flate: 0, bytesBefore: 0, bytesAfter: 0, inlineConverted: 0, skipped: {} },
   streams: { redeflated: 0, savedBytes: 0 },
   dedupe: { merged: 0, savedBytes: 0 },
   unreachable: { objects: 0, bytes: 0 },
@@ -104,11 +107,14 @@ export async function compressPdf(input: Uint8Array, optionsIn: Partial<Compress
   progress(0.08, 'Applying removals')
   stats.strips = applyStrips(pdf, opts)
   const { root, info } = trailerRoots(ctx)
-  const reach = reachable(ctx, [root, info])
+  let reach = reachable(ctx, [root, info])
 
   // ---- images ----
   const doneImages = new Set<string>()
   if (opts.images) {
+    progress(0.1, 'Looking for inline images')
+    stats.images.inlineConverted = convertInlineImages(pdf)
+    reach = reachable(ctx, [root, info])
     progress(0.12, 'Measuring image resolution')
     const scan = scanImageUsage(pdf)
     const imgs = imageList(ctx, reach)

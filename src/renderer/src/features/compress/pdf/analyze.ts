@@ -2,6 +2,7 @@ import { PDFArray, PDFDict, PDFRef, PDFStream, type PDFContext, type PDFDocument
 import { loadForCompression } from './compress'
 import { reachable, trailerRoots } from './graph'
 import { describeImage, downsampleTarget } from './images'
+import { convertInlineImages } from './inline'
 import { sanitizeOptions, type CompressOptions } from './options'
 import { scanImageUsage } from './scan'
 import { computeAliases, pageContentRefs, unreachableBytes } from './structure'
@@ -49,15 +50,9 @@ export interface Analysis {
   inlineImages: number
 }
 
-function bytesUnder(ctx: PDFContext, dict: PDFDict, key: string): number {
-  const v = dict.get(N(key))
-  const o = resolve(ctx, v)
-  if (o instanceof PDFStream) return encodedBytes(o).length
-  return 0
-}
-
 export function analyzeDocument(pdf: PDFDocument, fileBytes: number): Analysis {
   const ctx = pdf.context
+  convertInlineImages(pdf) // the loaded copy is thrown away; large inline images then count as images, as they will when reducing
   const { root, info } = trailerRoots(ctx)
   const list = reachable(ctx, [root, info])
   const scan = scanImageUsage(pdf)

@@ -66,7 +66,11 @@ export async function openCompress(): Promise<void> {
   const tab = activeTab()
   if (!tab || tab.status !== 'ready') return
   const docId = tab.docId
-  if (!(await ensureEditable(docId))) return // the user declined to unlock
+  if (!(await ensureEditable(docId))) {
+    // Encrypted and not unlocked (declined, wrong password, or no way to unlock): say why nothing happened.
+    notify('info', 'This document is password protected, so its size was not reduced. Unlock it first.')
+    return
+  }
   const mine = ++session
   stopJob()
   resultBytes = null
