@@ -99,12 +99,24 @@ function ScanShell(): JSX.Element {
   const returnFocus = useRef<Element | null>(document.activeElement)
   const ready = pages.filter((p) => p.state === 'ready').length
 
+  const contentRef = useRef<HTMLDivElement>(null)
+  const firstStep = useRef(true)
+
   useEffect(() => {
     const root = ref.current
     ;(root?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ?? root)?.focus()
     const prev = returnFocus.current as HTMLElement | null
     return () => prev?.focus?.()
   }, [])
+
+  // The button that changed the step disappears: move focus to the new step so keyboard and screen reader users are not lost.
+  useEffect(() => {
+    if (firstStep.current) {
+      firstStep.current = false
+      return
+    }
+    contentRef.current?.focus()
+  }, [step])
 
   const onKeyDown = (e: React.KeyboardEvent): void => {
     if (e.key === 'Escape') {
@@ -153,7 +165,7 @@ function ScanShell(): JSX.Element {
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div ref={contentRef} role="group" aria-label={`Step ${STEPS.findIndex((s) => s.id === step) + 1} of ${STEPS.length}: ${STEPS.find((s) => s.id === step)?.label}`} tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto p-4 outline-none" data-testid="scan-step">
           {step === 'capture' && (
             <>
               <div role="tablist" aria-label="Where do the pages come from?" className="mb-3 flex gap-1 border-b border-line">

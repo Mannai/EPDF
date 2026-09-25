@@ -107,6 +107,8 @@ test.describe('scanner source (test scanner backend)', () => {
       await expect(d.getByTestId('page-strip').locator('canvas')).toHaveCount(3, { timeout: 30_000 })
 
       await next(d)
+      await expect(d.getByTestId('scan-step')).toBeFocused() // focus moves to the new step
+      await expect(d.getByTestId('scan-step')).toHaveAccessibleName('Step 2 of 3: Adjust')
       const box = d.getByTestId('page-editor')
       await expect(box.getByTestId('editor-result')).toBeVisible({ timeout: 30_000 })
       await expect(d.getByTestId('result-info')).toContainText('mm')
@@ -173,6 +175,50 @@ test.describe('scanner source (test scanner backend)', () => {
       expect(pdf.getPage(0).getHeight()).toBeCloseTo((877 / 100) * 72, 0)
       const [img] = await images(target)
       expect(img.filter).toBe('/DCTDecode')
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('reorder, rotate and delete pages: the saved PDF has the pages in the new order, rotated, without the deleted one', async () => {
+    const { app, page } = await launch()
+    try {
+      const target = outPdf('scan-reorder.pdf')
+      await stubSave(app, [target])
+      const d = await openScan(app, page)
+      await d.getByLabel('Source').selectOption({ label: 'Document feeder' })
+      await d.getByTestId('scan-go').click()
+      await expect(thumbs(d)).toHaveCount(3, { timeout: 30_000 })
+      await expect(d.getByTestId('page-strip').locator('canvas')).toHaveCount(3, { timeout: 30_000 })
+      // order now: A(620x877) B(620x877) C(500x700). Move C earlier: A C B
+      await thumbs(d).nth(2).click()
+      await d.getByRole('button', { name: 'Move earlier' }).click()
+      await expect(d.getByRole('button', { name: 'Move earlier' })).toBeEnabled()
+      // rotate A right (select it first)
+      await thumbs(d).nth(0).click()
+      await d.getByRole('button', { name: 'Rotate right' }).click()
+      // delete the middle one (C)
+      await thumbs(d).nth(1).click()
+      await d.getByTestId('delete-page').click()
+      await expect(thumbs(d)).toHaveCount(2)
+      await next(d)
+      await expect(d.getByTestId('editor-view')).toBeVisible({ timeout: 30_000 })
+      // page 1 (A) is shown rotated: the picture is now wider than tall
+      await thumbs(d).nth(0).click()
+      await expect
+        .poll(() => d.getByTestId('editor-view').evaluate((c: HTMLCanvasElement) => c.width > c.height), { timeout: 20_000 })
+        .toBe(true)
+      await d.getByTestId('preset-original').check()
+      await next(d)
+      await d.getByTestId('save-pdf').click()
+      await expect(dlg(page)).toBeHidden({ timeout: 60_000 })
+      const pdf = await PDFDocument.load(readFileSync(target))
+      expect(pdf.getPageCount()).toBe(2)
+      const sizes = pdf.getPages().map((p) => [Math.round(p.getWidth() * 10) / 10, Math.round(p.getHeight() * 10) / 10])
+      expect(sizes).toEqual([
+        [315.7, 223.2], // A, rotated a quarter turn
+        [223.2, 315.7] // B; C (180x252) was deleted
+      ])
     } finally {
       await quitDiscarding(app, page)
     }
@@ -576,6 +622,11 @@ test.describe('cancel paths and other destinations', () => {
       await d.getByTestId('add-to-current').click()
       await expect(dlg(page)).toBeHidden({ timeout: 60_000 })
       await expect(page.getByLabel('Page number')).toBeVisible()
+      // it is one undo step named after the edit: undo takes the pages out again, redo brings them back
+      await menuClick(app, 'Edit', 'Undo')
+      await menuClick(app, 'File', 'Save')
+      await expect.poll(async () => (await PDFDocument.load(readFileSync(doc))).getPageCount(), { timeout: 20_000 }).toBe(5)
+      await menuClick(app, 'Edit', 'Redo')
       await menuClick(app, 'File', 'Save')
       await expect.poll(async () => (await PDFDocument.load(readFileSync(doc))).getPageCount(), { timeout: 20_000 }).toBe(6)
       const pdf = await PDFDocument.load(readFileSync(doc))
@@ -678,6 +729,40 @@ test.describe('accessibility (WCAG 2.1 A/AA, light and dark)', () => {
       await page.keyboard.press('Escape')
     } finally {
       await quitDiscarding(app, page)
+    }
+  })
+
+  test('error and empty states have no violations (scanner error, no scanner, phone cannot open a port)', async () => {
+    const a = await launch({ EPDF_SCANNER_STUB_ERROR: 'paper_jam' })
+    try {
+      const d = await openScan(a.app, a.page)
+      await d.getByTestId('scan-go').click()
+      await expect(d.getByTestId('scan-error')).toContainText(/paper jam/i, { timeout: 20_000 })
+      await both(a.app, a.page, 'scanner error')
+    } finally {
+      await quitDiscarding(a.app, a.page)
+    }
+    // an empty folder: the test scanner refuses with "no pictures"; and an unbindable phone address
+    const empty = join(work, 'empty-stub')
+    mkdirSync(empty, { recursive: true })
+    const b = await launch({ EPDF_SCANNER_STUB: empty, EPDF_PHONE_ADDRESSES: '203.0.113.9' })
+    try {
+      const d = await openScan(b.app, b.page)
+      await d.getByTestId('scan-go').click()
+      await expect(d.getByTestId('scan-error')).toContainText(/no pictures/i, { timeout: 20_000 })
+      await d.getByTestId('tab-phone').click()
+      await expect(d.getByTestId('phone-error')).toContainText(/not available|network address/i, { timeout: 20_000 })
+      await both(b.app, b.page, 'phone error')
+    } finally {
+      await quitDiscarding(b.app, b.page)
+    }
+    const c = await launch({ EPDF_SCANNER_STUB: '', EPDF_SCAN_BACKEND: 'mac-helper', EPDF_MAC_SCAN_HELPER: resolve('tests/fixtures/scan-stub-helper.mjs'), STUB_MODE: 'crash' })
+    try {
+      const d = await openScan(c.app, c.page)
+      await expect(d.getByRole('alert')).toContainText(/scanner helper stopped/i, { timeout: 30_000 })
+      await both(c.app, c.page, 'scanner list error')
+    } finally {
+      await quitDiscarding(c.app, c.page)
     }
   })
 

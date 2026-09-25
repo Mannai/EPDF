@@ -30,8 +30,10 @@ export async function callPrepared<O extends Exclude<Op, 'prepare' | 'detectFram
   }
 }
 
+/** Text for the polite live region. A zero-width space alternates so that repeating a message is announced again. */
 export function announce(text: string): void {
-  useScan.setState({ announce: text })
+  const same = get().announce.replace(/​/g, '') === text
+  useScan.setState({ announce: same && !get().announce.endsWith('​') ? `${text}​` : text })
 }
 
 // ---- adding / removing / ordering ---------------------------------------------------------------------------------
@@ -223,7 +225,8 @@ export async function openScanDialog(): Promise<void> {
   } catch (err) {
     throw err instanceof Error ? err : new Error(String(err))
   }
-  useScan.setState({ open: true, step: 'capture', tab: s.tab, sessionId, error: null, busy: null, announce: '' })
+  // Always start on the Scanner tab: the camera and the phone link should only switch on when the user asks for them.
+  useScan.setState({ open: true, step: 'capture', tab: 'scanner', sessionId, error: null, busy: null, announce: '' })
 }
 
 export async function closeScanDialog(): Promise<void> {
