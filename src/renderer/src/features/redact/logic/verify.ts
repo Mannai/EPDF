@@ -4,8 +4,8 @@ import { bytesToLatin1, parseContent } from '../../textedit/pdfcontent/content'
 import { N, darr, dget, dname, nameText, numbers, refTag, streamBytes } from '../../textedit/pdfcontent/pdfutil'
 import { reachableTags } from './docScrub'
 import { extractStreamText } from './extract'
-import { GLYPH_COVERAGE, coverage, disjointRects, intersect, type Rect } from './geom'
-import { glyphBand } from './interp'
+import { GLYPH_COVERAGE, disjointRects, intersect, quadCoverage, rectQuad, type Quad, type Rect } from './geom'
+import { glyphBand, runQuad } from './interp'
 import { decodeImage, pixelSpans } from './imageRedact'
 import { decodeTextString } from './pdfconv'
 import { OVERLAY_FONT_PREFIX } from './pageRedact'
@@ -35,8 +35,10 @@ export interface Finding {
 
 export interface VerifyInput {
   bytes: Uint8Array
-  /** Disjointness is not required. */
+  /** Bounding boxes of the marks per page. */
   marksByPage: ReadonlyMap<number, readonly Rect[]>
+  /** Exact mark shapes per page (rotated text); defaults to the boxes. */
+  shapesByPage?: ReadonlyMap<number, readonly Quad[]>
   secrets: readonly string[]
   /** Text of every page as PDF.js extracts it (optional; supplied by the app). */
   pdfjsPages?: (bytes: Uint8Array) => Promise<string[]>
@@ -150,47 +152,33 @@ export async function verifyRedaction(input: VerifyInput): Promise<Finding[]> {
   for (const [ref] of ctx.enumerateIndirectObjects()) if (!reach.has(refTag(ref))) orphans++
   if (orphans) add('file', `${orphans} object(s) that nothing refers to are still in the file and may hold old content.`)
 
-  // ---- 1-3. per page geometry
-  let allowedText = ''
+  // ---- 1-3. per page geometry (only pages with marks)
   const pages = pdf.getPages()
   for (let pi = 0; pi < pages.length; pi++) {
-    const marks = disjointRects(input.marksByPage.get(pi) ?? [])
+    const markRects = input.marksByPage.get(pi) ?? []
+    if (markRects.length === 0) continue
+    const marks = disjointRects(markRects)
+    const shapes = input.shapesByPage?.get(pi) ?? markRects.map(rectQuad)
     let analysis: ReturnType<typeof analyzePage>
     try {
       analysis = analyzePage(pdf, pi)
     } catch (e) {
-      if (marks.length) add(`page ${pi + 1}`, `The page could not be re-read to confirm the redaction (${e instanceof Error ? e.message : String(e)}).`)
+      add(`page ${pi + 1}`, `The page could not be re-read to confirm the redaction (${e instanceof Error ? e.message : String(e)}).`)
       continue
     }
-    const pageText: string[] = []
     for (const run of analysis.runs) {
       if (run.fontName.startsWith(OVERLAY_FONT_PREFIX)) continue
       const band = glyphBand(run.font)
-      let line = ''
+      const frame = { m: run.matrix, y0: run.rise + band.desc * run.size, y1: run.rise + band.asc * run.size }
       for (const g of run.glyphs) {
-        const r: Rect = (() => {
-          const t = run.matrix
-          const pts = [
-            [g.x0, run.rise + band.desc * run.size],
-            [g.x1, run.rise + band.desc * run.size],
-            [g.x0, run.rise + band.asc * run.size],
-            [g.x1, run.rise + band.asc * run.size]
-          ].map(([x, y]) => [x * t[0] + y * t[2] + t[4], x * t[1] + y * t[3] + t[5]])
-          const xs = pts.map((p) => p[0])
-          const ys = pts.map((p) => p[1])
-          return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) }
-        })()
-        if (marks.length && coverage(r, marks) >= GLYPH_COVERAGE) {
+        if (quadCoverage(runQuad(frame, g.x0, g.x1), shapes) >= GLYPH_COVERAGE) {
           add(`page ${pi + 1}`, `Text is still present under a redaction mark (“${run.text.length > 40 ? run.text.slice(0, 40) + '…' : run.text}”).`)
           break
         }
-        line += g.text
       }
-      pageText.push(line)
     }
-    allowedText += '\n' + pageText.join('\n')
 
-    if (marks.length) {
+    {
       for (const im of analysis.images) {
         if (!marks.some((m) => intersect(im.bbox, m))) continue
         if (im.kind === 'inline') {
@@ -246,7 +234,22 @@ export async function verifyRedaction(input: VerifyInput): Promise<Finding[]> {
 
   if (secrets.length) {
     // ---- 4. strings in streams, text values and raw bytes
-    const allowed = (s: string): number => countOccurrences(allowedText, s)
+    // What legitimately remains visible (text outside every mark) may repeat a redacted string; computed lazily,
+    // because a clean result never needs it.
+    let visible: string | null = null
+    const allowed = (s: string): number => {
+      if (visible === null) {
+        visible = ''
+        for (let pi = 0; pi < pages.length; pi++) {
+          try {
+            visible += '\n' + analyzePage(pdf, pi).runs.filter((r) => !r.fontName.startsWith(OVERLAY_FONT_PREFIX)).map((r) => r.text).join('\n')
+          } catch {
+            /* unreadable page: nothing counted as visible */
+          }
+        }
+      }
+      return countOccurrences(visible, s)
+    }
     const contentHits = new Map<string, number>()
     const bump = (s: string, n: number): void => {
       contentHits.set(s, (contentHits.get(s) ?? 0) + n)
@@ -285,7 +288,7 @@ export async function verifyRedaction(input: VerifyInput): Promise<Finding[]> {
       const n = contentHits.get(s) ?? 0
       // every visible occurrence is counted once per stream where it is drawn (decoded and literal counts may
       // both see the same text), so compare against twice what is legitimately visible
-      if (n > 2 * allowed(s)) add('content streams', 'Redacted text is still present in page content or an appearance stream.')
+      if (n > 0 && n > 2 * allowed(s)) add('content streams', 'Redacted text is still present in page content or an appearance stream.')
     }
     for (const v of textValues(pdf)) {
       for (const s of secrets) if (countOccurrences(v.text, s) > 0) add(v.where, 'Redacted text is still present in a document string (bookmark, field, annotation, metadata, ...).')
@@ -305,7 +308,7 @@ export async function verifyRedaction(input: VerifyInput): Promise<Finding[]> {
       let hits = 0
       for (const f of forms) for (let i = rawLower.indexOf(f); i >= 0; i = rawLower.indexOf(f, i + 1)) hits++
       for (const f of [hexLatin, hexUtf]) for (let i = rawLower.indexOf(f); i >= 0; i = rawLower.indexOf(f, i + 1)) hits++
-      if (hits > 2 * allowed(s)) add('file bytes', 'Redacted text appears in the raw bytes of the file.')
+      if (hits > 0 && hits > 2 * allowed(s)) add('file bytes', 'Redacted text appears in the raw bytes of the file.')
     }
     // ---- 6. PDF.js
     if (input.pdfjsPages) {

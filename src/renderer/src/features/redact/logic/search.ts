@@ -1,6 +1,6 @@
 import type { PDFDocument } from 'pdf-lib'
-import { extractPageText, rectsForRange, type PageTextModel } from './extract'
-import type { Rect } from './geom'
+import { extractPageText, shapesForRange, type PageTextModel } from './extract'
+import type { Quad, Rect } from './geom'
 import { findPreset, presetById } from './patterns'
 import { RegexBudgetError, compileSafeRegex, type SafeRegex } from './safeRegex'
 
@@ -21,6 +21,8 @@ export interface Hit {
   /** The matched text (line breaks shown as spaces). */
   text: string
   rects: Rect[]
+  /** Exact shapes of `rects` for rotated text (null = the rect itself). */
+  quads: (Quad | null)[]
   /** Only characters of invisible (OCR) text. */
   hiddenOnly: boolean
 }
@@ -93,14 +95,20 @@ export function searchModel(model: PageTextModel, matcher: { find: Finder; joinL
     }
   }
   ranges.sort((a, b) => a.start - b.start)
-  return ranges.map((r) => ({
-    pageIndex: model.pageIndex,
-    start: r.start,
-    end: r.end,
-    text: model.text.slice(r.start, r.end).replace(/\s*\n\s*/g, ' '),
-    rects: rectsForRange(model, r.start, r.end),
-    hiddenOnly: model.hidden.slice(r.start, r.end).every(Boolean)
-  })).filter((h) => h.rects.length > 0)
+  return ranges
+    .map((r) => {
+      const shapes = shapesForRange(model, r.start, r.end)
+      return {
+        pageIndex: model.pageIndex,
+        start: r.start,
+        end: r.end,
+        text: model.text.slice(r.start, r.end).replace(/\s*\n\s*/g, ' '),
+        rects: shapes.rects,
+        quads: shapes.quads,
+        hiddenOnly: model.hidden.slice(r.start, r.end).every(Boolean)
+      }
+    })
+    .filter((h) => h.rects.length > 0)
 }
 
 export interface SearchOptions {

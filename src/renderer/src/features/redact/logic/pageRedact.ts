@@ -2,7 +2,7 @@ import type { PDFDocument, PDFFont, PDFRef } from 'pdf-lib'
 import { loadPageSource } from '../../textedit/pdfcontent/analyze'
 import { ContentParseError, serializeContent } from '../../textedit/pdfcontent/content'
 import { N } from '../../textedit/pdfcontent/pdfutil'
-import { disjointRects, type Rect } from './geom'
+import { disjointRects, rectQuad, type Quad, type Rect } from './geom'
 import { pruneReplaced } from './prune'
 import { ResEdit, RedactRefused, Walker, initialState, newStats, type RemovedRec, type Rgb, type Stats } from './interp'
 
@@ -23,6 +23,12 @@ export interface PageResult {
 /** Resource name prefix of everything the overlay adds (the verifier ignores text drawn with this font). */
 export const OVERLAY_FONT_PREFIX = 'EpdfRdFont'
 
+/** One mark on a page: its bounding rect and, for rotated text, its exact quad. */
+export interface MarkShape {
+  rect: Rect
+  quad: Quad | null
+}
+
 const enc = (s: string): Uint8Array => new TextEncoder().encode(s)
 
 function luminance([r, g, b]: Rgb): number {
@@ -32,10 +38,14 @@ function luminance([r, g, b]: Rgb): number {
 const f = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(4).replace(/0+$/, '').replace(/\.$/, ''))
 
 /** Overlay content: filled boxes plus optional text, drawn in a clean graphics state. */
-export function overlayBytes(rects: readonly Rect[], marks: readonly Rect[], opts: OverlayOptions, rotation: number, names: { gs: string; font: string }): Uint8Array {
+export function overlayBytes(shapes: readonly MarkShape[], opts: OverlayOptions, rotation: number, names: { gs: string; font: string }): Uint8Array {
   const [r, g, b] = opts.fill
   const lines: string[] = ['q', `/${names.gs} gs`, `${f(r)} ${f(g)} ${f(b)} rg`]
-  for (const m of rects) lines.push(`${f(m.x0)} ${f(m.y0)} ${f(m.x1 - m.x0)} ${f(m.y1 - m.y0)} re f`)
+  for (const m of disjointRects(shapes.filter((s) => !s.quad).map((s) => s.rect))) lines.push(`${f(m.x0)} ${f(m.y0)} ${f(m.x1 - m.x0)} ${f(m.y1 - m.y0)} re f`)
+  for (const s of shapes) {
+    const q = s.quad
+    if (q) lines.push(`${f(q[0])} ${f(q[1])} m ${f(q[2])} ${f(q[3])} l ${f(q[4])} ${f(q[5])} l ${f(q[6])} ${f(q[7])} l h f`)
+  }
   const text = opts.text
     .split('')
     .filter((ch) => {
@@ -50,26 +60,44 @@ export function overlayBytes(rects: readonly Rect[], marks: readonly Rect[], opt
   if (text) {
     const white = luminance(opts.fill) < 0.5
     const rot = ((Math.round(rotation / 90) * 90) % 360 + 360) % 360
-    const th = (rot * Math.PI) / 180
-    const c = Math.round(Math.cos(th))
-    const s = Math.round(Math.sin(th))
     const unit = opts.font.widthOfTextAtSize(text, 1)
     const hex = opts.font.encodeText(text).toString()
     lines.push('BT', white ? '1 1 1 rg' : '0 0 0 rg')
-    for (const m of marks) {
-      const w = m.x1 - m.x0
-      const h = m.y1 - m.y0
-      const dispW = rot === 90 || rot === 270 ? h : w
-      const dispH = rot === 90 || rot === 270 ? w : h
+    for (const s of shapes) {
+      let cx: number
+      let cy: number
+      let dispW: number
+      let dispH: number
+      let c: number
+      let sn: number
+      if (s.quad) {
+        const q = s.quad
+        cx = (q[0] + q[2] + q[4] + q[6]) / 4
+        cy = (q[1] + q[3] + q[5] + q[7]) / 4
+        dispW = Math.hypot(q[2] - q[0], q[3] - q[1])
+        dispH = Math.hypot(q[4] - q[2], q[5] - q[3])
+        const len = dispW || 1
+        c = (q[2] - q[0]) / len
+        sn = (q[3] - q[1]) / len
+      } else {
+        const m = s.rect
+        const w = m.x1 - m.x0
+        const h = m.y1 - m.y0
+        cx = (m.x0 + m.x1) / 2
+        cy = (m.y0 + m.y1) / 2
+        dispW = rot === 90 || rot === 270 ? h : w
+        dispH = rot === 90 || rot === 270 ? w : h
+        const th = (rot * Math.PI) / 180
+        c = Math.round(Math.cos(th))
+        sn = Math.round(Math.sin(th))
+      }
       const size = Math.min(dispH * 0.72, (dispW * 0.94) / unit)
       if (!(size >= 4) || unit <= 0) continue
       const ox = (-unit * size) / 2
       const oy = -size * 0.32
-      const cx = (m.x0 + m.x1) / 2
-      const cy = (m.y0 + m.y1) / 2
-      const e = cx + ox * c - oy * s
-      const fy = cy + ox * s + oy * c
-      lines.push(`/${names.font} ${f(size)} Tf ${c} ${s} ${-s} ${c} ${f(e)} ${f(fy)} Tm ${hex} Tj`)
+      const e = cx + ox * c - oy * sn
+      const fy = cy + ox * sn + oy * c
+      lines.push(`/${names.font} ${f(size)} Tf ${f(c)} ${f(sn)} ${f(-sn)} ${f(c)} ${f(e)} ${f(fy)} Tm ${hex} Tj`)
     }
     lines.push('ET')
   }
@@ -81,7 +109,7 @@ export function overlayBytes(rects: readonly Rect[], marks: readonly Rect[], opt
  * Redacts one page: rewrites its content streams (and the forms/images/soft masks they use) so nothing under the
  * marks survives, then appends the overlay. Throws `RedactRefused` when the page cannot be handled safely.
  */
-export function redactPage(pdf: PDFDocument, pageIndex: number, marks: readonly Rect[], opts: OverlayOptions, stats: Stats = newStats()): PageResult {
+export function redactPage(pdf: PDFDocument, pageIndex: number, marks: readonly MarkShape[], opts: OverlayOptions, stats: Stats = newStats()): PageResult {
   const ctx = pdf.context
   const page = pdf.getPage(pageIndex)
   let src: ReturnType<typeof loadPageSource>
@@ -91,8 +119,9 @@ export function redactPage(pdf: PDFDocument, pageIndex: number, marks: readonly 
     if (e instanceof ContentParseError) throw new RedactRefused(`Page ${pageIndex + 1} has content that cannot be read safely (${e.message}), so it was not redacted.`)
     throw e
   }
-  const disjoint = disjointRects(marks)
-  const walker = new Walker(pdf, { marks: disjoint, origMarks: [...marks], edit: true, fill: opts.fill }, stats)
+  const disjoint = disjointRects(marks.map((m) => m.rect))
+  const shapes: Quad[] = marks.map((m) => m.quad ?? rectQuad(m.rect))
+  const walker = new Walker(pdf, { marks: disjoint, shapes, edit: true, fill: opts.fill }, stats)
   const res = new ResEdit(ctx, src.resources, walker.owned)
   let out: ReturnType<Walker['process']>
   try {
@@ -106,7 +135,7 @@ export function redactPage(pdf: PDFDocument, pageIndex: number, marks: readonly 
   const gsName = res.add('ExtGState', 'EpdfRdGS', gsDict)
   const fontName = res.add('Font', OVERLAY_FONT_PREFIX, opts.font.ref)
   const rotation = page.getRotation().angle
-  const overlay = overlayBytes(disjoint, marks, opts, rotation, { gs: gsName, font: fontName })
+  const overlay = overlayBytes(marks, opts, rotation, { gs: gsName, font: fontName })
 
   const refs: PDFRef[] = []
   refs.push(ctx.register(ctx.flateStream(enc('q\n'))))

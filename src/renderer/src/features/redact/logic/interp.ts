@@ -13,7 +13,7 @@ import {
 import { unreadableFont, type PdfFont } from '../../textedit/pdfcontent/fonts'
 import { IDENTITY, apply, invert, mul, transformRect, type Matrix } from '../../textedit/pdfcontent/matrix'
 import { N, darr, ddict, dget, dname, dnum, nameText, numbers, refTag, streamBytes } from '../../textedit/pdfcontent/pdfutil'
-import { GLYPH_COVERAGE, coverage, intersect, touches, type Rect } from './geom'
+import { GLYPH_COVERAGE, coverage, intersect, quadCoverage, rectQuad, touches, type Quad, type Rect } from './geom'
 import { redactImage } from './imageRedact'
 import { fromPdfLib, toPdfLib } from './pdfconv'
 import { rewriteShow, type GlyphSpan } from './textRewrite'
@@ -72,8 +72,12 @@ export const newStats = (): Stats => ({
 
 export interface GlyphRec {
   text: string
+  /** Bounding box in user space. */
   rect: Rect
   known: boolean
+  /** Extent along the baseline in text space (from the run origin). */
+  x0: number
+  x1: number
 }
 
 export interface RunRec {
@@ -86,6 +90,16 @@ export interface RunRec {
   /** Text direction is horizontal in user space. */
   upright: boolean
   sourceId: string
+  /** Text space -> user space, and the vertical band of the glyph boxes in text space. */
+  m: Matrix
+  y0: number
+  y1: number
+}
+
+/** The exact (possibly rotated) box of a stretch of glyphs of a run. */
+export function runQuad(run: Pick<RunRec, 'm' | 'y0' | 'y1'>, x0: number, x1: number): Quad {
+  const c = [apply(run.m, x0, run.y0), apply(run.m, x1, run.y0), apply(run.m, x1, run.y1), apply(run.m, x0, run.y1)]
+  return [c[0][0], c[0][1], c[1][0], c[1][1], c[2][0], c[2][1], c[3][0], c[3][1]]
 }
 
 export interface RemovedRec {
@@ -95,10 +109,10 @@ export interface RemovedRec {
 }
 
 export interface WalkCfg {
-  /** Disjoint rects (user space). Empty = nothing to redact. */
+  /** Disjoint rects (user space): bounding boxes of the marks, used for everything except glyph coverage. */
   marks: Rect[]
-  /** The original, possibly overlapping marks (used to attribute removed text to a mark). */
-  origMarks?: Rect[]
+  /** The exact shapes of the marks (rects or rotated quads), possibly overlapping, in mark order. */
+  shapes?: Quad[]
   edit: boolean
   /** Colour of the boxes that replace images that cannot be edited. */
   fill: Rgb
@@ -139,8 +153,8 @@ export class ResEdit {
     return this.priv
   }
 
-  /** Adds `ref` to a category (XObject, ExtGState, Font, ...) under a fresh name; returns the name. */
-  add(category: string, prefix: string, ref: PDFObject): string {
+  /** The private copy of a category dictionary (created on first use). */
+  own(category: string): PDFDict {
     const res = this.ensure()
     let cat = this.cats.get(category)
     if (!cat) {
@@ -151,6 +165,12 @@ export class ResEdit {
       this.cats.set(category, cat)
       res.set(N(category), cat)
     }
+    return cat
+  }
+
+  /** Adds `ref` to a category (XObject, ExtGState, Font, ...) under a fresh name; returns the name. */
+  add(category: string, prefix: string, ref: PDFObject): string {
+    const cat = this.own(category)
     let i = 1
     let nm = `${prefix}${i}`
     while (cat.has(N(nm))) nm = `${prefix}${++i}`
@@ -177,10 +197,23 @@ interface TS {
 interface GS {
   ctm: Matrix
   text: TS
-  fillPat?: string
-  strokePat?: string
+  fillPat?: PatSel
+  strokePat?: PatSel
   clip: Rect | null
   lw: number
+}
+
+/**
+ * A `/Name scn` that selected a pattern. If every paint that used it was dropped (the pattern draws text or
+ * pictures under a mark), the selection is neutralised so the pattern can be deleted.
+ */
+interface PatSel {
+  name: string
+  stroke: boolean
+  target: Op[]
+  index: number
+  keeps: number
+  drops: number
 }
 
 const cloneG = (g: GS): GS => ({ ...g, text: { ...g.text } })
@@ -264,6 +297,7 @@ export class Walker {
     const mc: McEntry[] = []
     let anyChange = false
 
+    const patSels: PatSel[] = []
     let out: Op[] = []
     let slotChanged = false
     const changed = (): void => {
@@ -309,6 +343,9 @@ export class Walker {
       const tc = spacing?.tc ?? ts.tc
       const tw = spacing?.tw ?? ts.tw
       const band = glyphBand(font)
+      // text painted with a pattern keeps that pattern selection alive
+      if (g.fillPat) g.fillPat.keeps++
+      if (g.strokePat && (ts.mode === 1 || ts.mode === 2 || ts.mode === 5 || ts.mode === 6)) g.strokePat.keeps++
       const a = op.args[strArg]
       const glyphs: { code: number; n: number; text: string; known: boolean; x0: number; x1: number; el: number; off: number; disp: number }[] = []
       let u = 0
@@ -333,22 +370,29 @@ export class Walker {
         feed(a.b, -1)
       }
       const m = mul(tm, g.ctm)
-      const rects = glyphs.map((gl) => transformRect(m, gl.x0, ts.rise + band.desc * ts.size, gl.x1, ts.rise + band.asc * ts.size))
+      const y0 = ts.rise + band.desc * ts.size
+      const y1 = ts.rise + band.asc * ts.size
+      const rects = glyphs.map((gl) => transformRect(m, gl.x0, y0, gl.x1, y1))
       const upright = Math.abs(m[1]) < 1e-3 * Math.abs(m[0]) + 1e-9 && Math.abs(m[2]) < 1e-3 * Math.abs(m[3]) + 1e-9 && m[0] > 0 && m[3] > 0
       if (!this.editing) {
         this.runs.push({
-          glyphs: glyphs.map((gl, i) => ({ text: gl.text, rect: rects[i], known: gl.known })),
+          glyphs: glyphs.map((gl, i) => ({ text: gl.text, rect: rects[i], known: gl.known, x0: gl.x0, x1: gl.x1 })),
           fontSize: ts.size,
           x: m[4],
           y: m[5],
           visible: ts.mode !== 3 && ts.mode !== 7 && ts.size !== 0,
           upright,
-          sourceId
+          sourceId,
+          m,
+          y0,
+          y1
         })
       }
       let replaced = false
-      if (this.editing && glyphs.length) {
-        const covered = rects.map((r) => coverage(r, this.cfg.marks) >= GLYPH_COVERAGE)
+      const shapes = this.cfg.shapes ?? this.cfg.marks.map(rectQuad)
+      if (this.editing && glyphs.length && rects.some((r) => this.hits(r))) {
+        const quads = glyphs.map((gl) => runQuad({ m, y0, y1 }, gl.x0, gl.x1))
+        const covered = quads.map((q) => quadCoverage(q, shapes) >= GLYPH_COVERAGE)
         if (covered.some(Boolean)) {
           const unreliable = !font.editable || glyphs.some((gl, i) => covered[i] && !gl.known) || !(Math.abs(ts.size * th) > 1e-9)
           let ops: Op[]
@@ -358,7 +402,7 @@ export class Walker {
           } else {
             ops = rewriteShow({ op, strArg, glyphs: glyphs as GlyphSpan[], covered, size: ts.size, hScale: th })
           }
-          this.record(glyphs.map((gl) => gl.text), unreliable ? glyphs.map(() => true) : covered, rects)
+          this.record(glyphs.map((gl) => gl.text), unreliable ? glyphs.map(() => true) : covered, quads)
           this.stats.textRuns++
           this.stats.glyphs += unreliable ? glyphs.length : covered.filter(Boolean).length
           changed()
@@ -411,6 +455,7 @@ export class Walker {
       }
       const r = redactImage(this.pdf, obj, g.ctm, this.cfg.marks, res.effective)
       this.replaced.add(key)
+      res.own('XObject') // so the original entry can be dropped from a private copy
       changed()
       if ('fail' in r) {
         this.warnings.push(`An image was removed entirely because ${r.fail}.`)
@@ -437,6 +482,7 @@ export class Walker {
       }
       changed()
       const stream = inlineToStream(this.ctx, inl, res.effective)
+      res.own('XObject')
       const r = stream ? redactImage(this.pdf, stream, g.ctm, this.cfg.marks, res.effective) : { fail: 'the inline image could not be interpreted' }
       if ('fail' in r) {
         this.warnings.push(`An inline image was removed entirely because ${r.fail}.`)
@@ -505,10 +551,13 @@ export class Walker {
 
     // ---- path painting decisions
     const paint = (op: Op): void => {
-      const isPaint = PAINT_OPS.has(op.op)
-      void isPaint
+      const sels = [PAINT_FILL.has(op.op) ? g.fillPat : undefined, PAINT_STROKE.has(op.op) ? g.strokePat : undefined].filter((s): s is PatSel => !!s)
+      const keep = (): void => {
+        for (const s of sels) s.keeps++
+      }
       const hadPath = pathStart >= 0 && pathPts.length > 0
       if (!hadPath || !this.editing) {
+        keep()
         finishPath(op)
         return
       }
@@ -527,11 +576,13 @@ export class Walker {
       }
       const bbox: Rect = { x0: x0 - exp, y0: y0 - exp, x1: x1 + exp, y1: y1 + exp }
       if (!this.hits(bbox)) {
+        keep()
         finishPath(op)
         return
       }
       const full = coverage({ x0: bbox.x0, y0: bbox.y0, x1: bbox.x1, y1: bbox.y1 }, this.cfg.marks) >= 0.999
       if (pendingClip) {
+        keep()
         if (full && pathLocal) {
           // A clip that lies entirely under a mark: keep its effect but drop its shape.
           const l = pathLocal as Rect
@@ -552,13 +603,18 @@ export class Walker {
         resetPath()
         return
       }
-      const patName = (PAINT_FILL.has(op.op) ? g.fillPat : undefined) ?? (stroke ? g.strokePat : undefined)
-      const dangerous = patName ? this.patternDangerous(res.effective, patName) : false
-      if (full || dangerous) {
+      const dangerous = sels.filter((s) => this.patternDangerous(res.effective, s.name))
+      if (full || dangerous.length) {
         out.length = pathStart
         changed()
         this.stats.paths++
-        if (dangerous) this.stats.patterns++
+        for (const s of dangerous) {
+          s.drops++
+          this.stats.patterns++
+          res.own('Pattern')
+          const raw = ddict(res.effective, 'Pattern')?.get(N(s.name))
+          this.replaced.add(raw instanceof PDFRef ? refTag(raw) : raw)
+        }
         resetPath()
         return
       }
@@ -570,6 +626,7 @@ export class Walker {
         resetPath()
         return
       }
+      keep()
       out.splice(pathStart, 0, ...clip)
       out.push(op)
       out.push(mkOp('Q'))
@@ -785,13 +842,14 @@ export class Walker {
             out.push(op)
             break
           case 'scn':
-            g = { ...g, fillPat: a[a.length - 1]?.t === 'name' ? (a[a.length - 1] as { v: string }).v : undefined }
+          case 'SCN': {
+            const last = a[a.length - 1]
+            const sel: PatSel | undefined = last?.t === 'name' ? { name: last.v, stroke: op.op === 'SCN', target: out, index: out.length, keeps: 0, drops: 0 } : undefined
+            if (sel) patSels.push(sel)
+            g = op.op === 'scn' ? { ...g, fillPat: sel } : { ...g, strokePat: sel }
             out.push(op)
             break
-          case 'SCN':
-            g = { ...g, strokePat: a[a.length - 1]?.t === 'name' ? (a[a.length - 1] as { v: string }).v : undefined }
-            out.push(op)
-            break
+          }
           case 'gs': {
             const gsName = a[0]?.t === 'name' ? a[0].v : undefined
             const gsd = gsName ? ddict(ddict(res.effective, 'ExtGState'), gsName) : undefined
@@ -830,9 +888,16 @@ export class Walker {
             changed()
             this.stats.shadings++
             if (!full && clip) out.push(...clip, op, mkOp('Q'))
+            else if (shName) {
+              // the shading is dropped from this use: let the original go too
+              res.own('Shading')
+              const raw = ddict(res.effective, 'Shading')?.get(N(shName))
+              this.replaced.add(raw instanceof PDFRef ? refTag(raw) : raw)
+            }
             break
           }
           case 'Do': {
+            if (g.fillPat) g.fillPat.keeps++ // an image mask is painted with the current colour
             const nm = a[0]?.t === 'name' ? a[0].v : undefined
             const xobjs = ddict(res.effective, 'XObject')
             const raw = nm && xobjs ? xobjs.get(N(nm)) : undefined
@@ -860,6 +925,10 @@ export class Walker {
     }
     // marked content left open at the end (unbalanced BDC) is finished too
     for (const e of mc) finishMc(e)
+    // pattern selections whose every paint was dropped become plain black selections
+    for (const s of patSels) {
+      if (s.drops > 0 && s.keeps === 0) s.target[s.index] = mkOp(s.stroke ? 'G' : 'g', numObj(0))
+    }
     return { slots: outSlots, changed: anyChange, endDepth: stack.length }
   }
 
@@ -885,7 +954,7 @@ export class Walker {
     const gsRaw = ddict(res.effective, 'ExtGState')?.get(N(gsName))
     this.replaced.add(gsRaw instanceof PDFRef ? refTag(gsRaw) : gsd)
     const bytes = serializeContent(child.slots[0].ops, child.slots[0].tail)
-    const newG =this.ctx.register(copyStream(this.ctx, gObj, bytes, childRes.override))
+    const newG = this.ctx.register(copyStream(this.ctx, gObj, bytes, childRes.override))
     const newSmask = PDFDict.withContext(this.ctx)
     for (const [k, v] of smask.entries()) newSmask.set(k, v)
     newSmask.set(N('G'), newG)
@@ -895,8 +964,8 @@ export class Walker {
     return res.add('ExtGState', 'EpdfRdGs', newGs)
   }
 
-  private record(texts: string[], covered: boolean[], rects: Rect[]): void {
-    const orig = this.cfg.origMarks ?? this.cfg.marks
+  private record(texts: string[], covered: boolean[], quads: Quad[]): void {
+    const orig = this.cfg.shapes ?? this.cfg.marks.map(rectQuad)
     let cur = ''
     let mark = -1
     const flush = (): void => {
@@ -913,7 +982,7 @@ export class Walker {
         let best = 0
         let bestCov = -1
         orig.forEach((m, k) => {
-          const c = coverage(rects[i], [m])
+          const c = quadCoverage(quads[i], [m])
           if (c > bestCov) {
             bestCov = c
             best = k

@@ -11,7 +11,9 @@ import { N, ddict, dget, dname, nameText, refTag, streamBytes } from '../../text
  */
 export function pruneReplaced(pageRes: PDFDict | undefined, slots: readonly { ops: readonly Op[] }[], owned: ReadonlySet<PDFDict>, replaced: ReadonlySet<unknown>): void {
   if (replaced.size === 0) return
-  const used = new Map<PDFDict, { XObject: Set<string>; ExtGState: Set<string> }>()
+  type Used = { XObject: Set<string>; ExtGState: Set<string>; Pattern: Set<string>; Shading: Set<string> }
+  const CATS = ['XObject', 'ExtGState', 'Pattern', 'Shading'] as const
+  const used = new Map<PDFDict, Used>()
   const seen = new Set<string>()
   const ids = new WeakMap<object, number>()
   let nextId = 1
@@ -23,18 +25,24 @@ export function pruneReplaced(pageRes: PDFDict | undefined, slots: readonly { op
     }
     return i
   }
-  const entry = (d: PDFDict): { XObject: Set<string>; ExtGState: Set<string> } => {
+  const entry = (d: PDFDict): Used => {
     let e = used.get(d)
-    if (!e) used.set(d, (e = { XObject: new Set(), ExtGState: new Set() }))
+    if (!e) used.set(d, (e = { XObject: new Set(), ExtGState: new Set(), Pattern: new Set(), Shading: new Set() }))
     return e
   }
   const walkOps = (ops: readonly Op[], res: PDFDict | undefined, depth: number): void => {
     if (depth > 20) return
     const e = res ? entry(res) : undefined
     for (const op of ops) {
+      if ((op.op === 'scn' || op.op === 'SCN') && e) {
+        const last = op.args[op.args.length - 1]
+        if (last?.t === 'name') e.Pattern.add(last.v)
+        continue
+      }
       const a = op.args[0]
       if (a?.t !== 'name') continue
-      if (op.op === 'Do' && res) {
+      if (op.op === 'sh' && e) e.Shading.add(a.v)
+      else if (op.op === 'Do' && res) {
         e!.XObject.add(a.v)
         const target = ddict(res, 'XObject')?.lookup(N(a.v))
         if (target instanceof PDFStream && dname(target.dict, 'Subtype') === 'Form') visitForm(target, ddict(target.dict, 'Resources') ?? res, depth)
@@ -56,7 +64,7 @@ export function pruneReplaced(pageRes: PDFDict | undefined, slots: readonly { op
     } catch {
       // unreadable content: keep everything this form could name (mark all entries used)
       const e = entry(res)
-      for (const cat of ['XObject', 'ExtGState'] as const) {
+      for (const cat of CATS) {
         const d = ddict(res, cat)
         if (d) for (const [k] of d.entries()) e[cat].add(nameText(k))
       }
@@ -70,7 +78,7 @@ export function pruneReplaced(pageRes: PDFDict | undefined, slots: readonly { op
   }
   for (const [res, u] of used) {
     if (!owned.has(res)) continue
-    for (const cat of ['XObject', 'ExtGState'] as const) {
+    for (const cat of CATS) {
       const d = res.get(N(cat))
       const dict = d instanceof PDFRef ? undefined : d
       if (!(dict instanceof PDFDict) || !owned.has(dict)) continue
