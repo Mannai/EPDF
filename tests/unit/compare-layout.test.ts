@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { clusterLines, readingGroups } from '../../src/renderer/src/features/compare/diff/layout'
 import { keysOf, paragraph, rng, run } from './helpers/compareItems'
 
-const words = (s: string): string[] => s.split(' ')
-
 describe('reading order of multi-column pages', () => {
   const left = ['Left column line one', 'left column line two', 'left column line three', 'left column line four']
   const right = ['Right column line one', 'right column line two', 'right column line three', 'right column line four']

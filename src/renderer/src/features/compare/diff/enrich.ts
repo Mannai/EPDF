@@ -25,6 +25,12 @@ interface Built {
   toText: number[]
 }
 
+const NO_SPACE_BEFORE = /^[.,;:!?%)\]}»”’'"]+$/u
+const NO_SPACE_AFTER = /^[(\[{«“‘$£€]$/u
+
+/** Words are joined with a space except around punctuation ("end." not "end ."; "(a)" not "( a )"). */
+export const joinsTight = (prev: string, next: string): boolean => NO_SPACE_BEFORE.test(next) || NO_SPACE_AFTER.test(prev)
+
 function build(page: PageModel, loc: Loc): Built {
   const inPart = new Uint8Array(Math.max(0, loc.span[1] - loc.span[0]))
   for (const [s, e] of loc.parts) for (let i = s; i < e; i++) inPart[i - loc.span[0]] = 1
@@ -33,7 +39,7 @@ function build(page: PageModel, loc: Loc): Built {
   const toText: number[] = []
   for (let i = loc.span[0]; i < loc.span[1]; i++) {
     const w = page.text[i] ?? ''
-    if (text) text += ' '
+    if (text && !joinsTight(page.text[i - 1] ?? '', w)) text += ' '
     const start = text.length
     text += w
     if (inPart[i - loc.span[0]]) {
@@ -48,10 +54,12 @@ function build(page: PageModel, loc: Loc): Built {
   return { text, changed, toText }
 }
 
+const joinWords = (words: string[]): string => words.reduce((acc, w, i) => (i === 0 ? w : joinsTight(words[i - 1], w) ? acc + w : `${acc} ${w}`), '')
+
 const wordsAround = (page: PageModel | undefined, from: number, to: number): [string, string] => {
   if (!page) return ['', '']
-  const before = page.text.slice(Math.max(0, from - CONTEXT_WORDS), Math.max(0, from)).join(' ')
-  const after = page.text.slice(Math.min(page.text.length, to), Math.min(page.text.length, to + CONTEXT_WORDS)).join(' ')
+  const before = joinWords(page.text.slice(Math.max(0, from - CONTEXT_WORDS), Math.max(0, from)))
+  const after = joinWords(page.text.slice(Math.min(page.text.length, to), Math.min(page.text.length, to + CONTEXT_WORDS)))
   return [before, after]
 }
 

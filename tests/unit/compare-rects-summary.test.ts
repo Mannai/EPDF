@@ -74,7 +74,7 @@ describe('change list helpers', () => {
   it('filters by kind, page and text (case-insensitive, either side)', () => {
     expect(filterChanges(changes, texts, NO_FILTER)).toHaveLength(5)
     expect(filterChanges(changes, texts, { ...NO_FILTER, kinds: new Set<ChangeKind>(['modified']) }).map((c) => c.id)).toEqual([1, 4])
-    expect(filterChanges(changes, texts, { ...NO_FILTER, page: 1 }).map((c) => c.id)).toEqual([0, 1, 3]) // the move touches page 1 (old side)
+    expect(filterChanges(changes, texts, { ...NO_FILTER, page: 1 }).map((c) => c.id)).toEqual([0, 1]) // the move is listed under its NEW page (3)
     expect(filterChanges(changes, texts, { ...NO_FILTER, page: 3 }).map((c) => c.id)).toEqual([3, 4])
     expect(filterChanges(changes, texts, { ...NO_FILTER, query: 'FRESH' }).map((c) => c.id)).toEqual([2])
     expect(filterChanges(changes, texts, { ...NO_FILTER, query: '100' }).map((c) => c.id)).toEqual([1])

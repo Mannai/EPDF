@@ -31,8 +31,8 @@ export interface Ctx {
   bold: PDFFont
 }
 
-/** Draws wrapped text; returns the y below the paragraph. Each line is one text run (one PDF.js item). */
-export function para(page: PDFPage, font: PDFFont, text: string, x: number, y: number, maxWidth = 468, size = SIZE): number {
+/** The lines `para` breaks a paragraph into. */
+export function wrapLines(font: PDFFont, text: string, maxWidth = 468, size = SIZE): string[] {
   const lines: string[] = []
   let cur = ''
   for (const w of text.split(' ')) {
@@ -43,6 +43,12 @@ export function para(page: PDFPage, font: PDFFont, text: string, x: number, y: n
     } else cur = next
   }
   if (cur) lines.push(cur)
+  return lines
+}
+
+/** Draws wrapped text; returns the y below the paragraph. Each line is one text run (one PDF.js item). */
+export function para(page: PDFPage, font: PDFFont, text: string, x: number, y: number, maxWidth = 468, size = SIZE): number {
+  const lines = wrapLines(font, text, maxWidth, size)
   for (const l of lines) {
     page.drawText(l, { x, y, size, font })
     y -= LEAD
@@ -148,14 +154,27 @@ export async function visualPair(next: boolean): Promise<Uint8Array> {
   return doc.save()
 }
 
-/** N pages of distinct text; `edited` pages get one changed word so the two versions differ. */
+const VOCAB = ['ledger', 'account', 'balance', 'invoice', 'supplier', 'contract', 'payment', 'forecast', 'budget', 'audit', 'report', 'policy', 'review', 'schedule', 'delivery', 'quarter', 'margin', 'revenue', 'expense', 'asset', 'liability', 'reserve', 'tax', 'growth', 'target', 'variance', 'summary', 'approval', 'record', 'process']
+
+/**
+ * N dense pages (60 lines of about fifteen words each, all different); every page in `edited` gets one changed word, so
+ * the two versions differ on exactly those pages. Dense enough that reading 2 x 500 pages takes a few seconds.
+ */
 export async function largeBook(pages: number, edited: number[] = []): Promise<Uint8Array> {
   const { doc, font } = await ctx()
   for (let i = 1; i <= pages; i++) {
     const p = doc.addPage([PAGE_W, PAGE_H])
-    p.drawText(`Large comparison page ${i}`, { x: 72, y: 700, size: 22, font })
-    const word = edited.includes(i) ? 'EDITED' : 'original'
-    para(p, font, `Section ${i} holds ${word} content number ${i * 7919} for the ${i % 2 ? 'first' : 'second'} half of the ledger with reference ${i * 31}.`, 72, 660)
+    p.drawText(`Large comparison page ${i}`, { x: 72, y: 760, size: 18, font })
+    let seed = i * 2654435761
+    const next = (): number => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
+      return seed / 2 ** 32
+    }
+    for (let line = 0; line < 60; line++) {
+      const words = Array.from({ length: 12 }, () => VOCAB[Math.floor(next() * VOCAB.length)])
+      if (edited.includes(i) && line === 7) words[4] = 'EDITED'
+      p.drawText(`Line ${line + 1} of ${i}: ${words.join(' ')} ref ${i * 100 + line}`, { x: 50, y: 735 - line * 11.6, size: 9, font })
+    }
   }
   return doc.save()
 }

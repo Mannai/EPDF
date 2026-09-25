@@ -8,7 +8,7 @@ export const ALL_KINDS: ChangeKind[] = ['removed', 'modified', 'added', 'moved']
 
 export interface Filters {
   kinds: ReadonlySet<ChangeKind>
-  /** Only changes touching this page (either document), or null for all. */
+  /** Only changes listed under this page (see `primaryPage`), or null for all. */
   page: number | null
   /** Case-insensitive text that must occur in the old or new text of the change. */
   query: string
@@ -16,16 +16,14 @@ export interface Filters {
 
 export const NO_FILTER: Filters = { kinds: new Set(ALL_KINDS), page: null, query: '' }
 
-/** The page number a change is listed under: its new page, else its old page. */
+/** The page number a change is listed under: its page in the new version, else (for removed text) in the old one. */
 export const primaryPage = (c: Change): number => c.new?.page ?? c.old?.page ?? 0
-
-const touchesPage = (c: Change, page: number): boolean => c.old?.page === page || c.new?.page === page
 
 export function filterChanges(changes: Change[], texts: ChangeText[], f: Filters): Change[] {
   const q = f.query.trim().toLowerCase()
   return changes.filter((c) => {
     if (!f.kinds.has(c.kind)) return false
-    if (f.page !== null && !touchesPage(c, f.page)) return false
+    if (f.page !== null && primaryPage(c) !== f.page) return false
     if (q) {
       const t = texts[c.id]
       if (!t) return false
