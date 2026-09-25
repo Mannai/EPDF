@@ -1,12 +1,13 @@
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
+import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFString, StandardFonts, rgb } from 'pdf-lib'
 import { pureCodec } from '../../src/renderer/src/features/compress/pdf/codec'
 import { compressPdf } from '../../src/renderer/src/features/compress/pdf/compress'
 import { PRESETS } from '../../src/renderer/src/features/compress/pdf/options'
-import { addJpegImage, addRawImage, imagesOf, jpegOf, photoRGB, placeAt } from '../unit/compressHelpers'
+import { addJpegImage, addRawImage, grayFromRgb, imagesOf, jpegOf, photoRGB, placeAt, rng } from '../unit/compressHelpers'
 import { addLink, addOutline, linkTarget } from '../unit/pdfTestUtils'
 import { axeViolations, launch, menuClick, quitDiscarding } from './helpers'
 
@@ -170,6 +171,43 @@ const imageWidths = async (path: string): Promise<number[]> => {
     .sort((a, b) => a - b)
 }
 
+/** One page with every image flavour: gray JPEG, CMYK JPEG, RGB + soft mask, Indexed, and a 600 dpi stencil mask. */
+async function buildMixedImages(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create()
+  const page = doc.addPage([612, 792])
+  const ctx = doc.context
+  const rgb1 = photoRGB(1200, 800, 41, 10)
+  const gray = grayFromRgb(rgb1)
+  placeAt(page, addJpegImage(doc, 1200, 800, 1, jpegOf(gray, 1200, 800, 1, 95), 'DeviceGray'), 20, 600, 216, 144)
+  const w = 800
+  const h = 600
+  const c = photoRGB(w, h, 42, 8)
+  const cmyk = new Uint8Array(w * h * 4)
+  for (let i = 0; i < w * h; i++) {
+    cmyk[i * 4] = 255 - c[i * 3]
+    cmyk[i * 4 + 1] = 255 - c[i * 3 + 1]
+    cmyk[i * 4 + 2] = 255 - c[i * 3 + 2]
+    cmyk[i * 4 + 3] = 20
+  }
+  placeAt(page, addJpegImage(doc, w, h, 4, jpegOf(cmyk, w, h, 4, 95), 'DeviceCMYK'), 300, 600, 216, 162)
+  const alpha = new Uint8Array(900 * 600)
+  for (let y = 0; y < 600; y++) for (let x = 0; x < 900; x++) alpha[y * 900 + x] = Math.round(255 * Math.min(1, Math.hypot(x - 450, y - 300) / 300))
+  const mask = addRawImage(doc, { w: 900, h: 600, data: alpha, cs: 'DeviceGray' })
+  placeAt(page, addRawImage(doc, { w: 900, h: 600, data: photoRGB(900, 600, 43, 10), cs: 'DeviceRGB', extra: { SMask: mask } }), 20, 380, 288, 192)
+  const idx = new Uint8Array(600 * 400)
+  const pal = new Uint8Array(768)
+  for (let i = 0; i < idx.length; i++) idx[i] = ((i * 2654435761) >>> 24) & 255
+  for (let i = 0; i < 768; i++) pal[i] = (i * 97 + (i >> 3)) & 255
+  placeAt(page, addRawImage(doc, { w: 600, h: 400, data: idx, cs: [N('Indexed'), N('DeviceRGB'), 255, ctx.register(ctx.stream(pal))] as never }), 330, 380, 216, 144)
+  const bits = new Uint8Array((2400 / 8) * 1600).fill(0xff)
+  // scan-like ink: irregular specks and strokes (so the Flate data is not trivially small) plus fine one-pixel rules
+  const ink = rng(77)
+  for (let y = 0; y < 1600; y++) for (let x = 0; x < 2400; x++) if (ink() < 0.12 || x % 60 === 0) bits[y * 300 + (x >> 3)] &= ~(0x80 >> (x & 7))
+  const sten = addRawImage(doc, { w: 2400, h: 1600, data: bits, cs: null, bpc: 1, extra: { ImageMask: true } })
+  placeAt(page, sten, 20, 100, 288, 192)
+  return doc.save()
+}
+
 test.describe('Reduce File Size', () => {
   test('File menu item opens the dialog with the real current size and an estimate; Cancel changes nothing', async () => {
     const path = join(mkdtempSync(join(tmpdir(), 'epdf-c1-')), 'report.pdf')
@@ -319,6 +357,63 @@ test.describe('Reduce File Size', () => {
       expect(disk.getTitle()).toBe('Quarterly report')
     } finally {
       await quitDiscarding(app, page)
+    }
+  })
+
+  test('every image flavour (gray/CMYK JPEG, soft mask, Indexed, stencil) keeps its colour space and looks the same', async () => {
+    test.setTimeout(240_000)
+    const mixed = join(dir, 'mixed-images.pdf')
+    writeFileSync(mixed, await buildMixedImages())
+    const path = join(mkdtempSync(join(tmpdir(), 'epdf-mixed-')), 'mixed-images.pdf')
+    copyFileSync(mixed, path)
+    const original = (await renderPages(mixed, [1]))[0]
+    const { app, page } = await launch({ files: [path] })
+    try {
+      await openDialog(app, page)
+      const after = await runPreset(page, 'balanced')
+      expect(after).toBeLessThan(await bytesOf(page, 'size-before'))
+      await page.getByTestId('compress-apply').click()
+      await page.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(page.getByTestId('unsaved-dot')).toHaveCount(0)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+    const doc = await PDFDocument.load(readFileSync(path))
+    const list = imagesOf(doc).map(({ ref, dict }) => ({
+      w: (dict.get(N('Width')) as PDFNumber).asNumber(),
+      cs: String(dict.get(N('ColorSpace')) ?? ''),
+      filter: String(dict.get(N('Filter')) ?? ''),
+      mask: dict.has(N('ImageMask')),
+      smask: dict.has(N('SMask')),
+      ref
+    }))
+    expect(list).toHaveLength(6) // gray, cmyk, rgb, its soft mask, indexed (as RGB), stencil
+    expect(list.find((i) => i.cs === '/DeviceGray' && i.filter === '/DCTDecode')!.w).toBeLessThan(1200)
+    expect(list.find((i) => i.cs === '/DeviceCMYK')!.filter).toBe('/DCTDecode')
+    expect(list.find((i) => i.smask)!.filter).toBe('/DCTDecode')
+    expect(list.find((i) => i.cs === '/DeviceGray' && i.filter === '/FlateDecode')!.w).toBeLessThan(900) // the soft mask: still Flate gray
+    expect(list.find((i) => i.mask)!.w).toBeLessThan(2400)
+    const rendered = (await renderPages(path, [1]))[0]
+    const d = meanDiff(original, rendered)
+    console.log(`[visual] mixed image types: mean abs diff ${d.toFixed(2)} / 255`)
+    expect(d).toBeLessThan(3)
+  })
+
+  test('a password-protected document is not touched: a clear message instead of a dialog', async () => {
+    test.setTimeout(120_000)
+    // The forms/signing fixture generator writes an RC4-40 encrypted form (empty user password: it opens without a prompt).
+    const fixtures = mkdtempSync(join(tmpdir(), 'epdf-locked-'))
+    execFileSync(process.execPath, [resolve('tests/fixtures/forms-signing.mjs'), fixtures], { stdio: 'ignore' })
+    const path = join(fixtures, 'forms-encrypted.pdf')
+    const { app, page } = await launch({ files: [path] })
+    try {
+      await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
+      await menuClick(app, 'File', 'Reduce File Size…')
+      await expect(page.getByText(/password protected, so its size was not reduced/)).toBeVisible()
+      await expect(dialog(page)).toHaveCount(0)
+      await expect(page.getByTestId('unsaved-dot')).toHaveCount(0)
+    } finally {
+      await app.close()
     }
   })
 

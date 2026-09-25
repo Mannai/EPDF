@@ -1,9 +1,12 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { PDFDocument } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
+import { pdfjsImages } from './compressPdfjs'
 import { decodeJpeg } from '../../src/renderer/src/features/compress/pdf/jpegDecode'
 import { encodeJpeg } from '../../src/renderer/src/features/compress/pdf/jpegEncode'
 import { estimateJpegQuality, parseJpegInfo } from '../../src/renderer/src/features/compress/pdf/jpegInfo'
 import { applyPngPredictor, isPhotographic, packSamples, resizeBox, undoPredictor, unpackSamples } from '../../src/renderer/src/features/compress/pdf/raster'
-import { grayFromRgb, photoRGB } from './compressHelpers'
+import { addJpegImage, grayFromRgb, photoRGB, placeAt } from './compressHelpers'
 
 const psnr = (a: Uint8Array, b: Uint8Array): number => {
   let se = 0
@@ -87,6 +90,26 @@ describe('JPEG encoder + decoder (in-house)', () => {
     }
     if (out) expect(out.width).toBe(32)
   })
+})
+
+describe('progressive JPEG (real-world sample)', () => {
+  // Windows ships progressive JPEGs (successive approximation, EOB runs); we only use them as an independent sample and
+  // never copy them into the repository. Where they do not exist (other machines) the test is skipped.
+  const sample = 'C:\\Windows\\Web\\touchkeyboard\\TouchKeyboardThemeDark003.jpg'
+  it.skipIf(!existsSync(sample))('decodes to the same picture as PDF.js', async () => {
+    const b = new Uint8Array(readFileSync(sample))
+    const info = parseJpegInfo(b)!
+    expect(info.progressive).toBe(true)
+    const mine = decodeJpeg(b)
+    const doc = await PDFDocument.create()
+    const page = doc.addPage([600, 400])
+    placeAt(page, addJpegImage(doc, info.width, info.height, 3, b, 'DeviceRGB'), 0, 0, 600, 400)
+    const [ref] = await pdfjsImages(await doc.save())
+    let se = 0
+    let n = 0
+    for (let i = 0; i < mine.width * mine.height; i += 5) for (let c = 0; c < 3; c++, n++) se += (mine.data[i * 3 + c] - ref.data[i * ref.channels + c]) ** 2
+    expect(10 * Math.log10((255 * 255) / (se / n))).toBeGreaterThan(45)
+  }, 60_000)
 })
 
 describe('raster helpers', () => {
