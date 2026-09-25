@@ -89,7 +89,9 @@ const handlers: Handlers = {
 
   async preview({ id, params, maxSide }) {
     const c = need(id)
-    const out = processPage(c.preview, { ...params, maxLongSide: maxSide })
+    // the working copy is smaller than the picture: scale the dpi so the page size shown is the real one
+    const ratio = Math.max(c.preview.width, c.preview.height) / Math.max(c.width, c.height)
+    const out = processPage(c.preview, { ...params, sourceDpi: params.sourceDpi ? params.sourceDpi * ratio : undefined, maxLongSide: maxSide })
     const bitmap = await toBitmap(out.image)
     return { result: { bitmap, width: out.image.width, height: out.image.height, pageWidthPt: out.pageWidthPt, pageHeightPt: out.pageHeightPt, dpi: out.dpi, skewDegrees: out.skewDegrees }, transfer: [bitmap] }
   },

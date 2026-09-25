@@ -189,8 +189,10 @@ export function chooseBackend(opts: { platform: NodeJS.Platform; env?: NodeJS.Pr
   const env = opts.env ?? process.env
   const stubDir = env['EPDF_SCANNER_STUB']
   if (stubDir) return { backend: createStubBackend(stubDir, env), id: 'stub', stub: true }
-  if (opts.platform === 'win32') return { backend: createWiaBackend(env), id: 'wia', stub: false }
   const macOverride = env['EPDF_MAC_SCAN_HELPER']
+  // Test hook: EPDF_SCAN_BACKEND=mac-helper makes any platform use the macOS helper protocol (with EPDF_MAC_SCAN_HELPER).
+  const forceMac = env['EPDF_SCAN_BACKEND'] === 'mac-helper' && !!macOverride
+  if (opts.platform === 'win32' && !forceMac) return { backend: createWiaBackend(env), id: 'wia', stub: false }
   if (opts.platform === 'darwin' || macOverride) {
     const helper = macOverride || opts.macHelperPath
     if (helper) return { backend: createMacBackend(helper, env), id: 'mac', stub: false }

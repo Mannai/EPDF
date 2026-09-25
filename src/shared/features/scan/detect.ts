@@ -59,7 +59,11 @@ export function detectPage(img: RgbaImage, opts: DetectOptions = {}): DetectResu
     }
   }
   if (!best || best.score < MIN_SCORE) return null
-  const q = best.quad.map((p) => ({ x: p.x / W, y: p.y / H })) as Quad
+  // The blob edge sits a pixel or two outside the paper (blur, threshold): pull the corners in a hair so the crop
+  // does not include a sliver of the desk.
+  const cx = best.quad.reduce((s, p) => s + p.x, 0) / 4
+  const cy = best.quad.reduce((s, p) => s + p.y, 0) / 4
+  const q = best.quad.map((p) => ({ x: (cx + (p.x - cx) * 0.993) / W, y: (cy + (p.y - cy) * 0.993) / H })) as Quad
   return { quad: q, score: best.score, areaFraction: best.area }
 }
 

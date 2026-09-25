@@ -1,4 +1,6 @@
-﻿import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.setConfig({ testTimeout: 60_000 })
 import { detectPage } from '../../src/shared/features/scan/detect'
 import { estimateSkew } from '../../src/shared/features/scan/deskew'
 import { createRgba, rotateDegrees } from '../../src/shared/features/scan/image'

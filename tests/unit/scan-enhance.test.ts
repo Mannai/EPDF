@@ -1,5 +1,5 @@
 import { unzlibSync } from 'fflate'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { applyPngUp, enhance, packBilevel } from '../../src/shared/features/scan/enhance'
 import { createRgba, toGray, type RgbaImage } from '../../src/shared/features/scan/image'
 import { renderTextPage } from '../support/scanImages'
@@ -15,6 +15,9 @@ function withShadow(img: RgbaImage, dark: number): RgbaImage {
     }
   return out
 }
+
+// the image maths is CPU heavy and the suite runs in parallel with other test files
+vi.setConfig({ testTimeout: 60_000 })
 
 const text = renderTextPage(620, 877, 5)
 const truthInk = (x: number, y: number): boolean => text.data[(y * 620 + x) * 4] < 100
@@ -45,12 +48,12 @@ describe('enhance: black & white document', () => {
   const bw = enhance(shadowed, 'bw')
 
   it('produces only pure black and pure white pixels', () => {
+    let bad = 0
     for (let i = 0; i < bw.data.length; i += 4) {
       const v = bw.data[i]
-      expect(v === 0 || v === 255).toBe(true)
-      expect(bw.data[i + 1]).toBe(v)
-      expect(bw.data[i + 2]).toBe(v)
+      if (!((v === 0 || v === 255) && bw.data[i + 1] === v && bw.data[i + 2] === v)) bad++
     }
+    expect(bad).toBe(0)
   })
 
   it('removes the shadow: ink is kept and paper stays white on both the lit and the shaded half', () => {

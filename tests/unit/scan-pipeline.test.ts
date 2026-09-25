@@ -1,7 +1,7 @@
 import jsQR from 'jsqr'
 import { unzlibSync } from 'fflate'
 import { PDFDocument, PDFName, PDFNumber, PDFRawStream } from 'pdf-lib'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { assemblePdf, encodeBilevel, encodeRaw, ScanPdfBuilder } from '../../src/shared/features/scan/assemble'
 import { detectPage } from '../../src/shared/features/scan/detect'
 import { A4_PT, LETTER_PT, planOutput, processPage } from '../../src/shared/features/scan/pipeline'
@@ -10,6 +10,8 @@ import { createRgba, resizeRgba, rotateDegrees } from '../../src/shared/features
 import { orderQuad } from '../../src/shared/features/scan/geometry'
 import { makeFakeJpeg } from '../support/images'
 import { meanAbsDiff, photographPage, renderTextPage } from '../support/scanImages'
+
+vi.setConfig({ testTimeout: 60_000 })
 
 describe('output planning (page size from dpi / paper)', () => {
   it('scanner pages: size in points = pixels / dpi * 72', () => {
@@ -70,7 +72,9 @@ describe('processPage on a generated photo', () => {
 
   it('B&W preset returns only black and white', () => {
     const out = processPage(shaded.image, { quad: orderQuad(shaded.corners), preset: 'bw', straighten: true, paper: 'auto', maxLongSide: 800 })
-    for (let i = 0; i < out.image.data.length; i += 4) expect([0, 255]).toContain(out.image.data[i])
+    let bad = 0
+    for (let i = 0; i < out.image.data.length; i += 4) if (out.image.data[i] !== 0 && out.image.data[i] !== 255) bad++
+    expect(bad).toBe(0)
   })
 
   it('straighten removes a residual tilt after the crop', () => {

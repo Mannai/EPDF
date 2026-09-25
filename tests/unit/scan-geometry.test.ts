@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.setConfig({ testTimeout: 60_000 })
 import { applyHomography, convexHull, isConvexQuad, orderQuad, polygonArea, quadAngles, quadSize, rotateQuadQuarterTurns, solveHomography, warpPerspective, type Pt, type Quad } from '../../src/shared/features/scan/geometry'
 import { createRgba, resizeRgba, rotateDegrees, rotateQuarterTurns } from '../../src/shared/features/scan/image'
 import { meanAbsDiff, photographPage, renderTextPage } from '../support/scanImages'

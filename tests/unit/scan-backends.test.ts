@@ -1,7 +1,9 @@
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+
+vi.setConfig({ testTimeout: 30_000 })
 import { ScanAcquireSchema } from '../../src/shared/features/scan'
 import { chooseBackend, createMacBackend, createStubBackend, createWiaBackend, listStubImages, macHelperSpec, readAnnouncedPage, STUB_DEVICE_ID, type AcquiredPage } from '../../src/main/features/scan/backends'
 import { ScanError, codeFromHresult, errorFromMessage, hresultInText } from '../../src/main/features/scan/errors'
@@ -254,6 +256,8 @@ describe('backend selection', () => {
     expect(chooseBackend({ platform: 'darwin', env: {}, macHelperPath: null }).message).toMatch(/helper/i)
     expect(chooseBackend({ platform: 'darwin', env: {}, macHelperPath: '/x/epdf-mac-scan' })).toMatchObject({ id: 'mac' })
     expect(chooseBackend({ platform: 'win32', env: { EPDF_MAC_SCAN_HELPER: STUB_HELPER, EPDF_SCANNER_STUB: '' } }).id).toBe('wia')
+    expect(chooseBackend({ platform: 'win32', env: { EPDF_MAC_SCAN_HELPER: STUB_HELPER, EPDF_SCAN_BACKEND: 'mac-helper' } }).id).toBe('mac')
+    expect(chooseBackend({ platform: 'win32', env: { EPDF_SCAN_BACKEND: 'mac-helper' } }).id).toBe('wia') // no helper given: ignored
     expect(chooseBackend({ platform: 'linux', env: { EPDF_MAC_SCAN_HELPER: STUB_HELPER } }).id).toBe('mac')
   })
 

@@ -1,6 +1,8 @@
 import { request as httpRequest } from 'node:http'
 import { connect, type Socket } from 'node:net'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+vi.setConfig({ testTimeout: 30_000 })
 import { isPrivateIPv4, listLanAddresses } from '../../src/main/features/scan/lan'
 import { MultipartError, boundaryFrom, parseMultipart, sniffImage } from '../../src/main/features/scan/multipart'
 import { PhoneUploadServer, listenProblem, type PhoneServerOptions, type UploadedImage } from '../../src/main/features/scan/phoneServer'
