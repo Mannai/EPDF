@@ -66,7 +66,7 @@ describe('text markup annotations', () => {
     expect(getString(d, 'NM')).toMatch(/^epdf-/)
     expect(parsePdfDate(getString(d, 'M'))).toBe(who.now.getTime())
     expect(parsePdfDate(getString(d, 'CreationDate'))).toBe(who.now.getTime())
-    expect(d.lookup(PDFName.of('F')).toString()).toBe('4')
+    expect(String(d.lookup(PDFName.of('F')))).toBe('4')
     expect(apBBox(d)).toEqual([72, 684, 172, 714]) // BBox == Rect: identity mapping
     expect(apMatrix(d)).toBeUndefined()
     const ops = apOps(d)
@@ -162,7 +162,7 @@ describe('text boxes (FreeText)', () => {
     expect(getString(d, 'DA')).toBe('0 0 0.8 rg /Helv 12 Tf')
     expect(getString(d, 'Contents')).toBe('The quick brown fox jumps over the lazy dog')
     expect(getNumbers(d, 'C')).toEqual([1, 1, 0.8])
-    expect(getDict(d, 'BS')!.lookup(PDFName.of('W')).toString()).toBe('1')
+    expect(String(getDict(d, 'BS')!.lookup(PDFName.of('W')))).toBe('1')
     const ops = apOps(d)
     expect(ops).toContain('/Helv 12 Tf')
     expect((ops.match(/ Tj/g) ?? []).length).toBeGreaterThanOrEqual(3) // wrapped onto several lines
@@ -231,7 +231,7 @@ describe('freehand drawing (Ink)', () => {
     const list = d.lookup(PDFName.of('InkList')) as PDFArray
     expect(list.size()).toBe(2)
     expect(getNumbers(d, 'C')).toEqual([0.9, 0.1, 0.1])
-    expect(getDict(d, 'BS')!.lookup(PDFName.of('W')).toString()).toBe('3')
+    expect(String(getDict(d, 'BS')!.lookup(PDFName.of('W')))).toBe('3')
     // stroke bounds [100,100,310,320] padded by width/2 + 1
     expect(getNumbers(d, 'Rect')).toEqual([97.5, 97.5, 312.5, 322.5])
     expect(apBBox(d)).toEqual([97.5, 97.5, 312.5, 322.5])
@@ -434,7 +434,7 @@ describe('replies and review state', () => {
     const d = listLocated(back).find((l) => l.id === reply)!.dict
     expect(d.get(PDFName.of('IRT'))).toBeInstanceOf(PDFRef)
     expect(nameOf(d, 'RT')).toBe('R')
-    expect(d.lookup(PDFName.of('F')).toString()).toBe('28')
+    expect(String(d.lookup(PDFName.of('F')))).toBe('28')
   })
 
   it('resolve/reopen are state-change annotations (/StateModel /Review); the newest wins', async () => {
@@ -518,7 +518,7 @@ describe('editing annotations', () => {
     await updateAnnotation(pdf, id, { borderWidth: 6, dashed: true, fill: null })
     const [d] = annotsOf(await roundTrip(pdf))
     expect(d.get(PDFName.of('IC'))).toBeUndefined()
-    expect(getDict(d, 'BS')!.lookup(PDFName.of('W')).toString()).toBe('6')
+    expect(String(getDict(d, 'BS')!.lookup(PDFName.of('W')))).toBe('6')
     expect(getName(getDict(d, 'BS')!, 'S')).toBe('D')
     expect(apOps(d)).toContain('103 103 94 54 re')
     expect(apOps(d).trim().endsWith('S')).toBe(true)
