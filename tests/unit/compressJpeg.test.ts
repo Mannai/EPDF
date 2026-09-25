@@ -125,9 +125,14 @@ describe('raster helpers', () => {
 
   it('tells photographs from graphics', () => {
     const photo = photoRGB(200, 200, 8, 12)
-    expect(isPhotographic(photo, 200 * 200, 3)).toBe(true)
+    expect(isPhotographic(photo, 200, 200, 3)).toBe(true)
+    expect(isPhotographic(grayFromRgb(photo), 200, 200, 1)).toBe(true)
     const graphic = new Uint8Array(200 * 200 * 3)
     for (let i = 0; i < 200 * 200; i++) graphic[i * 3] = graphic[i * 3 + 1] = graphic[i * 3 + 2] = (i % 200) < 100 ? 255 : 30
-    expect(isPhotographic(graphic, 200 * 200, 3)).toBe(false)
+    expect(isPhotographic(graphic, 200, 200, 3)).toBe(false)
+    // anti-aliased "screenshot": many grey levels, but mostly flat neighbours
+    const shot = new Uint8Array(200 * 200)
+    for (let y = 0; y < 200; y++) for (let x = 0; x < 200; x++) shot[y * 200 + x] = x < 90 ? 255 : x < 110 ? Math.round(255 - (x - 90) * 12.7) : 0
+    expect(isPhotographic(shot, 200, 200, 1)).toBe(false)
   })
 })

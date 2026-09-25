@@ -141,7 +141,8 @@ export function downsampleTarget(desc: ImageDesc, use: ImageUse | null, maxDpi: 
   return nw < desc.w || nh < desc.h ? { nw, nh } : null
 }
 
-const MONO_INK_THRESHOLD = 0.35 * 255
+/** Ink coverage at which a reduced pixel counts as ink: biased low so one-pixel lines survive a 3x reduction. */
+const MONO_INK_THRESHOLD = 0.28 * 255
 
 function buildDict(ctx: PDFContext, src: PDFDict, set: Record<string, PDFObject | number | string>, drop: string[] = []): PDFDict {
   const out = ctx.obj({}) as PDFDict
@@ -217,6 +218,7 @@ async function optimizeImageInner(
 ): Promise<ImageOutcome> {
   if (desc.bytes < opts.minImageBytes) return skip('small')
   if (desc.matte) return skip('matte')
+  if (desc.w * desc.h > 1.2e8) return skip('too-large') // > 120 megapixels: decoding would need gigabytes
   const filters = desc.filters
   const isDct = filters.length === 1 && filters[0] === 'DCTDecode'
   if (filters.includes('DCTDecode') && !isDct) return skip('chained-dct')
@@ -288,7 +290,7 @@ async function optimizeImageInner(
       if (!e) return skip('indexed-unsupported')
       px = e
     }
-    photo = lossy && isPhotographic(px, desc.w * desc.h, ncomp)
+    photo = lossy && isPhotographic(px, desc.w, desc.h, ncomp)
     if (!target && !photo) return skip('nochange')
   }
 

@@ -10,7 +10,7 @@ export interface PjsImage {
 
 async function open(bytes: Uint8Array): Promise<{ doc: import('pdfjs-dist').PDFDocumentProxy; destroy(): Promise<void> }> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
-  const task = pdfjs.getDocument({ data: bytes.slice(), useSystemFonts: false, verbosity: 0, disableFontFace: true, isEvalSupported: false })
+  const task = pdfjs.getDocument({ data: bytes.slice(), useSystemFonts: false, verbosity: 0, disableFontFace: true })
   const doc = await task.promise
   return { doc, destroy: () => task.destroy() }
 }

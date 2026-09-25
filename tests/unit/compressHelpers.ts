@@ -80,7 +80,7 @@ export function addRawImage(doc: PDFDocument, spec: RawImageSpec): PDFRef {
   return ctx.register(ctx.stream(bytes, dict as never))
 }
 
-export function addJpegImage(doc: PDFDocument, w: number, h: number, ncomp: 1 | 3 | 4, jpeg: Uint8Array, cs: unknown, extra: Record<string, unknown> = {}): PDFRef {
+export function addJpegImage(doc: PDFDocument, w: number, h: number, _ncomp: 1 | 3 | 4, jpeg: Uint8Array, cs: unknown, extra: Record<string, unknown> = {}): PDFRef {
   const ctx = doc.context
   return ctx.register(
     ctx.stream(jpeg, { Type: 'XObject', Subtype: 'Image', Width: w, Height: h, ColorSpace: cs, BitsPerComponent: 8, Filter: 'DCTDecode', ...extra } as never)

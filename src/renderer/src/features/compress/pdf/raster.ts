@@ -221,18 +221,34 @@ export function resizeBox(src: Uint8Array, w: number, h: number, ncomp: number, 
   return out
 }
 
-/** Distinct-colour estimate over a pixel sample: photographs have thousands, screenshots and line art a few hundred. */
-export function countColors(px: Uint8Array, npix: number, ncomp: number, cap = 4096): number {
+/**
+ * A raster is "photographic" when it has many distinct values AND neighbouring pixels rarely repeat exactly: worth JPEG.
+ * Screenshots, charts and scans of text have flat regions (most neighbours identical) even if anti-aliasing gives them
+ * many colours, so they stay lossless. Works on a sample of rows so it is cheap for huge images.
+ */
+export function isPhotographic(px: Uint8Array, w: number, h: number, ncomp: number): boolean {
   const seen = new Set<number>()
-  const step = Math.max(1, Math.floor(npix / 65536))
-  for (let i = 0; i < npix; i += step) {
-    let key = 0
-    for (let c = 0; c < ncomp; c++) key = (key * 257 + px[i * ncomp + c]) | 0
-    seen.add(key)
-    if (seen.size >= cap) break
+  const rows = Math.min(h, 96)
+  let pairs = 0
+  let equal = 0
+  const cap = ncomp === 1 ? 256 : 4096
+  for (let r = 0; r < rows; r++) {
+    const y = Math.min(h - 1, Math.floor(((r + 0.5) * h) / rows))
+    const step = Math.max(1, Math.floor(w / 1024))
+    for (let x = 0; x < w; x += step) {
+      const i = (y * w + x) * ncomp
+      let key = 0
+      for (let c = 0; c < ncomp; c++) key = (key * 257 + px[i + c]) | 0
+      if (seen.size < cap) seen.add(key)
+      if (x + 1 < w) {
+        pairs++
+        let same = true
+        for (let c = 0; c < ncomp; c++) if (px[i + c] !== px[i + ncomp + c]) same = false
+        if (same) equal++
+      }
+    }
   }
-  return seen.size
+  if (pairs === 0) return false
+  const distinctNeeded = ncomp === 1 ? 64 : 1024
+  return seen.size >= distinctNeeded && equal / pairs < 0.6
 }
-
-/** A raster is "photographic" when it uses many distinct colours: worth JPEG. Otherwise it stays lossless. */
-export const isPhotographic = (px: Uint8Array, npix: number, ncomp: number): boolean => countColors(px, npix, ncomp, 1500) >= 1024

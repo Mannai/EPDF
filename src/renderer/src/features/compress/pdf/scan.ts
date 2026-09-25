@@ -11,7 +11,10 @@ import { N, decodeStream, nameOf, numArray, numOf, refKey, resolve } from './str
  */
 
 export interface ImageUse {
-  /** Highest resolution demanded across all placements (pixels per inch along the image's x and y axes). */
+  /**
+   * Resolution at the image's largest placement (pixels per inch along its x and y axes). This is the lowest value over
+   * all placements: reducing the image below what the biggest placement needs would visibly blur that one.
+   */
   dpiX: number
   dpiY: number
   placements: number
@@ -65,8 +68,9 @@ function addUse(s: Ctx, ref: PDFRef, st: PDFStream, ctm: readonly number[]): voi
   const cur = s.res.uses.get(key)
   if (!cur) s.res.uses.set(key, { dpiX: dpi.dpiX, dpiY: dpi.dpiY, placements: 1 })
   else {
-    cur.dpiX = Math.max(cur.dpiX, dpi.dpiX)
-    cur.dpiY = Math.max(cur.dpiY, dpi.dpiY)
+    // The image must stay sharp enough for its LARGEST placement, which is the one with the lowest resolution.
+    cur.dpiX = Math.min(cur.dpiX, dpi.dpiX)
+    cur.dpiY = Math.min(cur.dpiY, dpi.dpiY)
     cur.placements++
   }
   // A soft mask / explicit mask fills the same unit square, so it is placed exactly like its image.
