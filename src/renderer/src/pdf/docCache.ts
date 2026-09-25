@@ -43,6 +43,13 @@ const RETIRE_DELAY_MS = 1500
 
 export const getLoaded = (docId: string): LoadedDoc | undefined => loaded.get(docId)
 
+/**
+ * The password PDF.js last accepted for a document, kept in memory only (never persisted) so that unlocking the
+ * document for editing (Security feature) does not ask for it a second time. Forgotten when the document is destroyed.
+ */
+const acceptedPasswords = new Map<string, string>()
+export const getAcceptedPassword = (docId: string): string | undefined => acceptedPasswords.get(docId)
+
 export type PasswordPrompter = (incorrect: boolean) => Promise<string | null>
 
 async function destroyEntry(entry: LoadedDoc): Promise<void> {
@@ -72,12 +79,16 @@ export function loadDoc(docId: string, key: string, source: DocSource, askPasswo
       ...ASSETS
     })
     let cancelled = false
+    let usedPassword: string | undefined
     loadingTask.onPassword = (update: (pw: string) => void, reason: number) => {
       void askPassword(reason === pdfjs.PasswordResponses.INCORRECT_PASSWORD).then((pw) => {
         if (pw === null) {
           cancelled = true
           void loadingTask.destroy()
-        } else update(pw)
+        } else {
+          usedPassword = pw
+          update(pw)
+        }
       })
     }
     let doc: PDFDocumentProxy
@@ -87,6 +98,7 @@ export function loadDoc(docId: string, key: string, source: DocSource, askPasswo
       if (cancelled) throw new PasswordCancelledError()
       throw err
     }
+    if (usedPassword !== undefined) acceptedPasswords.set(docId, usedPassword)
     const first = await doc.getPage(1)
     const vp = first.getViewport({ scale: 1 })
     const sizes: (PageSize | null)[] = new Array<PageSize | null>(doc.numPages).fill(null)
@@ -151,5 +163,6 @@ export async function destroyDoc(docId: string): Promise<void> {
   const entry = loaded.get(docId)
   for (const k of [...pending.keys()]) if (k.startsWith(`${docId}:`)) pending.delete(k)
   loaded.delete(docId)
+  acceptedPasswords.delete(docId)
   if (entry) await destroyEntry(entry)
 }
