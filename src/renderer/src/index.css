@@ -69,6 +69,11 @@ body {
   background: #fff;
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
   user-select: text;
+  /* pdf.js sizes its layers with round(down, scale * pageSize, var(--scale-round-*)); the viewer normally
+     defines these on `.pdfViewer`. Without them the width/height are invalid and the text layer of a rotated
+     page (e.g. /Rotate 90) is laid out at the wrong size, so selections and search hits miss the text. */
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
 }
 .epdf-hit {
   position: absolute;
