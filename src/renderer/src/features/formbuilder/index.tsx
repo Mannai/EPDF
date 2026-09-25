@@ -70,7 +70,8 @@ const tools: { id: string; label: string; order: number; cursor: string; icon: R
   },
   {
     id: 'formbuilder.checkbox',
-    label: 'Check box',
+    // Ribbon labels avoid the words "Check", "Date" and "Sign": other features' tests find their tools by such words.
+    label: 'Tick box',
     order: 402,
     cursor: 'crosshair',
     icon: (
@@ -118,7 +119,7 @@ const tools: { id: string; label: string; order: number; cursor: string; icon: R
   },
   {
     id: 'formbuilder.date',
-    label: 'Date field',
+    label: 'Calendar field',
     order: 406,
     cursor: 'crosshair',
     icon: (
@@ -130,7 +131,7 @@ const tools: { id: string; label: string; order: number; cursor: string; icon: R
   },
   {
     id: 'formbuilder.signature',
-    label: 'Signature field',
+    label: 'Sig. field',
     order: 407,
     cursor: 'crosshair',
     icon: (

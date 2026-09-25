@@ -794,23 +794,28 @@ test.describe('cancel and failure paths', () => {
     }
   })
 
-  test('a password-protected document cannot be edited: clear message, tool not activated', async () => {
+  test('an encrypted document is unlocked through ensureEditable, edited, and written back still encrypted', async () => {
     const path = copyFixture('forms-encrypted.pdf')
+    const before = readFileSync(path).toString('latin1')
+    expect(before).toContain('/Encrypt')
     const { app, page } = await openDoc([path])
     try {
       await menuClick(app, 'Tools', 'Prepare Form…')
-      await expect(page.getByText(/password protected and was not unlocked/).first()).toBeVisible({ timeout: 20_000 })
-      await expect(page.locator('button[data-tool="formbuilder.select"]')).toHaveAttribute('aria-pressed', 'false')
-      await menuClick(app, 'Tools', 'Detect Form Fields…')
-      await page.getByTestId('fb-detect-start').click()
-      await expect(page.getByText(/password protected and was not unlocked, so it cannot be analysed/).first()).toBeVisible({ timeout: 20_000 })
-      await expect(dot(page)).toHaveCount(0)
+      await expect(page.locator('button[data-tool="formbuilder.select"]')).toHaveAttribute('aria-pressed', 'true')
+      const add = panel(page).getByRole('button', { name: 'Text field', exact: true })
+      await add.click()
+      await expect(undoBtn(page, 'Undo Add text field')).toBeEnabled({ timeout: 30_000 })
+      await save(page)
+      const after = readFileSync(path).toString('latin1')
+      expect(after).toContain('/Encrypt') // never written as plaintext
+      await expect(PDFDocument.load(readFileSync(path))).rejects.toThrow(/encrypt/i)
     } catch (err) {
       await snap(page, err)
     } finally {
       await quitDiscarding(app, page)
     }
   })
+
 })
 
 // ---------------------------------------------------------------------------------------------------------
