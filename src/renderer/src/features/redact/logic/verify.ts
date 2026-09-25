@@ -110,6 +110,22 @@ function contentStrings(bytes: Uint8Array): Uint8Array[] | null {
   }
 }
 
+/**
+ * A copy of the file with the Security feature's protection marker (an uncompressed stream holding key material,
+ * present only in the in-memory plaintext of a protected document) blanked, so it is never scanned or mistaken
+ * for content. It is left untouched in the real bytes: saving needs it to re-encrypt.
+ */
+function withoutMarker(bytes: Uint8Array): Uint8Array {
+  const needle = 'EPDF-SECURITY-MARKER-1'
+  const text = bytesToLatin1(bytes)
+  const at = text.indexOf(needle)
+  if (at < 0) return bytes
+  const end = text.indexOf('endstream', at)
+  const copy = bytes.slice()
+  copy.fill(32, at, end < 0 ? bytes.length : end)
+  return copy
+}
+
 function* streams(pdf: PDFDocument): Generator<[PDFRef, PDFStream]> {
   for (const [ref, obj] of pdf.context.enumerateIndirectObjects()) if (obj instanceof PDFStream) yield [ref, obj]
 }
@@ -285,6 +301,7 @@ export async function verifyRedaction(input: VerifyInput): Promise<Finding[]> {
         continue
       }
       const type = dname(d, 'Type')
+      if (type === 'EpdfSecurity') continue // the in-memory protection marker (key material), not document content
       if (type === 'Metadata' || type === 'EmbeddedFile' || (!isImageOrFont(d) && printableRatio(bytes) >= 0.9 && !looksLikeContent(bytes) && contentStrings(bytes) === null)) {
         const text = type === 'EmbeddedFile' ? bytesToLatin1(bytes) : new TextDecoder().decode(bytes)
         const wide = utf16be(bytes)
@@ -315,7 +332,7 @@ export async function verifyRedaction(input: VerifyInput): Promise<Finding[]> {
       for (const s of secrets) if (countOccurrences(v.text, s) > 0) add(v.where, 'Redacted text is still present in a document string (bookmark, field, annotation, metadata, ...).')
     }
     // raw bytes of the whole file: literal, UTF-16BE and hex spellings
-    const raw = bytesToLatin1(input.bytes)
+    const raw = bytesToLatin1(withoutMarker(input.bytes))
     const rawLower = raw.toLowerCase()
     // (short secrets are skipped here: compressed data would produce chance matches; they are covered above)
     for (const s of secrets.filter((x) => x.length >= 6)) {
