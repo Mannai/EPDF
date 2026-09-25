@@ -56,15 +56,18 @@ one editPdf('Recognize text') adds all text layers
   packs into a per-run temp folder that is deleted afterwards (also on cancel and on errors).
 * **Packaged build**: `tesseract.js`, `tesseract.js-core` and the few modules the worker script requires are unpacked from
   the asar (`asarUnpack`) because tesseract.js starts its worker from a file path and the WASM core is read from disk.
-  Only the LSTM cores are shipped (the legacy models and the browser-only `.wasm.js` copies are excluded).
+  All six WebAssembly cores are shipped (tesseract.js 7 picks one by CPU features, and asks for the non-LSTM build even
+  for LSTM-only data); the browser-only `.wasm.js` copies with the WebAssembly embedded as base64 are excluded (~25 MB).
 
 ### The text layer
 
 * Words are drawn with **text render mode 3** (`3 Tr`: neither filled nor stroked) in a **glyphless Type0 font**
   (Identity-H, CIDFontType2, an embedded TrueType program whose glyphs are all empty but have real advance widths) with a
   **ToUnicode CMap**. So any script (Latin, Cyrillic, Greek, Arabic, Devanagari, CJK, ...) is extractable without shipping
-  a font that covers it, and the layer costs a few KB. PDF.js extraction of Latin, Cyrillic, Greek, CJK, Hangul, Arabic,
-  Hebrew-style RTL text and Devanagari is covered by unit tests. Ligature characters are spelled out (`ﬁ` → `fi`).
+  a font that covers it, and the layer costs a few KB. PDF.js extraction of Latin (with umlauts), Cyrillic, Greek, CJK,
+  Kana, Hangul, Arabic and Devanagari text is covered by unit tests (synthetic words), and real recognition of English +
+  Russian text with the downloaded `rus` pack was checked once by hand (not part of the suite, which never downloads
+  real packs). Ligature characters are spelled out (`ﬁ` → `fi`).
 * **Placement**: word boxes → PDF user space for every `/Rotate`, for MediaBox origins ≠ 0 and CropBoxes (the picture is
   drawn by PDF.js, so the mapping uses the same visible box and rotation), with the text matrix rotated to the reading
   direction. Each line is one text matrix (readers treat a change of matrix as a new line) and its words are moved along

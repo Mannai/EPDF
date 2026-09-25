@@ -26,9 +26,12 @@ test.describe('OCR in a packaged build', () => {
     expect(existsSync(join(resources, 'ocr', 'LICENSE-tessdata_fast.txt'))).toBe(true)
     const unpacked = join(resources, 'app.asar.unpacked', 'node_modules')
     expect(existsSync(join(unpacked, 'tesseract.js', 'src', 'worker-script', 'node', 'index.js'))).toBe(true)
-    expect(existsSync(join(unpacked, 'tesseract.js-core', 'tesseract-core-lstm.wasm'))).toBe(true)
-    // the unused engines (legacy models, browser-only copies) are not shipped
-    expect(existsSync(join(unpacked, 'tesseract.js-core', 'tesseract-core.wasm'))).toBe(false)
+    // the WebAssembly engines (one is picked by CPU features: relaxed-SIMD, SIMD or plain)
+    for (const core of ['tesseract-core', 'tesseract-core-simd', 'tesseract-core-relaxedsimd', 'tesseract-core-lstm', 'tesseract-core-simd-lstm', 'tesseract-core-relaxedsimd-lstm']) {
+      expect(existsSync(join(unpacked, 'tesseract.js-core', `${core}.js`)), core).toBe(true)
+      expect(existsSync(join(unpacked, 'tesseract.js-core', `${core}.wasm`)), core).toBe(true)
+    }
+    // the browser-only copies with the WebAssembly embedded as base64 are not shipped
     expect(existsSync(join(unpacked, 'tesseract.js-core', 'tesseract-core-lstm.wasm.js'))).toBe(false)
 
     const path = copyFixture('scan1.pdf')

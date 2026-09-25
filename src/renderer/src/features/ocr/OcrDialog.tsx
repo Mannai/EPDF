@@ -23,9 +23,9 @@ export function OcrDialog(): JSX.Element | null {
         Adds invisible, searchable text to scanned pages. The pictures are not changed. Recognition runs on this computer; nothing is uploaded.
       </p>
 
-      <fieldset className="mb-4">
+      <fieldset className="mb-3">
         <legend className="mb-1 text-sm font-medium">Pages</legend>
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
           <label className="flex items-center gap-2">
             <input type="radio" name={`${uid}-scope`} className="accent-accent" checked={s.scopeMode === 'all'} onChange={() => s.setScopeMode('all')} />
             All pages ({s.numPages})
@@ -45,7 +45,7 @@ export function OcrDialog(): JSX.Element | null {
               aria-invalid={!!rangeError}
               aria-describedby={rangeError ? `${uid}-range-error` : undefined}
               placeholder="e.g. 1-3, 7, 9-"
-              className="field w-48 select-text"
+              className="field w-40 select-text"
               value={s.rangeText}
               onChange={(e) => s.setRangeText(e.target.value)}
               autoComplete="off"
@@ -60,12 +60,12 @@ export function OcrDialog(): JSX.Element | null {
         </div>
       </fieldset>
 
-      <fieldset className="mb-4">
+      <fieldset className="mb-3">
         <legend className="mb-1 text-sm font-medium">Languages</legend>
         <p id={`${uid}-lang-help`} className="mb-1 text-sm text-ink-muted">
-          Choose up to {MAX_LANGUAGES_PER_RUN}. English is built in. Other languages are downloaded once from the official Tesseract repository (about 1 to 6 MB each) and then work offline.
+          Choose up to {MAX_LANGUAGES_PER_RUN}. English is built in; others are downloaded once from the official Tesseract repository (1 to 6 MB) and then work offline.
         </p>
-        <ul aria-describedby={`${uid}-lang-help`} data-testid="ocr-languages" className="max-h-52 divide-y divide-line overflow-y-auto rounded-md border border-line">
+        <ul aria-describedby={`${uid}-lang-help`} data-testid="ocr-languages" className="max-h-40 divide-y divide-line overflow-y-auto rounded-md border border-line">
           {s.languages.map((l) => {
             const checked = s.prefs.languages.includes(l.code)
             const downloading = s.download?.language === l.code
@@ -124,9 +124,9 @@ export function OcrDialog(): JSX.Element | null {
         )}
       </fieldset>
 
-      <fieldset className="mb-4">
+      <fieldset className="mb-3">
         <legend className="mb-1 text-sm font-medium">Options</legend>
-        <div className="mb-2 flex items-center gap-2">
+        <div className="mb-1 flex items-center gap-2">
           <label htmlFor={`${uid}-dpi`}>Resolution</label>
           <select id={`${uid}-dpi`} className="field" value={s.prefs.dpi} onChange={(e) => s.setPref('dpi', Number(e.target.value))}>
             {OCR_DPI_CHOICES.map((d) => (
@@ -151,15 +151,16 @@ export function OcrDialog(): JSX.Element | null {
       </fieldset>
 
       {why && !rangeError && (
-        <p role="status" className="mb-3 text-sm text-ink-muted" data-testid="ocr-blocker">
+        <p role="status" className="mb-2 text-sm text-ink-muted" data-testid="ocr-blocker">
           {why}
         </p>
       )}
-      <div className="flex justify-end gap-2">
+      {/* stays visible while the (scrollable) dialog is taller than the window */}
+      <div className="sticky -bottom-5 -mx-5 -mb-5 flex justify-end gap-2 border-t border-line bg-raised px-5 py-3">
         <button type="button" className="btn" onClick={s.close}>
           Cancel
         </button>
-        <button type="button" className="btn-primary" disabled={!!why} onClick={() => void s.start()}>
+        <button type="button" className="btn-primary disabled:pointer-events-none disabled:opacity-40" disabled={!!why} onClick={() => void s.start()}>
           {pageCount.ok && pageCount.pages.length > 1 ? `Recognize ${pageCount.pages.length} pages` : 'Recognize'}
         </button>
       </div>

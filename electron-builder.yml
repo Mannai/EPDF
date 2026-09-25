@@ -9,11 +9,9 @@ files:
   - out/**/*
   - package.json
   - '!**/*.map'
-  # OCR (tesseract.js-core): only the LSTM engines are ever loaded (the bundled models are LSTM-only), and the
-  # `.wasm.js` copies with the WebAssembly embedded as base64 are for browsers. Dropping the rest saves ~50 MB.
-  - '!**/node_modules/tesseract.js-core/tesseract-core.*'
-  - '!**/node_modules/tesseract.js-core/tesseract-core-simd.*'
-  - '!**/node_modules/tesseract.js-core/tesseract-core-relaxedsimd.*'
+  # OCR (tesseract.js-core): the six engines (plain / SIMD / relaxed-SIMD, each with and without the legacy models)
+  # are loaded from disk as `<name>.js` + `<name>.wasm`. The `.wasm.js` copies with the WebAssembly embedded as
+  # base64 are for browsers and never used in Node; dropping them saves ~25 MB.
   - '!**/node_modules/tesseract.js-core/*.wasm.js'
 
 # better-sqlite3 v13 ships N-API prebuilds for win/mac/linux (x64 + arm64), so no compiler toolchain

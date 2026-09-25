@@ -12,7 +12,7 @@ const h = vi.hoisted(() => {
   const state = {
     editable: true,
     version: 0,
-    bytes: new Uint8Array(),
+    bytes: new Uint8Array() as Uint8Array,
     textPages: new Set<number>(),
     /** pages (0-based) whose recognition result is a failure */
     failing: new Set<number>(),

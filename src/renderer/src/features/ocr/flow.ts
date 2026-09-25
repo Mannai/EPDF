@@ -151,7 +151,10 @@ export async function runOcr(opts: OcrRunOptions): Promise<OcrOutcome> {
       // Nothing more will be sent (pages that could not be drawn never arrive): let the job finish.
       if (!state.error) await window.epdf.call(OCR_CHANNELS.end, { sessionId })
     } catch (err) {
-      state.error ??= err instanceof Error ? err : new Error(String(err))
+      // A page call failed. If the job itself failed (engine could not start, cancelled) that is the real reason:
+      // wait briefly for it instead of reporting "this run is no longer active".
+      const jobError = await Promise.race([job.promise.then(() => null, (e: Error) => e), new Promise<null>((r) => setTimeout(() => r(null), 2000))])
+      state.error ??= jobError ?? (err instanceof Error ? err : new Error(String(err)))
     }
 
     if (state.error) {
