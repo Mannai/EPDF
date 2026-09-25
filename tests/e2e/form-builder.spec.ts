@@ -47,6 +47,12 @@ async function axeWithOverlays(page: Page, label: string): Promise<string[]> {
   return found.map((f) => `[${label}] ${f}`)
 }
 
+/** In a `catch`: saves a picture of the window (test-results/<test>/failure.png), then rethrows. */
+async function snap(page: Page, err: unknown): Promise<never> {
+  await page.screenshot({ path: test.info().outputPath('failure.png') }).catch(() => undefined)
+  throw err
+}
+
 async function openDoc(files: string[], env?: Record<string, string>): Promise<{ app: ElectronApplication; page: Page }> {
   const { app, page } = await launch({ files, env })
   await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
@@ -55,8 +61,17 @@ async function openDoc(files: string[], env?: Record<string, string>): Promise<{
 
 /** Center of page N in client coordinates plus helpers to convert a point in PDF space (unrotated page). */
 async function pageBox(page: Page, n = 1): Promise<{ x: number; y: number; width: number; height: number }> {
-  const b = await page.locator(`[data-page="${n}"]`).boundingBox()
-  return b!
+  // Opening the side panel re-fits the page ("fit width"): wait until its box stops changing.
+  let prev = ''
+  let same = 0
+  for (let i = 0; i < 60 && same < 4; i++) {
+    const b = await page.locator(`[data-page="${n}"]`).boundingBox()
+    const s = JSON.stringify(b)
+    same = s === prev ? same + 1 : 0
+    prev = s
+    await page.waitForTimeout(80)
+  }
+  return JSON.parse(prev)
 }
 
 /** Drags a rectangle given in "visual points" (origin bottom-left of an unrotated 612x792 page, y up). */
@@ -196,6 +211,170 @@ test.describe('automatic field detection', () => {
       expect(form.getRadioGroup('Level').getSelected()).toBe('Plus')
     } finally {
       await again.app.close()
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------
+// manual tools
+// ---------------------------------------------------------------------------------------------------------
+
+const drawTool = async (page: Page, id: string, rect: [number, number, number, number]): Promise<void> => {
+  const btn = page.locator(`button[data-tool="${id}"]`)
+  await btn.click()
+  await expect(btn).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('fb-create-layer').first()).toBeVisible()
+  await drawOnPage(page, ...rect)
+}
+
+test.describe('manual field tools', () => {
+  test('every field type can be drawn; undo/redo; the saved file has real fields of each type', async () => {
+    const path = copyFixture('flat.pdf')
+    const { app, page } = await openDoc([path])
+    try {
+      // The tools live in their own ribbon group.
+      await expect(page.getByRole('group', { name: 'Form builder' })).toBeVisible()
+      await drawTool(page, 'formbuilder.text', [72, 700, 272, 722])
+      await expect(fieldCount(page)).toContainText('Fields (1)', { timeout: 20_000 })
+      await expect(undoBtn(page, 'Undo Add text field')).toBeEnabled()
+      // After drawing, the tool returns to "Edit fields" and the new field is selected with its properties showing.
+      await expect(page.locator('button[data-tool="formbuilder.select"]')).toHaveAttribute('aria-pressed', 'true')
+      await expect(page.getByTestId('fb-properties')).toHaveAttribute('data-field', 'Text1')
+
+      await drawTool(page, 'formbuilder.checkbox', [72, 650, 86, 664])
+      await expect(fieldCount(page)).toContainText('Fields (2)')
+      await drawTool(page, 'formbuilder.dropdown', [72, 610, 212, 632])
+      await expect(fieldCount(page)).toContainText('Fields (3)')
+      await drawTool(page, 'formbuilder.list', [240, 560, 380, 632])
+      await expect(fieldCount(page)).toContainText('Fields (4)')
+      await drawTool(page, 'formbuilder.date', [72, 570, 212, 592])
+      await expect(fieldCount(page)).toContainText('Fields (5)')
+      await drawTool(page, 'formbuilder.signature', [72, 500, 272, 544])
+      await expect(fieldCount(page)).toContainText('Fields (6)')
+      await drawTool(page, 'formbuilder.button', [400, 700, 490, 726])
+      await expect(fieldCount(page)).toContainText('Fields (7)')
+
+      // Radio tool: the buttons drawn one after another join one group; "New group" starts another.
+      await drawTool(page, 'formbuilder.radio', [72, 460, 86, 474])
+      await expect(page.getByTestId('fb-radio-group')).toContainText('Adding to “Radio_Group1”')
+      await drawOnPage(page, 120, 460, 134, 474)
+      await drawOnPage(page, 168, 460, 182, 474)
+      await expect(fieldCount(page)).toContainText('Fields (8)')
+      await page.getByRole('button', { name: 'New group' }).click()
+      await drawOnPage(page, 72, 430, 86, 444)
+      await expect(fieldCount(page)).toContainText('Fields (9)')
+      await page.keyboard.press('Escape') // leaves the tool: the panel switches to Preview
+      await expect(page.getByTestId('fb-preview')).toBeVisible()
+      await page.getByTestId('fb-mode-edit').click()
+      await expect(fieldCount(page)).toContainText('Fields (9)')
+
+      // Undo one step, redo it.
+      await undoBtn(page, 'Undo Add radio button').click()
+      await expect(fieldCount(page)).toContainText('Fields (8)')
+      await redoBtn(page, 'Redo Add radio button').click()
+      await expect(fieldCount(page)).toContainText('Fields (9)')
+
+      await save(page)
+      const pdf = await loadSaved(path)
+      const form = pdf.getForm()
+      const kinds = Object.fromEntries(form.getFields().map((f) => [f.getName(), f.constructor.name]))
+      expect(kinds).toEqual({
+        Text1: 'PDFTextField',
+        Check_Box1: 'PDFCheckBox',
+        Dropdown1: 'PDFDropdown',
+        List_Box1: 'PDFOptionList',
+        Date1: 'PDFTextField',
+        Signature1: 'PDFSignature',
+        Button1: 'PDFButton',
+        Radio_Group1: 'PDFRadioGroup',
+        Radio_Group2: 'PDFRadioGroup'
+      })
+      const radios = form.getRadioGroup('Radio_Group1')
+      expect(radios.getOptions()).toEqual(['Choice1', 'Choice2', 'Choice3'])
+      expect(radios.acroField.getWidgets()).toHaveLength(3)
+      // Position: drawn from (72,700) to (272,722) in PDF space.
+      const r = form.getTextField('Text1').acroField.getWidgets()[0].getRectangle()
+      expect(r.x).toBeGreaterThan(68)
+      expect(r.x).toBeLessThan(76)
+      expect(r.width).toBeGreaterThan(190)
+      expect(r.width).toBeLessThan(210)
+      expect(form.getDropdown('Dropdown1').getOptions()).toEqual(['Option 1', 'Option 2', 'Option 3'])
+      expect(form.getTextField('Date1').acroField.dict.lookup(N('AA'), PDFDict).has(N('F'))).toBe(true)
+      for (const f of form.getFields()) for (const w of f.acroField.getWidgets()) expect(w.dict.has(N('AP')), f.getName()).toBe(true)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('keyboard: add from the panel, move / resize / copy / paste / duplicate / delete, align and same size', async () => {
+    const path = copyFixture('flat.pdf')
+    const { app, page } = await openDoc([path])
+    try {
+      await menuClick(app, 'Tools', 'Prepare Form…')
+      await expect(page.getByTestId('fb-panel')).toBeVisible()
+      const addText = panel(page).getByRole('button', { name: 'Text field', exact: true })
+      await addText.click()
+      await expect(fieldCount(page)).toContainText('Fields (1)', { timeout: 20_000 })
+      // The new field's name box has the focus (keyboard users can rename right away).
+      await expect(page.locator('[data-fb-name-input]')).toBeFocused()
+      await addText.click()
+      await addText.click()
+      await expect(fieldCount(page)).toContainText('Fields (3)')
+
+      // Focus the frame of the first field: arrow keys move it by 1 pt, Shift by 10 pt, Alt+arrows resize it.
+      const frame = page.getByTestId('fb-field-Text1')
+      await frame.focus()
+      await page.keyboard.press('Shift+ArrowRight')
+      await page.keyboard.press('ArrowUp') // key presses that follow each other are ONE undo step
+      await expect(undoBtn(page, 'Undo Move “Text1”')).toBeEnabled({ timeout: 15_000 })
+      await expect(frame).toBeFocused() // focus survives the reload that follows every edit
+      await page.keyboard.press('Alt+Shift+ArrowRight')
+      await expect(undoBtn(page, 'Undo Resize “Text1”')).toBeEnabled({ timeout: 15_000 })
+      // Copy, paste (goes to the same page, offset), duplicate.
+      await page.getByTestId('fb-field-Text1').focus()
+      await page.keyboard.press('Control+c')
+      await page.keyboard.press('Control+v')
+      await expect(fieldCount(page)).toContainText('Fields (4)', { timeout: 15_000 })
+      await page.getByTestId('fb-field-Text1').focus()
+      await page.keyboard.press('Control+d')
+      await expect(fieldCount(page)).toContainText('Fields (5)', { timeout: 15_000 })
+
+      // Multi-select with Shift+click on list rows... then align left, same size, distribute.
+      const rowsList = page.getByTestId('fb-field-list')
+      const row = (n: string): Locator => rowsList.locator(`[data-field-row="${n}"]`)
+      await row('Text2').click()
+      await row('Text3').click({ modifiers: ['Shift'] })
+      await row('Text1_2').click({ modifiers: ['Shift'] })
+      await expect(page.getByTestId('fb-multi')).toContainText('3 fields selected')
+      await page.getByLabel('Align selected fields').selectOption('left')
+      await expect(undoBtn(page, 'Undo Align left')).toBeEnabled({ timeout: 15_000 })
+      await page.getByLabel('Distribute selected fields').selectOption('vertical')
+      await expect(undoBtn(page, 'Undo Distribute vertically')).toBeEnabled({ timeout: 15_000 })
+      await page.getByLabel('Give selected fields the same size as the first').selectOption('both')
+      await expect(undoBtn(page, 'Undo Same size')).toBeEnabled({ timeout: 15_000 })
+
+      // Delete removes the selection as one step.
+      await page.getByRole('button', { name: 'Delete', exact: true }).click()
+      await expect(fieldCount(page)).toContainText('Fields (2)', { timeout: 15_000 })
+      await expect(undoBtn(page, /^Undo Delete 3 fields/)).toBeEnabled()
+      await undoBtn(page).click()
+      await expect(fieldCount(page)).toContainText('Fields (5)')
+
+      await save(page)
+      const form = (await loadSaved(path)).getForm()
+      const rects = form.getFields().map((f) => ({ name: f.getName(), r: f.acroField.getWidgets()[0].getRectangle() }))
+      const byName = (n: string) => rects.find((x) => x.name === n)!.r
+      // Text2, Text3 and the paste share their left edge and size after align/size (first selected = Text2).
+      expect(byName('Text3').x).toBeCloseTo(byName('Text2').x, 1)
+      expect(byName('Text1_2').x).toBeCloseTo(byName('Text2').x, 1)
+      expect(byName('Text3').width).toBeCloseTo(byName('Text2').width, 1)
+      expect(byName('Text1_2').height).toBeCloseTo(byName('Text2').height, 1)
+      // Text1 was nudged: +10 pt right, +1 up, and 10 pt wider than the default 160.
+      expect(byName('Text1').width).toBeCloseTo(170, 0)
+    } catch (err) {
+      await snap(page, err)
+    } finally {
+      await quitDiscarding(app, page)
     }
   })
 })

@@ -12,6 +12,7 @@ import { fieldsToCsv } from './logic/csv'
 import { cleanLabel, type Proposal } from './logic/detect'
 import { BuilderError, applyPatch, clearAllFields, deleteFields, deleteRadioButton, fieldNames, setWidgetRects } from './logic/edit'
 import { createField, addRadioButton } from './logic/create'
+import { rememberKeyboardFocus } from './Frame'
 import { frameForPage } from './logic/frame'
 import { nameFor, uniqueName } from './logic/names'
 import { readBuilderModel } from './logic/read'
@@ -80,7 +81,7 @@ const DEFAULT_OPTIONS = ['Option 1', 'Option 2', 'Option 3']
 /** The style manual fields get: a visible thin border on a white fill (they can be changed in the panel). */
 const MANUAL_STYLE = { borderColor: '#1f2328', backgroundColor: '#ffffff', borderWidth: 1 } as const
 
-export async function createManual(docId: string, tool: BuilderKind | 'date', pageIndex: number, rect: URect | { visualCenter: [number, number] }): Promise<string | null> {
+export async function createManual(docId: string, tool: BuilderKind | 'date', pageIndex: number, rect: URect | { visualCenter: [number, number] }, focusName = false): Promise<string | null> {
   const kind: BuilderKind = tool === 'date' ? 'text' : tool
   let finalName: string | null = null
   let firstKey: string | null = null
@@ -119,9 +120,13 @@ export async function createManual(docId: string, tool: BuilderKind | 'date', pa
     firstKey = widgetKey(finalName, 0)
   })
   if (!ok || !finalName) return null
+  // Like other editors: after drawing one field the tool returns to "Edit fields" (the radio tool stays, so
+  // several buttons can be drawn into one group).
+  if (kind !== 'radio') useWorkspace.getState().setActiveTool(SELECT_TOOL, docId)
   useBuilder.getState().select(docId, [firstKey!])
+  rememberKeyboardFocus(firstKey)
   if (kind === 'radio') useBuilder.getState().setRadioGroup(finalName)
-  useBuilder.getState().requestNameFocus()
+  if (focusName) useBuilder.getState().requestNameFocus()
   announce(`${tool === 'date' ? 'Date field' : kind} “${finalName}” added. Its properties are in the Form fields panel.`)
   return finalName
 }
@@ -141,7 +146,7 @@ export async function addAtCenter(docId: string, tool: BuilderKind | 'date'): Pr
     /* fall back to Letter */
   }
   const off = (onPage % 12) * 18
-  await createManual(docId, tool, pageIndex, { visualCenter: [size[0] / 2 + off - 108, size[1] / 2 - off + 108] })
+  await createManual(docId, tool, pageIndex, { visualCenter: [size[0] / 2 + off - 108, size[1] / 2 - off + 108] }, true)
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -197,6 +202,7 @@ async function commitRects(docId: string, result: Map<string, URect>, refs: Map<
 }
 
 export async function arrange(docId: string, op: { kind: 'align'; mode: AlignMode } | { kind: 'distribute'; axis: 'horizontal' | 'vertical' } | { kind: 'size'; dim: 'width' | 'height' | 'both' }): Promise<void> {
+  await flushNudges()
   const { items, refs } = itemsFor(docId)
   const need = op.kind === 'distribute' ? 3 : 2
   if (items.length < need) {
@@ -212,24 +218,84 @@ export async function arrange(docId: string, op: { kind: 'align'; mode: AlignMod
     vcenter: 'Center vertically'
   }
   if (op.kind === 'align') await commitRects(docId, align(items, op.mode), refs, names[op.mode])
-  else if (op.kind === 'distribute') await commitRects(docId, distribute(items, op.axis), refs, `Distribute ${op.axis}ly`)
+  else if (op.kind === 'distribute') await commitRects(docId, distribute(items, op.axis), refs, `Distribute ${op.axis === 'vertical' ? 'vertically' : 'horizontally'}`)
   else await commitRects(docId, sameSize(items, op.dim), refs, op.dim === 'both' ? 'Same size' : op.dim === 'width' ? 'Same width' : 'Same height')
 }
 
+/**
+ * Arrow-key moves/resizes are collected while keys keep coming (a held key repeats many times a second) and
+ * committed as ONE undo step once the keys pause; the fields show the new place immediately meanwhile.
+ */
+interface PendingNudge {
+  docId: string
+  kind: 'move' | 'resize'
+  keys: string[]
+  dx: number
+  dy: number
+  timer: ReturnType<typeof setTimeout>
+}
+let pendingNudge: PendingNudge | null = null
+const NUDGE_IDLE_MS = 350
+
+function baseItems(docId: string, keys: string[]): { items: Item[]; refs: Map<string, { name: string; index: number }> } {
+  const doc = useBuilder.getState().docs[docId]
+  const items: Item[] = []
+  const refs = new Map<string, { name: string; index: number }>()
+  for (const { field, index, key } of selectedWidgets(doc, keys)) {
+    const w = field.widgets.find((x) => x.index === index)!
+    items.push({ id: key, rect: w.rect, rotation: w.pageRotation })
+    refs.set(key, { name: field.name, index })
+  }
+  return { items, refs }
+}
+
+const applyNudge = (p: Pick<PendingNudge, 'kind' | 'dx' | 'dy'>, items: Item[]): Map<string, URect> => (p.kind === 'move' ? nudge(items, p.dx, p.dy) : resizeBy(items, p.dx, p.dy))
+
+export async function flushNudges(): Promise<void> {
+  const p = pendingNudge
+  if (!p) return
+  pendingNudge = null
+  clearTimeout(p.timer)
+  const { items, refs } = baseItems(p.docId, p.keys)
+  if (!items.length || (p.dx === 0 && p.dy === 0)) return
+  const names = labelOf([...new Set([...refs.values()].map((r) => r.name))])
+  await commitRects(p.docId, applyNudge(p, items), refs, `${p.kind === 'move' ? 'Move' : 'Resize'} ${names}`)
+}
+
+function queueNudge(docId: string, kind: 'move' | 'resize', dx: number, dy: number): void {
+  const keys = selectionKeys(docId)
+  if (pendingNudge && (pendingNudge.docId !== docId || pendingNudge.kind !== kind || pendingNudge.keys.join('|') !== keys.join('|'))) void flushNudges()
+  if (!keys.length) return
+  const p = pendingNudge ?? (pendingNudge = { docId, kind, keys: [...keys], dx: 0, dy: 0, timer: setTimeout(() => undefined, 0) })
+  p.dx += dx
+  p.dy += dy
+  clearTimeout(p.timer)
+  p.timer = setTimeout(() => void flushNudges(), NUDGE_IDLE_MS)
+  const { items } = baseItems(docId, p.keys)
+  useBuilder.getState().setOptimistic(docId, Object.fromEntries(applyNudge(p, items)))
+}
+
 /** Moves the selection by a visual offset in points (right / up positive). */
-export async function nudgeSelection(docId: string, dx: number, dy: number): Promise<void> {
+export function nudgeSelection(docId: string, dx: number, dy: number): Promise<void> {
+  queueNudge(docId, 'move', dx, dy)
+  return Promise.resolve()
+}
+
+export function resizeSelection(docId: string, dx: number, dy: number): Promise<void> {
+  queueNudge(docId, 'resize', dx, dy)
+  return Promise.resolve()
+}
+
+/** A pointer drag ends: commit at once (as one step) rather than waiting for the idle timer. */
+export async function moveSelectionBy(docId: string, dx: number, dy: number): Promise<void> {
+  await flushNudges()
   const { items, refs } = itemsFor(docId)
   if (!items.length) return
   await commitRects(docId, nudge(items, dx, dy), refs, `Move ${labelOf([...new Set([...refs.values()].map((r) => r.name))])}`)
 }
 
-export async function resizeSelection(docId: string, dx: number, dy: number): Promise<void> {
-  const { items, refs } = itemsFor(docId)
-  if (!items.length) return
-  await commitRects(docId, resizeBy(items, dx, dy), refs, `Resize ${labelOf([...new Set([...refs.values()].map((r) => r.name))])}`)
-}
-
 export async function deleteSelection(docId: string): Promise<void> {
+  await flushNudges()
   const st = useBuilder.getState()
   const sel = selectedWidgets(st.docs[docId], selectionKeys(docId))
   if (!sel.length) return
@@ -314,6 +380,7 @@ export async function pasteClipboard(docId: string, pageIndex: number): Promise<
   })
   if (ok) {
     useBuilder.getState().select(docId, created.map((n) => widgetKey(n, 0)))
+    rememberKeyboardFocus(widgetKey(created[0], 0))
     announce(`${created.length === 1 ? 'Field' : `${created.length} fields`} pasted`)
   }
 }

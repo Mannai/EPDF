@@ -16,7 +16,7 @@ import {
   type FontName,
   type FormatSpec
 } from './logic/spec'
-import { selectedWidgets, useBuilder, type DocBuilder } from './store'
+import { NO_KEYS, selectedWidgets, useBuilder, type DocBuilder } from './store'
 
 /** The properties of the selected field(s). Every change is one undo step. */
 
@@ -163,16 +163,20 @@ function AppearanceEditor({ field, onStyle }: { field: FieldInfo; onStyle(s: Par
 }
 
 export function PropertiesForm({ docId, doc }: { docId: string; doc: DocBuilder }): JSX.Element {
-  const selection = useBuilder((s) => (s.selectionDoc === docId ? s.selection : []))
+  const selection = useBuilder((s) => (s.selectionDoc === docId ? s.selection : NO_KEYS))
   const focusName = useBuilder((s) => s.focusName)
   const nameBox = useRef<HTMLDivElement>(null)
   const sel = selectedWidgets(doc, selection)
 
-  // "Enter" on a frame (or a freshly drawn field) puts the cursor in the Name box.
+  // A freshly added field puts the cursor in the Name box (as soon as the box exists: the model reloads first).
+  const handled = useRef(focusName)
   useEffect(() => {
-    if (focusName === 0) return
-    nameBox.current?.querySelector<HTMLInputElement>('input')?.focus()
-  }, [focusName])
+    if (focusName === handled.current) return
+    const input = nameBox.current?.querySelector<HTMLInputElement>('input')
+    if (!input) return
+    handled.current = focusName
+    input.focus()
+  })
 
   if (sel.length === 0) {
     return (

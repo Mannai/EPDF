@@ -12,6 +12,7 @@ import {
   deleteSelection,
   duplicateSelection,
   isBuilderTool,
+  moveSelectionBy,
   moveWidgets,
   nudgeSelection,
   pasteClipboard,
@@ -22,7 +23,7 @@ import {
   visibleProposals
 } from './actions'
 import { KIND_LABEL, type FieldInfo, type URect } from './logic/spec'
-import { SELECT_TOOL, splitKey, useBuilder, widgetKey } from './store'
+import { NO_KEYS, SELECT_TOOL, splitKey, useBuilder, widgetKey } from './store'
 import type { Proposal } from './logic/detect'
 import { DETECT_LABEL } from './labels'
 
@@ -58,7 +59,7 @@ type Geom = NonNullable<ReturnType<typeof geometryOf>>
 // ---------------------------------------------------------------- fields
 
 function FieldLayer({ docId, pageIndex, doc, geom, scale, width, height, tool }: { docId: string; pageIndex: number; doc: { fields: FieldInfo[] }; geom: Geom; scale: number; width: number; height: number; tool: string }): JSX.Element {
-  const selection = useBuilder((s) => (s.selectionDoc === docId ? s.selection : []))
+  const selection = useBuilder((s) => (s.selectionDoc === docId ? s.selection : NO_KEYS))
   const optimistic = useBuilder((s) => s.optimistic[docId])
   const [live, setLive] = useState<{ dx: number; dy: number } | null>(null)
   const [liveBox, setLiveBox] = useState<{ key: string; box: CssRect } | null>(null)
@@ -154,7 +155,7 @@ function FieldLayer({ docId, pageIndex, doc, geom, scale, width, height, tool }:
               if (!selected) select([key])
             }}
             onMoveLive={setLive}
-            onMoveEnd={({ dx, dy }) => void nudgeSelection(docId, dx / scale, -dy / scale)}
+            onMoveEnd={({ dx, dy }) => void moveSelectionBy(docId, dx / scale, -dy / scale)}
             onResizeLive={(box) => setLiveBox(box ? { key, box } : null)}
             onResizeEnd={(box) => {
               const u = geom.boxToPdf(box)

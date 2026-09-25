@@ -31,7 +31,7 @@ import type { DetectKind, Proposal } from './logic/detect'
 import { nameProblem } from './logic/names'
 import { KIND_LABEL, type FieldInfo } from './logic/spec'
 import { PropertiesForm } from './PropertiesForm'
-import { CREATE_TOOLS, PANEL_ID, SELECT_TOOL, useBuilder, widgetKey, type DocBuilder } from './store'
+import { CREATE_TOOLS, NO_KEYS, PANEL_ID, SELECT_TOOL, useBuilder, widgetKey, type DocBuilder } from './store'
 
 /** The right-hand "Form fields" panel: edit / preview switch, field list + properties, detection review, tab order. */
 
@@ -87,7 +87,7 @@ const ADD_BUTTONS: { tool: keyof typeof CREATE_TOOLS; label: string }[] = [
 ]
 
 function FieldsPanel({ docId, tab, doc }: { docId: string; tab: Tab; doc: DocBuilder | undefined }): JSX.Element {
-  const selection = useBuilder((s) => (s.selectionDoc === docId ? s.selection : []))
+  const selection = useBuilder((s) => (s.selectionDoc === docId ? s.selection : NO_KEYS))
   const clipboard = useBuilder((s) => s.clipboard)
   const fields = doc?.fields ?? []
   const has = selection.length > 0

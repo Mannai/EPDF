@@ -79,7 +79,8 @@ export function Frame(p: FrameProps): JSX.Element {
   useEffect(() => {
     if (keyboardFocusKey === p.dataKey && ref.current && document.activeElement !== ref.current) {
       const a = document.activeElement
-      if (!a || a === document.body) ref.current.focus({ preventScroll: true })
+      // Only take the focus from nothing or from another frame (never from a panel control).
+      if (!a || a === document.body || a.hasAttribute('data-fb-key')) ref.current.focus({ preventScroll: true })
     }
   })
 
@@ -140,7 +141,11 @@ export function Frame(p: FrameProps): JSX.Element {
         rememberKeyboardFocus(p.dataKey)
         p.onKeyDown(e)
       }}
-      onFocus={p.onFocus}
+      onFocus={() => {
+        // The user moved to another frame: stop restoring the focus of the previous one.
+        if (keyboardFocusKey !== p.dataKey) keyboardFocusKey = null
+        p.onFocus()
+      }}
       onBlur={(e) => {
         // Leaving for another control ends "keyboard focus" tracking; losing it to a reload does not.
         const next = e.relatedTarget as HTMLElement | null

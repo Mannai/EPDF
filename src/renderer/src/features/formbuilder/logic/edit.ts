@@ -399,11 +399,16 @@ function removeAnnot(page: PDFPage, ref: ReturnType<PDFDocument['context']['regi
   }
 }
 
-/** Resets every field to an empty value (text cleared, boxes unchecked, choices deselected). */
+/**
+ * Resets every fillable field to an empty value (text cleared, boxes unchecked, choices deselected). Read-only
+ * fields are left alone: they hold fixed content (an id, a prefilled name) that the person filling the form
+ * cannot change either.
+ */
 export async function clearAllFields(pdf: PDFDocument): Promise<number> {
   const form = pdf.getForm()
   let n = 0
   for (const f of form.getFields()) {
+    if (f.isReadOnly()) continue
     let changed = false
     if (f instanceof PDFTextField) {
       if ((f.getText() ?? '') !== '') (f.setText(undefined), (changed = true))

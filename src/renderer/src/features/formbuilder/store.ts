@@ -128,6 +128,9 @@ export const useBuilder = create<BuilderState>((set) => ({
   requestNameFocus: () => set((s) => ({ focusName: s.focusName + 1 }))
 }))
 
+/** A stable empty selection: selectors must not return a fresh array each time (it would loop the renderer). */
+export const NO_KEYS: string[] = []
+
 export const widgetKey = (name: string, index: number): string => `${name}#${index}`
 export const splitKey = (key: string): { name: string; index: number } => {
   const i = key.lastIndexOf('#')
