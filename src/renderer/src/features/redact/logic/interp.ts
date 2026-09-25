@@ -500,14 +500,8 @@ export class Walker {
       const mat = numbers(darr(obj.dict, 'Matrix'))
       const matrix: Matrix = mat.length === 6 && mat.every(Number.isFinite) ? (mat as Matrix) : IDENTITY
       const ctm2 = mul(matrix, g.ctm)
-      const bb = numbers(darr(obj.dict, 'BBox'))
-      if (this.editing && bb.length === 4 && bb.every(Number.isFinite)) {
-        const box = transformRect(ctm2, Math.min(bb[0], bb[2]), Math.min(bb[1], bb[3]), Math.max(bb[0], bb[2]), Math.max(bb[1], bb[3]))
-        if (!this.hits(box)) {
-          out.push(op)
-          return
-        }
-      }
+      // Every form is examined, not only those whose BBox meets a mark: content outside its BBox is clipped away
+      // on screen but is still text a reader can extract (and the self-check would rightly refuse to leave it).
       if (depth >= MAX_DEPTH) {
         if (this.editing) throw new RedactRefused('Forms are nested too deeply to redact safely.')
         this.warnings.push('Forms are nested too deeply; some content was not analysed')

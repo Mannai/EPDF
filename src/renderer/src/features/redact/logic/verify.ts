@@ -127,9 +127,30 @@ function* textValues(pdf: PDFDocument): Generator<{ where: string; text: string 
       }
     } else if (o instanceof PDFArray) for (let i = 0; i < o.size(); i++) yield* walk(o.get(i), where, depth + 1)
     else if (o instanceof PDFString || o instanceof PDFHexString) yield { where, text: decodeTextString(o.asBytes()) }
-    else if (o instanceof PDFName) yield { where, text: nameText(o) }
   }
   for (const [ref, obj] of pdf.context.enumerateIndirectObjects()) yield* walk(obj, `object ${refTag(ref).replace(' ', ' gen ')}`, 0)
+  // names of the legacy (PDF 1.1) destination dictionary are text too
+  const legacy = pdf.catalog.lookup(N('Dests'))
+  if (legacy instanceof PDFDict) for (const [k] of legacy.entries()) yield { where: 'named destination', text: nameText(k) }
+}
+
+/** Every operator of the PDF content language: text that parses to (mostly) these is page-like content, not data. */
+const KNOWN_OPS = new Set(
+  'b B b* B* BDC BI BMC BT BX c cm CS cs d d0 d1 Do DP EI EMC ET EX f F f* G g gs h i ID j J K k l m M MP n q Q re RG rg ri s S SC sc SCN scn sh T* Tc Td TD Tf Tj TJ TL Tm Tr Ts Tw Tz v w W W* y \' "'.split(' ')
+)
+
+/** True when the bytes are a content stream (page, form, appearance, pattern): they parse and their operators are PDF operators. */
+function looksLikeContent(bytes: Uint8Array): boolean {
+  if (printableRatio(bytes) < 0.85) return false
+  try {
+    const ops = parseContent(bytes).ops
+    if (ops.length === 0) return false
+    let known = 0
+    for (const o of ops) if (KNOWN_OPS.has(o.op)) known++
+    return known / ops.length >= 0.8
+  } catch {
+    return false
+  }
 }
 
 export async function verifyRedaction(input: VerifyInput): Promise<Finding[]> {
@@ -264,7 +285,7 @@ export async function verifyRedaction(input: VerifyInput): Promise<Finding[]> {
         continue
       }
       const type = dname(d, 'Type')
-      if (type === 'Metadata' || type === 'EmbeddedFile' || (!isImageOrFont(d) && printableRatio(bytes) >= 0.9 && contentStrings(bytes) === null)) {
+      if (type === 'Metadata' || type === 'EmbeddedFile' || (!isImageOrFont(d) && printableRatio(bytes) >= 0.9 && !looksLikeContent(bytes) && contentStrings(bytes) === null)) {
         const text = type === 'EmbeddedFile' ? bytesToLatin1(bytes) : new TextDecoder().decode(bytes)
         const wide = utf16be(bytes)
         for (const s of secrets) {

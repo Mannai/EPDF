@@ -122,6 +122,7 @@ export async function searchDocument(pdf: PDFDocument, matcher: Matcher, opts: S
   const compiled = compileMatcher(matcher)
   const out: Hit[] = []
   const pages = opts.pages ?? Array.from({ length: pdf.getPageCount() }, (_, i) => i)
+  let sliceStart = Date.now()
   for (const pi of pages) {
     if (opts.signal?.aborted) break
     let model: PageTextModel
@@ -133,7 +134,11 @@ export async function searchDocument(pdf: PDFDocument, matcher: Matcher, opts: S
     const hits = searchModel(model, compiled)
     out.push(...hits)
     opts.onPage?.(pi, hits)
-    await new Promise((r) => setTimeout(r, 0))
+    // let the UI breathe about every 30 ms of work (a timer per page would dominate on large documents)
+    if (Date.now() - sliceStart > 30) {
+      await new Promise((r) => setTimeout(r, 0))
+      sliceStart = Date.now()
+    }
   }
   return out
 }

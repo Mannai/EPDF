@@ -337,6 +337,99 @@ function filtersOf(dict: PDFDict): string[] {
   return []
 }
 
+/**
+ * pdf-lib's stream decoders undo the filters but NOT the /Predictor of Flate/LZW streams (used by nearly every
+ * PNG-derived image). The predictor is undone here so pixels are read and written where they really are.
+ */
+export function undoPredictor(data: Uint8Array, parms: PDFDict | undefined): Uint8Array {
+  const predictor = num(dget(parms, 'Predictor')) ?? 1
+  if (predictor <= 1) return data
+  const colors = num(dget(parms, 'Colors')) ?? 1
+  const bpc = num(dget(parms, 'BitsPerComponent')) ?? 8
+  const columns = num(dget(parms, 'Columns')) ?? 1
+  if (!(colors >= 1 && colors <= 32 && columns >= 1 && columns < 1e7 && [1, 2, 4, 8, 16].includes(bpc))) throw new Error('unusual predictor parameters')
+  const rowBytes = Math.ceil((colors * columns * bpc) / 8)
+  if (predictor === 2) {
+    if (bpc !== 8 && bpc !== 16) throw new Error('unsupported TIFF predictor bit depth')
+    const out = Uint8Array.from(data)
+    const step = bpc / 8
+    const rows = Math.floor(out.length / rowBytes)
+    for (let y = 0; y < rows; y++) {
+      const base = y * rowBytes
+      for (let i = colors * step; i < rowBytes; i += step) {
+        if (bpc === 8) out[base + i] = (out[base + i] + out[base + i - colors]) & 255
+        else {
+          const cur = (out[base + i] << 8) | out[base + i + 1]
+          const left = (out[base + i - colors * 2] << 8) | out[base + i - colors * 2 + 1]
+          const v = (cur + left) & 0xffff
+          out[base + i] = v >> 8
+          out[base + i + 1] = v & 255
+        }
+      }
+    }
+    return out
+  }
+  if (predictor < 10) throw new Error('unknown predictor')
+  const bpp = Math.max(1, Math.ceil((colors * bpc) / 8))
+  const stride = rowBytes + 1
+  const rows = Math.ceil(data.length / stride)
+  const out = new Uint8Array(rows * rowBytes)
+  for (let y = 0; y < rows; y++) {
+    const type = data[y * stride] ?? 0
+    const src = y * stride + 1
+    const dst = y * rowBytes
+    const prev = dst - rowBytes
+    for (let i = 0; i < rowBytes; i++) {
+      const raw = data[src + i] ?? 0
+      const a = i >= bpp ? out[dst + i - bpp] : 0
+      const b = y > 0 ? out[prev + i] : 0
+      const c = y > 0 && i >= bpp ? out[prev + i - bpp] : 0
+      let v: number
+      switch (type) {
+        case 0:
+          v = raw
+          break
+        case 1:
+          v = raw + a
+          break
+        case 2:
+          v = raw + b
+          break
+        case 3:
+          v = raw + ((a + b) >> 1)
+          break
+        case 4: {
+          const p = a + b - c
+          const pa = Math.abs(p - a)
+          const pb = Math.abs(p - b)
+          const pc = Math.abs(p - c)
+          v = raw + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c)
+          break
+        }
+        default:
+          throw new Error('unknown PNG filter')
+      }
+      out[dst + i] = v & 255
+    }
+  }
+  return out
+}
+
+/** Fully decoded image bytes: filters undone (pdf-lib) and the predictor undone. */
+function rawSamples(stream: PDFStream): Uint8Array {
+  const data = streamBytes(stream)
+  const filters = filtersOf(stream.dict)
+  const parmsRaw = dget(stream.dict, 'DecodeParms')
+  let parms: PDFDict | undefined
+  if (parmsRaw instanceof PDFDict) parms = parmsRaw
+  else if (parmsRaw instanceof PDFArray) {
+    const idx = filters.findIndex((f) => f === 'FlateDecode' || f === 'Fl' || f === 'LZWDecode' || f === 'LZW')
+    const p = idx >= 0 ? parmsRaw.lookup(idx) : undefined
+    if (p instanceof PDFDict) parms = p
+  }
+  return undoPredictor(data, parms)
+}
+
 type Mode = 'image' | 'alpha' | 'stencil'
 
 interface Job {
@@ -422,7 +515,7 @@ function processOne(job: Job, stream: PDFStream, mode: Mode): ImageResult {
     if (filters.some((f) => !['FlateDecode', 'Fl', 'LZWDecode', 'LZW', 'ASCII85Decode', 'A85', 'ASCIIHexDecode', 'AHx', 'RunLengthDecode', 'RL'].includes(f))) {
       return { fail: 'the image uses an unsupported filter' }
     }
-    data = Uint8Array.from(streamBytes(stream))
+    data = Uint8Array.from(rawSamples(stream))
   } catch (e) {
     return { fail: `the image data could not be decoded (${e instanceof Error ? e.message : String(e)})` }
   }
@@ -595,7 +688,7 @@ export function decodeImage(pdf: PDFDocument, stream: PDFStream, resources?: PDF
   }
   let data: Uint8Array
   try {
-    data = streamBytes(stream)
+    data = rawSamples(stream)
   } catch {
     return null
   }

@@ -215,6 +215,19 @@ describe('forms: copy on write', () => {
     expect(texts(r.pdf)).toEqual(['Alpha ', 'Alpha SECRET'])
   })
 
+  it('text a form draws outside its BBox (clipped away on screen, still extractable) is removed when it lies under a mark', async () => {
+    const { bytes } = await page('q 1 0 0 1 400 100 cm /Fm1 Do Q', (doc) => ({
+      xobjects: { Fm1: stream(doc, 'BT /F1 12 Tf -300 600 Td (hidden SECRET text) Tj ET', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 10, 10], Resources: { Font: { F1: register(doc, helvetica) } } }) }
+    }))
+    // the text sits at (100, 700) on the page although the form's BBox is a 10x10 box at (400, 100)
+    const r = await apply(bytes, [area(100, 690, 300, 720)])
+    expect(r.report.forms).toBe(1)
+    expect(Buffer.from(r.out).toString('latin1')).not.toContain('SECRET')
+    let all = ''
+    for (const [, o] of r.pdf.context.enumerateIndirectObjects()) if (o instanceof PDFStream) all += Buffer.from(decodePDFRawStream(o as PDFRawStream).decode()).toString('latin1')
+    expect(all).not.toContain('SECRET')
+  })
+
   it('nested forms and a form without its own resources', async () => {
     const { bytes } = await page('q 1 0 0 1 72 700 cm /Outer Do Q', (doc) => {
       const inner = stream(doc, 'BT /F1 12 Tf 0 0 Td (inner SECRET) Tj ET', { Type: 'XObject', Subtype: 'Form', BBox: [0, -4, 200, 14] }) // inherits the page fonts

@@ -85,6 +85,73 @@ describe('pixelSpans', () => {
   })
 })
 
+describe('predictors (pdf-lib does not undo them, so we do)', () => {
+  const dictOf = async (o: Record<string, number>): Promise<PDFDict> => (await PDFDocument.create()).context.obj(o as never) as PDFDict
+
+  /** PNG-filters `rows` with the given filter type per row (0-4) exactly as an encoder would. */
+  function pngEncode(rows: Uint8Array[], types: number[], bpp: number): Uint8Array {
+    const out: number[] = []
+    rows.forEach((row, y) => {
+      const t = types[y % types.length]
+      out.push(t)
+      for (let i = 0; i < row.length; i++) {
+        const a = i >= bpp ? row[i - bpp] : 0
+        const b = y > 0 ? rows[y - 1][i] : 0
+        const c = y > 0 && i >= bpp ? rows[y - 1][i - bpp] : 0
+        let pred = 0
+        if (t === 1) pred = a
+        else if (t === 2) pred = b
+        else if (t === 3) pred = (a + b) >> 1
+        else if (t === 4) {
+          const p = a + b - c
+          const pa = Math.abs(p - a)
+          const pb = Math.abs(p - b)
+          const pc = Math.abs(p - c)
+          pred = pa <= pb && pa <= pc ? a : pb <= pc ? b : c
+        }
+        out.push((row[i] - pred) & 255)
+      }
+    })
+    return Uint8Array.from(out)
+  }
+
+  it('undoes every PNG filter type for 8-bit RGB, 16-bit gray and 1-bit gray', async () => {
+    const { undoPredictor } = await import('../../src/renderer/src/features/redact/logic/imageRedact')
+    const rows = (w: number, bytesPerPixel: number): Uint8Array[] => Array.from({ length: 7 }, (_, y) => Uint8Array.from({ length: w * bytesPerPixel }, (_, i) => (y * 37 + i * 11 + (i % 5) * 3) & 255))
+    for (const [colors, bpc, w] of [[3, 8, 9], [1, 16, 6], [1, 1, 20], [4, 8, 5]] as const) {
+      const bpp = Math.max(1, Math.ceil((colors * bpc) / 8))
+      const rowBytes = Math.ceil((colors * w * bpc) / 8)
+      const r = rows(1, rowBytes)
+      const enc = pngEncode(r, [0, 1, 2, 3, 4], bpp)
+      const dec = undoPredictor(enc, await dictOf({ Predictor: 15, Colors: colors, BitsPerComponent: bpc, Columns: w }))
+      expect(Array.from(dec), `${colors}x${bpc}`).toEqual(r.flatMap((x) => Array.from(x)))
+    }
+  })
+
+  it('undoes the TIFF predictor (8 and 16 bit) and leaves predictor 1 alone; refuses what it cannot', async () => {
+    const { undoPredictor } = await import('../../src/renderer/src/features/redact/logic/imageRedact')
+    const data = Uint8Array.from([10, 20, 30, 1, 2, 3, 1, 2, 3])
+    expect(Array.from(undoPredictor(data, await dictOf({ Predictor: 2, Colors: 3, BitsPerComponent: 8, Columns: 3 })))).toEqual([10, 20, 30, 11, 22, 33, 12, 24, 36])
+    expect(undoPredictor(data, await dictOf({ Predictor: 1 }))).toBe(data)
+    expect(undoPredictor(data, undefined)).toBe(data)
+    const sixteen = Uint8Array.from([0x01, 0x00, 0x00, 0xff, 0x00, 0x02])
+    expect(Array.from(undoPredictor(sixteen, await dictOf({ Predictor: 2, Colors: 1, BitsPerComponent: 16, Columns: 3 })))).toEqual([0x01, 0x00, 0x01, 0xff, 0x02, 0x01])
+    const tiff4 = await dictOf({ Predictor: 2, Colors: 1, BitsPerComponent: 4, Columns: 3 })
+    const unknown = await dictOf({ Predictor: 7 })
+    const png = await dictOf({ Predictor: 15, Colors: 1, Columns: 3 })
+    expect(() => undoPredictor(data, tiff4)).toThrow()
+    expect(() => undoPredictor(data, unknown)).toThrow()
+    expect(() => undoPredictor(Uint8Array.from([9, 1, 2, 3]), png)).toThrow(/PNG filter/)
+  })
+
+  it('an image whose predictor cannot be undone is removed rather than corrupted (fail closed)', async () => {
+    const { bytes } = await imageDoc({ w: 24, h: 12, dict: { ColorSpace: 'DeviceGray', BitsPerComponent: 4, DecodeParms: { Predictor: 2, Colors: 1, Columns: 24, BitsPerComponent: 4 } }, data: new Uint8Array(12 * 12), flate: true })
+    const r = await run(bytes, [leftHalf(24, 12)])
+    expect(r.report.imagesRemoved).toBe(1)
+    expect(r.findings).toEqual([])
+  })
+})
+
 describe('image pixel destruction for every colour space and filter', () => {
   const cases: { name: string; spec: Spec; black: number[] }[] = [
     { name: 'DeviceGray 8-bit', spec: { w: 40, h: 20, dict: { ColorSpace: 'DeviceGray', BitsPerComponent: 8 }, data: gradient(40, 20, 1) }, black: [0] },
@@ -116,6 +183,140 @@ describe('image pixel destruction for every colour space and filter', () => {
       }
     })
   }
+
+  describe('every source filter is decoded and re-encoded losslessly', () => {
+    const W = 24
+    const H = 12
+    const rgb = gradient(W, H, 3)
+    const checkRgb = async (spec: Spec, note: string): Promise<void> => {
+      const { bytes } = await imageDoc(spec)
+      const r = await run(bytes, [leftHalf(W, H)])
+      expect(r.findings, note).toEqual([])
+      expect(r.report.images, note).toBe(1)
+      const img = decodeImage(r.out, imagesOf(r.out)[0])!
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const px = Array.from({ length: 3 }, (_, c) => img.data[(y * W + x) * 3 + c])
+          if (x < W / 2 - 1) expect(px, `${note} ${x},${y}`).toEqual([0, 0, 0])
+          else if (x > W / 2 + 1) expect(px, `${note} ${x},${y}`).toEqual(Array.from({ length: 3 }, (_, c) => rgb[(y * W + x) * 3 + c]))
+        }
+      }
+      expect(imagesOf(r.out)[0].dict.lookup(N('DecodeParms')), note).toBeUndefined() // predictors are gone after re-encoding
+    }
+    const base = { ColorSpace: 'DeviceRGB', BitsPerComponent: 8 }
+
+    it('ASCIIHexDecode', () => checkRgb({ w: W, h: H, dict: { ...base, Filter: 'ASCIIHexDecode' }, data: new TextEncoder().encode(Array.from(rgb, (b) => b.toString(16).padStart(2, '0')).join('') + '>') }, 'AHx'))
+
+    it('ASCII85Decode', () => {
+      const enc = (d: Uint8Array): string => {
+        let s = ''
+        for (let i = 0; i < d.length; i += 4) {
+          const chunk = d.subarray(i, i + 4)
+          let v = 0
+          for (let k = 0; k < 4; k++) v = v * 256 + (chunk[k] ?? 0)
+          if (v === 0 && chunk.length === 4) {
+            s += 'z'
+            continue
+          }
+          const digits: string[] = []
+          for (let k = 0; k < 5; k++) {
+            digits.unshift(String.fromCharCode((v % 85) + 33))
+            v = Math.floor(v / 85)
+          }
+          s += digits.slice(0, chunk.length + 1).join('')
+        }
+        return s + '~>'
+      }
+      return checkRgb({ w: W, h: H, dict: { ...base, Filter: 'ASCII85Decode' }, data: new TextEncoder().encode(enc(rgb)) }, 'A85')
+    })
+
+    it('RunLengthDecode', () => {
+      const out: number[] = []
+      for (let i = 0; i < rgb.length; i += 100) {
+        const chunk = rgb.subarray(i, Math.min(rgb.length, i + 100))
+        out.push(chunk.length - 1, ...chunk)
+      }
+      out.push(128)
+      return checkRgb({ w: W, h: H, dict: { ...base, Filter: 'RunLengthDecode' }, data: Uint8Array.from(out) }, 'RL')
+    })
+
+    it('LZWDecode', () => {
+      // a plain LZW encoder (9-12 bit codes, EarlyChange 1)
+      const codes: number[] = []
+      const widths: number[] = []
+      let dict = new Map<string, number>()
+      let next = 258
+      let width = 9
+      const reset = (): void => {
+        dict = new Map()
+        next = 258
+        width = 9
+      }
+      const emit = (c: number): void => {
+        codes.push(c)
+        widths.push(width)
+      }
+      emit(256)
+      let w = ''
+      for (const b of rgb) {
+        const wc = w + String.fromCharCode(b)
+        if (wc.length === 1 || dict.has(wc)) w = wc
+        else {
+          emit(w.length === 1 ? w.charCodeAt(0) : dict.get(w)!)
+          dict.set(wc, next++)
+          if (next + 1 > 1 << width && width < 12) width++
+          if (next >= 4093) {
+            emit(256)
+            reset()
+          }
+          w = String.fromCharCode(b)
+        }
+      }
+      if (w) emit(w.length === 1 ? w.charCodeAt(0) : dict.get(w)!)
+      emit(257)
+      let bits = ''
+      codes.forEach((c, i) => (bits += c.toString(2).padStart(widths[i], '0')))
+      bits += '0'.repeat((8 - (bits.length % 8)) % 8)
+      const bytes = Uint8Array.from(bits.match(/.{8}/g)!.map((x) => parseInt(x, 2)))
+      return checkRgb({ w: W, h: H, dict: { ...base, Filter: 'LZWDecode' }, data: bytes }, 'LZW')
+    })
+
+    it('Flate with a PNG "Up" predictor and with a TIFF predictor', async () => {
+      const rows = Array.from({ length: H }, (_, y) => rgb.subarray(y * W * 3, (y + 1) * W * 3))
+      const up = new Uint8Array((W * 3 + 1) * H)
+      rows.forEach((row, y) => {
+        up[y * (W * 3 + 1)] = 2
+        for (let i = 0; i < row.length; i++) up[y * (W * 3 + 1) + 1 + i] = (row[i] - (y ? rows[y - 1][i] : 0)) & 255
+      })
+      await checkRgb({ w: W, h: H, dict: { ...base, DecodeParms: { Predictor: 12, Colors: 3, Columns: W, BitsPerComponent: 8 } }, data: up, flate: true }, 'PNG up')
+      const tiff = new Uint8Array(W * 3 * H)
+      rows.forEach((row, y) => {
+        for (let x = 0; x < W; x++) for (let c = 0; c < 3; c++) tiff[y * W * 3 + x * 3 + c] = (row[x * 3 + c] - (x ? row[(x - 1) * 3 + c] : 0)) & 255
+      })
+      await checkRgb({ w: W, h: H, dict: { ...base, DecodeParms: { Predictor: 2, Colors: 3, Columns: W, BitsPerComponent: 8 } }, data: tiff, flate: true }, 'TIFF')
+    })
+
+    it('a filter chain (ASCII85 over Flate)', async () => {
+      const { deflateSync } = await import('node:zlib')
+      const z = new Uint8Array(deflateSync(Buffer.from(rgb)))
+      const enc = (d: Uint8Array): string => {
+        let s = ''
+        for (let i = 0; i < d.length; i += 4) {
+          const chunk = d.subarray(i, i + 4)
+          let v = 0
+          for (let k = 0; k < 4; k++) v = v * 256 + (chunk[k] ?? 0)
+          const digits: string[] = []
+          for (let k = 0; k < 5; k++) {
+            digits.unshift(String.fromCharCode((v % 85) + 33))
+            v = Math.floor(v / 85)
+          }
+          s += digits.slice(0, chunk.length + 1).join('')
+        }
+        return s + '~>'
+      }
+      await checkRgb({ w: W, h: H, dict: { ...base, Filter: [N('ASCII85Decode'), N('FlateDecode')] }, data: new TextEncoder().encode(enc(z)) }, 'A85+Fl')
+    })
+  })
 
   it('honours a Decode array (inverted gray: black is the maximum sample)', async () => {
     const spec: Spec = { w: 40, h: 20, dict: { ColorSpace: 'DeviceGray', BitsPerComponent: 8, Decode: [1, 0] }, data: gradient(40, 20, 1) }
