@@ -277,10 +277,54 @@ export async function createScanSkewed(tilt = 3) {
   return save(doc)
 }
 
+/** `n` pages that all show the same scanned picture (embedded once, so the file stays small). */
+export async function createScanMany(n = 14) {
+  const doc = await PDFDocument.create()
+  const png = await doc.embedPng(scanPng(PAGE_TEXT[0]))
+  for (let i = 0; i < n; i++) doc.addPage([612, 792]).drawImage(png, { x: 0, y: 0, width: 612, height: 792 })
+  return save(doc)
+}
+
+/** A page whose only picture is a JPEG-tagged stream of garbage: PDF.js cannot decode it. */
+const addCorruptPage = (doc) => {
+  const page = doc.addPage([612, 792])
+  const junk = doc.context.stream(Uint8Array.from({ length: 400 }, (_, i) => (i * 37 + 11) & 0xff), {
+    Type: 'XObject',
+    Subtype: 'Image',
+    Width: 200,
+    Height: 200,
+    ColorSpace: 'DeviceGray',
+    BitsPerComponent: 8,
+    Filter: 'DCTDecode'
+  })
+  const ref = doc.context.register(junk)
+  const name = page.node.newXObject('Im0', ref)
+  page.node.set(PDFName.of('Contents'), doc.context.register(doc.context.flateStream(Buffer.from(`q 612 0 0 792 0 0 cm ${name.toString()} Do Q`))))
+  return page
+}
+
+/** One page with an undecodable picture. */
+export async function createScanCorrupt() {
+  const doc = await PDFDocument.create()
+  addCorruptPage(doc)
+  return save(doc)
+}
+
+/** A good scan followed by an undecodable one. */
+export async function createScanPartlyCorrupt() {
+  const doc = await PDFDocument.create()
+  await addScanPage(doc, PAGE_TEXT[0])
+  addCorruptPage(doc)
+  return save(doc)
+}
+
 /** Writes every fixture above into `outDir` and returns the file names. */
 export async function createAll(outDir) {
   mkdirSync(outDir, { recursive: true })
   const files = {
+    'scan-many.pdf': await createScanMany(14),
+    'scan-corrupt.pdf': await createScanCorrupt(),
+    'scan-partly-corrupt.pdf': await createScanPartlyCorrupt(),
     'scan1.pdf': await createScan1(),
     'scan3.pdf': await createScan3(),
     'scan-rot90.pdf': await createScanRotated(90),

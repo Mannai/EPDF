@@ -2,7 +2,7 @@ import * as pdfjs from 'pdfjs-dist'
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist'
 import { REAL_TEXT_MIN_CHARS } from '@shared/features/ocr'
 import { normalizeRotation, type PageGeometry } from './pdf/layout'
-import { autoContrast, estimateSkew, grayToRgba, shouldDeskew, toGrayscale } from './pixels'
+import { autoContrast, estimateSkew, grayToRgba, scaleFor, shouldDeskew, toGrayscale } from './pixels'
 
 /**
  * Turns one PDF page into the picture Tesseract reads. Pages are drawn by PDF.js one at a time (never all at
@@ -17,10 +17,6 @@ const ASSETS = {
   wasmUrl: '/pdfjs/wasm/',
   iccUrl: '/pdfjs/iccs/'
 }
-
-/** Largest picture handed to the recognizer, in pixels (an A4 page at 400 dpi is 26 million). */
-export const MAX_PIXELS = 30_000_000
-export const MAX_SIDE = 14_000
 
 export interface RenderOptions {
   dpi: number
@@ -37,14 +33,6 @@ export interface RenderedPage {
 export const openForOcr = (bytes: Uint8Array): Promise<PDFDocumentProxy> =>
   // PDF.js takes ownership of the buffer it is given, so it gets a copy; the edit history keeps its own.
   pdfjs.getDocument({ data: bytes.slice(), enableXfa: false, ...ASSETS }).promise
-
-/** Pixels per point for the requested dpi, reduced when the page would exceed the size limits. */
-export function scaleFor(widthPt: number, heightPt: number, dpi: number): number {
-  const wanted = dpi / 72
-  const byArea = Math.sqrt(MAX_PIXELS / (widthPt * heightPt))
-  const bySide = MAX_SIDE / Math.max(widthPt, heightPt)
-  return Math.max(0.1, Math.min(wanted, byArea, bySide))
-}
 
 /** True when the page has extractable text (at least a few real characters), e.g. an earlier OCR layer. */
 export async function pageHasText(page: PDFPageProxy): Promise<boolean> {

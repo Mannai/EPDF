@@ -3,6 +3,18 @@
  * arrays so they can be tested in Node and run on canvas data in the renderer.
  */
 
+/** Largest picture handed to the recognizer, in pixels (an A4 page at 400 dpi is 26 million). */
+export const MAX_PIXELS = 30_000_000
+export const MAX_SIDE = 14_000
+
+/** Pixels per point for the requested dpi, reduced when the page would exceed the size limits. */
+export function scaleFor(widthPt: number, heightPt: number, dpi: number): number {
+  const wanted = dpi / 72
+  const byArea = Math.sqrt(MAX_PIXELS / (widthPt * heightPt))
+  const bySide = MAX_SIDE / Math.max(widthPt, heightPt)
+  return Math.max(0.1, Math.min(wanted, byArea, bySide))
+}
+
 /** RGBA -> 8-bit luma (Rec. 601). */
 export function toGrayscale(rgba: Uint8ClampedArray | Uint8Array, width: number, height: number): Uint8Array {
   const out = new Uint8Array(width * height)

@@ -14,4 +14,7 @@ export function createScanRotated(rotate?: number): Promise<Uint8Array>
 export function createScanCropped(): Promise<Uint8Array>
 export function createScanMixed(): Promise<Uint8Array>
 export function createScanSkewed(tilt?: number): Promise<Uint8Array>
+export function createScanMany(n?: number): Promise<Uint8Array>
+export function createScanCorrupt(): Promise<Uint8Array>
+export function createScanPartlyCorrupt(): Promise<Uint8Array>
 export function createAll(outDir: string): Promise<string[]>
