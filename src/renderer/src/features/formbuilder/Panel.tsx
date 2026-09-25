@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react'
 import { getCommand, runCommand } from '../api'
+import { isEditableTarget } from '../keys'
 import { useTabs, type Tab } from '../../state/tabs'
 import { useUi } from '../../state/ui'
 import { useWorkspace } from '../../state/workspace'
@@ -167,8 +168,8 @@ function FieldList({ docId, fields, selection }: { docId: string; fields: FieldI
                   }}
                 >
                   <span className="min-w-0 flex-1 truncate">{f.name}</span>
-                  <span className="shrink-0 text-ink-muted">{KIND_LABEL[f.kind]}</span>
-                  {f.required && <span className="shrink-0 text-ink-muted">required</span>}
+                  <span className="shrink-0">{KIND_LABEL[f.kind]}</span>
+                  {f.required && <span className="shrink-0 font-medium">required</span>}
                 </button>
               </li>
             )
@@ -278,6 +279,16 @@ function DetectPanel({ docId, tab }: { docId: string; tab: Tab }): JSX.Element {
       void close()
     }
   }
+  // Escape closes the review from anywhere on the page too (unless a dialog is open or a text box is being edited).
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent): void => {
+      if (e.key !== 'Escape' || e.defaultPrevented || isEditableTarget(e.target) || document.querySelector('[role="dialog"]')) return
+      e.preventDefault()
+      void close()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   if (d.phase === 'running') {
     return (
@@ -384,7 +395,7 @@ function DetectPanel({ docId, tab }: { docId: string; tab: Tab }): JSX.Element {
               }}
             >
               <span className="block truncate font-medium">{p.name}</span>
-              <span className="block text-ink-muted">
+              <span className="block">
                 {DETECT_LABEL[p.kind]} · page {p.pageIndex + 1} · {pct(p.confidence)}
               </span>
             </button>
@@ -428,6 +439,18 @@ function TabOrderPanel({ docId, doc }: { docId: string; doc: DocBuilder | undefi
   const pages = doc?.tabs ?? []
   const info = pages.find((p) => p.pageIndex === t?.pageIndex)
 
+  // Escape closes the editor from anywhere on the page (unless a dialog is open or a box is being edited).
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent): void => {
+      if (e.key !== 'Escape' || e.defaultPrevented || isEditableTarget(e.target) || document.querySelector('[role="dialog"]')) return
+      e.preventDefault()
+      useBuilder.getState().setTabOrder(null)
+      useBuilder.getState().setMode('fields')
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   // The document reloaded (after Apply / a preset): show the order it now has, unless there are unsaved changes.
   useEffect(() => {
     const st = useBuilder.getState().taborder
@@ -453,7 +476,9 @@ function TabOrderPanel({ docId, doc }: { docId: string; doc: DocBuilder | undefi
     keys.splice(to, 0, k)
     set(keys, k)
     useUi.getState().announce(`${label(k).name} is now number ${to + 1} of ${keys.length}`)
-    requestAnimationFrame(() => listRef.current?.querySelector<HTMLElement>(`[data-order-key="${CSS.escape(k)}"]`)?.focus())
+    // Keep the moved row focused once React has re-rendered the list (timers, unlike animation frames, also run
+    // while the window is in the background).
+    setTimeout(() => listRef.current?.querySelector<HTMLElement>(`[data-order-key="${CSS.escape(k)}"]`)?.focus(), 30)
   }
   const onRowKey = (e: KeyboardEvent, i: number): void => {
     e.stopPropagation()
@@ -543,7 +568,7 @@ function TabOrderPanel({ docId, doc }: { docId: string; doc: DocBuilder | undefi
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate">{l.name}</span>
-                <span className="block text-ink-muted">{l.kind}</span>
+                <span className="block">{l.kind}</span>
               </span>
               <button type="button" className="btn-icon h-7 w-7" aria-label={`Move ${l.name} up`} disabled={i === 0} onClick={() => move(i, i - 1)}>
                 <span aria-hidden="true">↑</span>

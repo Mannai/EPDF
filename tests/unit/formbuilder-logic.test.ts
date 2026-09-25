@@ -260,6 +260,21 @@ describe('tab order', () => {
     expect(readTabInfo(doc)[0].mode).toBeNull()
   })
 
+  it('/Tabs /C makes the forms overlay walk column by column', async () => {
+    const doc = await PDFDocument.create()
+    doc.addPage([600, 800])
+    // Two columns of two fields; created in an order that is neither rows nor columns.
+    for (const [name, x, y] of [['b2', 300, 600], ['a1', 50, 700], ['b1', 300, 700], ['a2', 50, 600]] as const) {
+      await createField(doc, { kind: 'text', name, pageIndex: 0, rect: rect(x, y, 100, 20) })
+    }
+    const seq = async (): Promise<string[]> => tabStops(extractFormModel(await reload(doc))).map((s) => s.field)
+    expect(await seq()).toEqual(['a1', 'b1', 'a2', 'b2']) // rows (default)
+    setPageTabs(doc, 0, 'C')
+    expect(await seq()).toEqual(['a1', 'a2', 'b1', 'b2'])
+    setPageTabs(doc, 0, 'S')
+    expect(await seq()).toEqual(['b2', 'a1', 'b1', 'a2']) // /Annots order: creation order
+  })
+
   it('visualOrder is stable for ties', () => {
     const e = (key: string, x: number, y: number) => ({ key, name: key, index: 0, kind: 'text' as const, label: key, rect: rect(x, y, 50, 20) })
     expect(visualOrder([e('b', 200, 500), e('a', 50, 501)], 0, 'row')).toEqual(['a', 'b'])
@@ -358,6 +373,33 @@ describe('detect -> review -> apply on the mixed flat form', () => {
     const look = readBuilderModel(back).fields.find((f) => f.name === 'Full_name')!.style
     expect(look.borderColor).toBeNull()
     expect(look.backgroundColor).toBeNull()
+  })
+
+  it('the fields created from detection are read by PDF.js with the right types and places', async () => {
+    const pdf = await PDFDocument.load((await createMixed()).bytes)
+    const proposals = (await detectDocument(pdf)).flatMap((r) => r.proposals).filter((p) => p.confidence >= 0.5)
+    await applyProposals(pdf, proposals)
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    const task = pdfjs.getDocument({ data: (await pdf.save()).slice(), useSystemFonts: false, verbosity: 0, disableFontFace: true })
+    const doc = await task.promise
+    try {
+      const annots = (await (await doc.getPage(1)).getAnnotations()) as { fieldName: string; fieldType: string; rect: number[]; radioButton?: boolean; checkBox?: boolean; multiLine?: boolean }[]
+      expect(annots).toHaveLength(11) // 8 single widgets + 3 radio buttons
+      const by = (n: string) => annots.filter((a) => a.fieldName === n)
+      expect(by('Full_name')[0]).toMatchObject({ fieldType: 'Tx' })
+      expect(by('Comments')[0]).toMatchObject({ fieldType: 'Tx', multiLine: true })
+      expect(by('I_agree_to_the_terms')[0]).toMatchObject({ fieldType: 'Btn', checkBox: true })
+      expect(by('Level')).toHaveLength(3)
+      expect(by('Level')[0]).toMatchObject({ fieldType: 'Btn', radioButton: true })
+      expect(by('Signature')[0]).toMatchObject({ fieldType: 'Sig' })
+      // The "Full name" rule of the fixture runs from x = 110 to 330 at y = 688 (PDF space).
+      const r = by('Full_name')[0].rect
+      expect(Math.round(r[0])).toBeGreaterThan(100)
+      expect(Math.round(r[2])).toBe(330)
+      expect(Math.round(r[1])).toBeGreaterThanOrEqual(688)
+    } finally {
+      await task.destroy()
+    }
   })
 
   it('on a rotated page the widgets land in user space (rect rotated back) and carry /MK /R', async () => {

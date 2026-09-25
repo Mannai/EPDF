@@ -60,3 +60,7 @@
 :root[data-form-builder='edit'] .epdf-field-unsupported {
   pointer-events: none !important;
 }
+/* ...and the "This form has N fields" note of the forms feature would sit on top of the properties panel. */
+:root[data-form-builder='edit'] [data-testid='form-banner'] {
+  display: none;
+}

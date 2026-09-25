@@ -663,6 +663,11 @@ class Detector {
         this.standaloneBox(c)
         continue
       }
+      // A column that already holds text below its header is a table of data, not a form to fill in.
+      const compId = comp.get(c)
+      const column = remaining.filter((o) => o !== c && comp.get(o) === compId && Math.min(o.x1, c.x1) - Math.max(o.x0, c.x0) >= 0.6 * w(c))
+      const top = column.reduce<Cell | undefined>((t, o) => (!t || o.y1 > t.y1 ? o : t), undefined)
+      if (column.some((o) => !o.blank && o !== top)) continue
       // Table cell: needs a label from the cell on its left, or the column header above.
       const left = remaining.find((o) => !o.blank && o !== c && Math.abs(o.x1 - c.x0) <= 2 && Math.min(o.y1, c.y1) - Math.max(o.y0, c.y0) >= 0.6 * h(c))
       if (left) {
@@ -749,6 +754,12 @@ class Detector {
     for (const { l, dateLike } of merged) {
       const len = l.x1 - l.x0
       if (len < 24) continue
+      // `Chapter 1 ........ 5` and `Espresso ...... $2.50`: the leader leads to a page number or a price, so it is
+      // a table of contents / menu, not a blank to fill in.
+      const after = this.pc.phrases
+        .filter((p) => p.x0 >= l.x1 - 1 && p.x0 - l.x1 < 120 && Math.abs(p.baseline - l.baseline) < 2)
+        .sort((a, b) => a.x0 - b.x0)[0]
+      if (after && /^[\d.,ivxlcdm$€£¥\s-]{1,12}$/i.test(after.text) && /\d|^[ivxlcdm]+$/i.test(after.text)) continue
       const fh = Math.max(12, l.size * 1.35)
       const rect: Box = { x0: l.x0, x1: l.x1, y0: l.baseline - 0.22 * l.size, y1: l.baseline - 0.22 * l.size + fh }
       // Text between the label and the leader belongs to the label too ("Name (print):").

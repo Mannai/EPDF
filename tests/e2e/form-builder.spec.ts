@@ -592,7 +592,8 @@ test.describe('tab order', () => {
       await list.getByRole('button', { name: /^Move third up/ }).click()
       await expect(page.getByTestId('fb-order-third')).toContainText('1')
       await expect(page.getByTestId('fb-order-first')).toContainText('2')
-      // Keyboard: Alt+Up on the last row moves it up one place.
+      // Keyboard: Alt+Up on the last row moves it up one place (the moved row keeps the focus).
+      await expect(list.locator('[data-order-key="third#0"]')).toBeFocused()
       await list.locator('[data-order-key="agree#0"]').focus()
       await page.keyboard.press('Alt+ArrowUp')
       await expect(page.getByTestId('fb-order-agree')).toContainText('3')
@@ -623,9 +624,13 @@ test.describe('tab order', () => {
 
       // Undo puts the original order back (the Tab key follows at once).
       await undoBtn(page, 'Undo Set tab order of page 1').click()
-      await page.locator('[data-field="first"]').focus()
-      await page.keyboard.press('Tab')
-      expect(await activeField(page)).toBe('second')
+      await expect
+        .poll(async () => {
+          await page.locator('[data-field="first"]').focus()
+          await page.keyboard.press('Tab')
+          return activeField(page)
+        })
+        .toBe('second')
       await redoBtn(page, 'Redo Set tab order of page 1').click()
 
       // Presets: rows / columns write /Tabs R / C.
