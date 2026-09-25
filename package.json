@@ -25,6 +25,7 @@
     "better-sqlite3": "^13.0.3"
   },
   "devDependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
     "@playwright/test": "^1.63.0",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.2",

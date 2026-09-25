@@ -1,0 +1,43 @@
+/* Form-field overlay. Pages are always white paper, so field colors are fixed (not theme tokens). */
+.epdf-field {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  color-scheme: light;
+  font-family: Arial, Helvetica, sans-serif;
+  background: transparent;
+  color: #000;
+  user-select: text;
+}
+.epdf-field:focus-visible,
+.epdf-field:focus {
+  outline: 2px solid #2457d6;
+  outline-offset: 0;
+  background-color: rgb(255 255 255 / 0.85);
+  z-index: 1;
+}
+.epdf-field-hl {
+  background-color: rgb(120 170 255 / 0.3);
+  box-shadow: inset 0 0 0 1px #2457d6;
+}
+.epdf-field[readonly],
+.epdf-field:disabled {
+  cursor: default;
+}
+.epdf-field-check {
+  accent-color: #2457d6;
+  padding: 0;
+}
+/* A marker for fields that cannot be edited: invisible unless highlighted. */
+.epdf-field-unsupported {
+  position: absolute;
+  box-sizing: border-box;
+  cursor: not-allowed;
+}
+.epdf-field-unsupported-hl {
+  outline: 1px dashed #2457d6;
+  background: rgb(120 170 255 / 0.15);
+}
