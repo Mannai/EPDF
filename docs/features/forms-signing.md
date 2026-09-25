@@ -86,7 +86,7 @@ resources/fonts/                   bundled fonts and their license texts (electr
 | `GreatVibes-Regular.ttf` | typed signatures | SIL OFL 1.1 — © The Great Vibes Pro Project Authors (`OFL-GreatVibes.txt`) |
 | `Allura-Regular.ttf` | typed signatures | SIL OFL 1.1 — © The Allura Project Authors (`OFL-Allura.txt`) |
 | `Sacramento-Regular.ttf` | typed signatures | SIL OFL 1.1 — © 2012 Brian J. Bonislawsky DBA Astigmatic (AOETI); Reserved Font Name "Sacramento" (`OFL-Sacramento.txt`) |
-| `HomemadeApple-Regular.ttf` | typed signatures | Apache License 2.0 — © Font Diner (`LICENSE-Apache-2.0-HomemadeApple.txt`) |
+| `HomemadeApple-Regular.ttf` | typed signatures | Apache License 2.0 — Homemade Apple by Font Diner, from the `apache/` directory of the Google Fonts repository (`LICENSE-Apache-2.0-HomemadeApple.txt`) |
 
 Fonts are unmodified copies from the Google Fonts repository (Noto Sans from notofonts.github.io). The OFL
 permits bundling and embedding in documents; the fonts are not sold on their own.
