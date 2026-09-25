@@ -55,8 +55,23 @@ describe('extraction with PDF.js', () => {
     expect(m.width).toBe(792)
     expect(m.height).toBe(612)
     expect(m.text).toEqual(['Rotated', 'page', 'text'])
-    // displayed: the run now reads top-to-bottom, so the boxes are tall and narrow rather than wide
+    // displayed: the run now reads bottom-to-top, so the boxes are tall and narrow rather than wide
     expect(m.box[3]).toBeGreaterThan(m.box[2])
+  })
+
+  it('every page rotation reads the same words in the same order as the unrotated page (two columns included)', async () => {
+    const book = async (angle: number): Promise<PageModel> => {
+      const bytes = await reportBook({ next: false })
+      const pdf = await PDFDocument.load(bytes)
+      pdf.getPage(2).setRotation(degrees(angle)) // the two-column page
+      return (await pagesOf(await pdf.save()))[2]
+    }
+    const base = await book(0)
+    for (const angle of [90, 180, 270]) {
+      const rotated = await book(angle)
+      expect(rotated.keys, `rotation ${angle}`).toEqual(base.keys)
+      expect(rotated.width).toBe(angle === 180 ? base.width : base.height)
+    }
   })
 
   it('reads a two-column page column by column', async () => {

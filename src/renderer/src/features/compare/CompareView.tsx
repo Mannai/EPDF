@@ -4,6 +4,7 @@ import { stemOf } from '@shared/features/pages/filenames'
 import { errorMessage, notify } from '../../state/notify'
 import type { Tab } from '../../state/tabs'
 import { useWorkspace } from '../../state/workspace'
+import { loadUnicodeFont } from '../forms/fontClient'
 import { ChangeList } from './ChangeList'
 import { Choose } from './Choose'
 import { describeCounts, filterChanges } from './diff/summary'
@@ -89,14 +90,17 @@ function Results({ tab, entry }: { tab: Tab; entry: Entry }): JSX.Element {
       const newName = session.newSide.name
       const bytes =
         kind === 'pdf'
-          ? await buildReportPdf({
-              oldName,
-              newName,
-              result,
-              texts,
-              opts: session.opts,
-              visualPages: visual.status === 'done' ? visual.differing.map((i) => ({ old: pairs[i].old, new: pairs[i].new })) : null
-            })
+          ? await buildReportPdf(
+              {
+                oldName,
+                newName,
+                result,
+                texts,
+                opts: session.opts,
+                visualPages: visual.status === 'done' ? visual.differing.map((i) => ({ old: pairs[i].old, new: pairs[i].new })) : null
+              },
+              loadUnicodeFont
+            )
           : csvBytes(result, texts)
       const saved = await window.epdf.call<SavedReport | null>('compare:saveReport', { docId, kind, bytes, suggestedName: `Comparison - ${stemOf(oldName)} vs ${stemOf(newName)}` })
       if (saved) {

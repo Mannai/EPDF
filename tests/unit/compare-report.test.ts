@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { PDFDocument } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import type { ChangeText } from '../../src/renderer/src/features/compare/diff/enrich'
@@ -116,6 +118,30 @@ describe('PDF report', () => {
     const text = flattenText((await readPdf(bytes)).pages)
     expect(text).toContain('?????? ??? ??? ok')
     expect(text).toContain('naïve café')
+  })
+
+  it('sets Greek and Cyrillic text in the bundled Noto Sans when a font provider is given (CJK still prints as "?")', async () => {
+    const noto = new Uint8Array(readFileSync(resolve('src/renderer/src/features/textedit/fonts/NotoSans-Regular.ttf')))
+    const t: ChangeText[] = [{ oldText: 'Привет мир Ελληνικά 日本', newText: 'Привет, мир!', oldMarks: [], newMarks: [], before: '', after: '' }]
+    const input = {
+      oldName: 'файл.pdf',
+      newName: 'new.pdf',
+      result: { ...result, changes: [{ id: 0, kind: 'modified' as const, pair: 0, old: loc(1), new: loc(1) }], counts: { added: 0, removed: 0, modified: 1, moved: 0, total: 1 } },
+      texts: t,
+      opts: opts()
+    }
+    const bytes = await buildReportPdf(input, async () => noto)
+    const text = flattenText((await readPdf(bytes)).pages)
+    expect(text).toContain('Привет мир Ελληνικά ??')
+    expect(text).toContain('Привет, мир!')
+    expect(text).toContain('файл.pdf')
+    // a provider that fails must not fail the report
+    const fallback = await buildReportPdf(input, () => Promise.reject(new Error('no font')))
+    expect(flattenText((await readPdf(fallback)).pages)).toContain('?????? ??? ???????? ??')
+    // text that Helvetica can encode never triggers the provider
+    let called = 0
+    await buildReportPdf({ ...input, oldName: 'a.pdf', texts: [{ ...t[0], oldText: 'plain text', newText: 'still plain' }] }, async () => (called++, noto))
+    expect(called).toBe(0)
   })
 
   it('an empty comparison says the text is identical', async () => {

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { PDFDocument, StandardFonts } from 'pdf-lib'
 import { LEAD, PAGE_H, PAGE_W, S, plainWidth, wrapLines, writeCompareFixtures } from '../support/compareFixtures'
 import { flattenText, readPdf } from '../support/pdfText'
-import { FIX, axeViolations, copyFixture, fixture, launch, menuClick } from './helpers'
+import { FIX, axeViolations, copyFixture, fixture, launch, menuClick, quitDiscarding } from './helpers'
 
 test.beforeAll(async () => {
   await writeCompareFixtures(FIX)
@@ -494,6 +494,89 @@ test.describe('compare: large documents', () => {
       await expect(page.locator('[data-testid="cmp-row"]')).toHaveCount(3, { timeout: 5000 }).catch(() => undefined)
     } finally {
       await app.close()
+    }
+  })
+})
+
+test.describe('compare: options, scripts and session behaviour', () => {
+  test('ignore-case and ignore-punctuation options make case-only differences disappear', async () => {
+    const { app, page } = await launch({ files: [copyFixture('cmp-case-new.pdf')] })
+    try {
+      await openCompare(app, page)
+      await compareWithFile(app, page, copyFixture('cmp-case-old.pdf'))
+      await waitResults(page)
+      // exact comparison: capital letters and punctuation are differences
+      await expect(verdict(page)).not.toContainText('No text differences')
+      expect(await options(page).count()).toBeGreaterThan(3)
+      await page.getByTestId('compare-new').click()
+      await page.getByRole('checkbox', { name: /Ignore upper and lower case/ }).check()
+      await page.getByRole('checkbox', { name: /Ignore punctuation/ }).check()
+      await page.getByTestId('compare-start').click()
+      await waitResults(page)
+      await expect(counter(page)).toHaveText('No text changes')
+      await expect(page.getByTestId('compare-list-count')).toHaveText('No changes')
+    } finally {
+      await app.close()
+    }
+  })
+
+  test('Cyrillic text is compared word by word and the PDF report keeps it readable', async () => {
+    const { app, page } = await launch({ files: [copyFixture('cmp-unicode-new.pdf')] })
+    try {
+      await openCompare(app, page)
+      await compareWithFile(app, page, copyFixture('cmp-unicode-old.pdf'))
+      await waitResults(page)
+      await expect(verdict(page)).toContainText('1 change: 1 modified')
+      await expect(page.locator('[data-testid="compare-change"]')).toContainText('десять')
+      await expect(page.locator('[data-testid="compare-change"]')).toContainText('двадцать')
+      const pdfPath = join(tmpDir(), 'unicode-report.pdf')
+      await stubSaveDialog(app, pdfPath)
+      await page.getByTestId('export-pdf').click()
+      await expect(page.getByTestId('compare-announce')).toContainText('Saved the report as unicode-report.pdf')
+      const text = flattenText((await readPdf(new Uint8Array(readFileSync(pdfPath)))).pages)
+      expect(text).toContain('десять')
+      expect(text).toContain('двадцать')
+    } finally {
+      await app.close()
+    }
+  })
+
+  test('results survive switching to another tab and back', async () => {
+    const oldPath = copyFixture('cmp-report-old.pdf')
+    const newPath = copyFixture('cmp-report-new.pdf')
+    const { app, page } = await launch({ files: [oldPath, newPath] })
+    try {
+      await openCompare(app, page)
+      await page.getByLabel('Use an open tab as the old version').selectOption({ label: oldPath.split(/[\\/]/).pop()! })
+      await page.getByTestId('compare-start').click()
+      await waitResults(page)
+      await page.locator('[data-testid="compare-change"]').filter({ hasText: 'Monday' }).click()
+      await page.getByRole('tab', { name: /cmp-report-old/ }).click()
+      await expect(page.getByTestId('compare')).toHaveCount(0)
+      await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
+      await page.getByRole('tab', { name: /cmp-report-new/ }).click()
+      await expect(page.getByTestId('compare-verdict')).toContainText('8 changes')
+      await expect(page.locator('[data-testid="compare-change"][aria-selected="true"]')).toContainText('Monday')
+    } finally {
+      await app.close()
+    }
+  })
+
+  test('editing the open document afterwards marks the comparison as out of date and offers to compare again', async () => {
+    const { app, page } = await reportSession()
+    try {
+      await page.getByRole('button', { name: 'Done' }).click()
+      await expect(page.getByTestId('compare')).toHaveCount(0)
+      await menuClick(app, 'Document', 'Rotate Page Clockwise')
+      await expect(page.getByTestId('unsaved-dot')).toBeVisible()
+      await menuClick(app, 'Tools', 'Compare Files…')
+      await expect(page.getByRole('alert').filter({ hasText: 'has changed since this comparison' })).toBeVisible()
+      await page.getByRole('button', { name: 'Compare again' }).click()
+      await waitResults(page)
+      await expect(page.getByRole('alert').filter({ hasText: 'has changed since this comparison' })).toHaveCount(0)
+      await expect(verdict(page)).toContainText('8 changes')
+    } finally {
+      await quitDiscarding(app, page)
     }
   })
 })

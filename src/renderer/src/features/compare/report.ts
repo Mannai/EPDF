@@ -1,3 +1,4 @@
+import fontkit from '@pdf-lib/fontkit'
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
 import type { ChangeText } from './diff/enrich'
 import { KIND_LABEL, primaryPage } from './diff/summary'
@@ -132,12 +133,32 @@ function optionsLine(o: CompareOptions): string {
   return on.length ? `Ignored while comparing: ${on.join(', ')}.` : 'Comparison is exact (case, punctuation and spacing count).'
 }
 
-/** A PDF report listing the changes page by page. */
-export async function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
+/** Supplies the bytes of a Unicode font (Noto Sans) when the report has text that WinAnsi cannot hold. */
+export type FontProvider = () => Promise<Uint8Array>
+
+
+/**
+ * A PDF report listing the changes page by page. Text that the standard Helvetica cannot encode (Greek, Cyrillic,
+ * ...) is set in the bundled Noto Sans when `unicodeFont` is given; characters not even that font has (CJK) print
+ * as "?" - a wrong glyph is better than a report that fails to build.
+ */
+export async function buildReportPdf(input: ReportInput, unicodeFont?: FontProvider): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
-  const font = await doc.embedFont(StandardFonts.Helvetica)
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
-  const mono = await doc.embedFont(StandardFonts.Courier)
+  const helvetica = await doc.embedFont(StandardFonts.Helvetica)
+  const encodable = new Set(helvetica.getCharacterSet())
+  const needsUnicode = [input.oldName, input.newName, ...input.texts.flatMap((t) => [t.oldText, t.newText])].some((s) => Array.from(s.replace(/\s+/g, ' ')).some((ch) => !encodable.has(ch.codePointAt(0)!)))
+  let uni: PDFFont | null = null
+  if (unicodeFont && needsUnicode) {
+    try {
+      doc.registerFontkit(fontkit)
+      uni = await doc.embedFont(await unicodeFont(), { subset: true })
+    } catch (err) {
+      console.warn('Compare: the Unicode font for the report could not be loaded', err)
+    }
+  }
+  const font = uni ?? helvetica
+  const bold = uni ?? (await doc.embedFont(StandardFonts.HelveticaBold))
+  const mono = uni ?? (await doc.embedFont(StandardFonts.Courier))
   const when = input.generatedAt ?? new Date()
   doc.setTitle('Epdf comparison report')
   doc.setProducer('Epdf')

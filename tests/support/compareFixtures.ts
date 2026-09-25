@@ -1,5 +1,6 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import fontkit from '@pdf-lib/fontkit'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { PDFDocument, PDFHexString, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
 import { makePng, solid } from './images'
 
@@ -179,6 +180,25 @@ export async function largeBook(pages: number, edited: number[] = []): Promise<U
   return doc.save()
 }
 
+/** The same sentence with different case and punctuation; only the ignore-case / ignore-punctuation modes see it as equal. */
+export async function caseBook(next: boolean): Promise<Uint8Array> {
+  const { doc, font } = await ctx()
+  const page = doc.addPage([PAGE_W, PAGE_H])
+  para(page, font, next ? 'the quick brown fox jumps over the lazy dog while the cat sleeps on the warm windowsill all afternoon' : 'The Quick Brown Fox, jumps over the Lazy Dog. While the cat sleeps on the warm windowsill, all afternoon!', 72, 700)
+  return doc.save()
+}
+
+/** Text in scripts outside WinAnsi (Cyrillic), set in an embedded Noto Sans, so extraction, tokenising and the report are exercised. */
+export async function unicodeBook(next: boolean): Promise<Uint8Array> {
+  const doc = await PDFDocument.create()
+  doc.registerFontkit(fontkit)
+  const font = await doc.embedFont(readFileSync(resolve('src/renderer/src/features/textedit/fonts/NotoSans-Regular.ttf')), { subset: false })
+  const page = doc.addPage([PAGE_W, PAGE_H])
+  const text = `Квартальный отчёт: продажи выросли на ${next ? 'двадцать' : 'десять'} процентов по сравнению с прошлым годом, а расходы остались прежними.`
+  para(page, font, text, 72, 700)
+  return doc.save()
+}
+
 /** A PDF with an /Encrypt dictionary PDF.js cannot open without the (unknown) password. */
 export async function fakeEncrypted(): Promise<Uint8Array> {
   const { doc, font } = await ctx()
@@ -202,6 +222,10 @@ export async function writeCompareFixtures(dir: string): Promise<void> {
   writeFileSync(join(dir, 'cmp-visual-new.pdf'), await visualPair(true))
   writeFileSync(join(dir, 'cmp-large-old.pdf'), await largeBook(500))
   writeFileSync(join(dir, 'cmp-large-new.pdf'), await largeBook(500, [50, 250, 450]))
+  writeFileSync(join(dir, 'cmp-case-old.pdf'), await caseBook(false))
+  writeFileSync(join(dir, 'cmp-case-new.pdf'), await caseBook(true))
+  writeFileSync(join(dir, 'cmp-unicode-old.pdf'), await unicodeBook(false))
+  writeFileSync(join(dir, 'cmp-unicode-new.pdf'), await unicodeBook(true))
   writeFileSync(join(dir, 'cmp-broken.pdf'), 'this is definitely not a PDF file')
   writeFileSync(join(dir, 'cmp-encrypted.pdf'), await fakeEncrypted())
 }

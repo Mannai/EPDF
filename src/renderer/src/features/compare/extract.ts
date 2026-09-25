@@ -45,7 +45,12 @@ export function itemsToRuns(items: TextItemLike[], viewportTransform: number[]):
     ].map(([x, y]) => apply(viewportTransform, x, y))
     const xs = corners.map((p) => p[0])
     const ys = corners.map((p) => p[1])
-    out.push({ str: it.str, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys), size })
+    // Direction of the baseline as displayed (the viewport turns rotated pages), rounded to a quarter turn.
+    const dx = viewportTransform[0] * a + viewportTransform[2] * b
+    const dy = viewportTransform[1] * a + viewportTransform[3] * b
+    const quarter = Math.round(-Math.atan2(dy, dx) / (Math.PI / 2))
+    const dir = ((((quarter % 4) + 4) % 4) || 0) as 0 | 1 | 2 | 3
+    out.push({ str: it.str, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys), size, ...(dir ? { dir } : {}) })
   }
   return out
 }

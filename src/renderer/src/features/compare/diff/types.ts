@@ -21,6 +21,8 @@ export interface RawItem {
   y1: number
   /** Font size in points (used for gap thresholds). */
   size: number
+  /** Direction the text runs on the displayed page: 0 left to right (default), 1 upwards, 2 right to left, 3 downwards. */
+  dir?: 0 | 1 | 2 | 3
 }
 
 export interface CompareOptions {
