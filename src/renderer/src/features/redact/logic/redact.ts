@@ -136,11 +136,11 @@ export function* redactSteps(pdf: PDFDocument, marks: readonly MarkInput[], opti
   const scrub = newScrubReport()
   const needAppearances = scrubAnnotations(pdf, marksByPage, re, scrub)
   scrubNamedDests(pdf, re, scrub)
+  scrubJavaScript(pdf, re, options.removeHidden, scrub) // before the string scrub: a script that mentions the text is removed, not edited
   const touched = scrubAllStrings(pdf, re, scrub)
   for (const d of touched) d.delete(N('AP')) // a field's stale appearance still shows the old value
   if (needAppearances || touched.length) markNeedAppearances(pdf)
   scrubMetadata(pdf, re, new Set(marksByPage.keys()), options, scrub)
-  scrubJavaScript(pdf, re, options.removeHidden, scrub)
   if (options.removeHidden) scrubHidden(pdf, scrub)
   scrub.orphans = collectGarbage(pdf)
 

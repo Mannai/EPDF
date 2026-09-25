@@ -102,7 +102,7 @@ function nationalIdValid(raw: string): boolean {
     return 97 - Number(BigInt(base) % 97n) === Number(s.slice(13))
   }
   // Canadian SIN (9 digits, Luhn)
-  if (/^\d{9}$/.test(s)) return luhn(s) && s[0] !== '0' && s[0] !== '8'
+  if (/^\d{9}$/.test(s)) return luhn(s)
   return false
 }
 
@@ -149,8 +149,8 @@ export const PRESETS: Preset[] = [
   {
     id: 'national-id',
     label: 'National ID numbers (UK NINO, Canada SIN, Spain DNI/NIE, France INSEE)',
-    description: 'QQ 12 34 56 C, 046 454 286, 12345678Z',
-    examples: ['QQ 12 34 56 C', '046 454 286', '12345678Z', '1 84 12 76 451 089 46'],
+    description: 'AB 12 34 56 C, 046 454 286, 12345678Z',
+    examples: ['AB 12 34 56 C', '046 454 286', '12345678Z', '1 84 12 76 451 089 46'],
     build: () =>
       /(?<![A-Za-z0-9])(?:[A-CEGHJ-PR-TW-Z][A-CEGHJ-NPR-TW-Z] ?\d{2} ?\d{2} ?\d{2} ?[A-D]|\d{3}[ -]\d{3}[ -]\d{3}|[XYZ]?\d{7,8}-?[A-Z]|[12] ?\d{2} ?(?:0[1-9]|1[0-2]) ?(?:\d{2}|2[AB]) ?\d{3} ?\d{3} ?\d{2})(?![A-Za-z0-9])/g,
     validate: nationalIdValid
