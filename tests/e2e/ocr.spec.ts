@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef, decodePDFRawStream } from 'pdf-lib'
 import { flattenText, readPdf } from '../support/pdfText'
+import { allStreamText, openWith } from '../unit/helpers/securityHelpers'
 import { axeViolations, copyFixture, FIX, launch, menuClick, quitDiscarding } from './helpers'
 
 const PAGE_TEXT: string[][] = JSON.parse(readFileSync(resolve('tests/fixtures/ocr-text.json'), 'utf8'))
@@ -414,17 +415,40 @@ test.describe('OCR: failure paths', () => {
     }
   })
 
-  test('a password-protected document is refused with an explanation (nothing is changed)', async () => {
-    const path = copyFixture('forms-encrypted.pdf')
+  test('a password-protected document: OCR works after the password is given and the saved file stays encrypted', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'epdf-ocr-enc-'))
+    const path = join(dir, 'rc4-128.pdf') // committed RC4-128 fixture, user password "user128"
+    writeFileSync(path, readFileSync(resolve('tests/fixtures/security/rc4-128.pdf')))
     const { app, page } = await open([path])
     try {
-      await expect(page.locator('[data-page="1"] .textLayer')).toContainText('Encrypted form')
-      await recognize(app, page)
-      await expect(page.getByRole('alert').filter({ hasText: /password protected/ })).toBeVisible({ timeout: 30_000 })
+      const prompt = page.getByRole('dialog', { name: 'Password required', exact: true })
+      await expect(prompt).toBeVisible()
+      await prompt.getByLabel('Document password').fill('user128')
+      await prompt.getByRole('button', { name: 'Open' }).click()
+      await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
+      await recognize(app, page, async (d) => {
+        await d.getByLabel('Recognize pages that already contain text').check() // the fixture already has real text
+      })
+      // if the app still needs the password for editing it asks (and we answer); otherwise it goes straight on
+      const ask = page.getByRole('dialog', { name: 'Password required to edit', exact: true })
+      if (await ask.isVisible().catch(() => false)) {
+        await ask.getByLabel('Password').fill('user128')
+        await ask.getByRole('button', { name: 'Unlock' }).click()
+      }
+      await expect(toast(page, /Recognized \d+ pages?/)).toBeVisible({ timeout: 60_000 })
+      await saveButton(page).click()
       await expect(dot(page)).toHaveCount(0)
     } finally {
       await quitDiscarding(app, page)
     }
+    // still encrypted on disk (pdf-lib refuses it), and the decrypted content holds our invisible layer
+    const raw = bytesOf(path)
+    expect(Buffer.from(raw).toString('latin1')).toContain('/Encrypt')
+    await expect(PDFDocument.load(raw, { updateMetadata: false })).rejects.toThrow(/encrypt/i)
+    const plain = (await openWith(raw, 'user128')).plain
+    const text = await allStreamText(plain)
+    expect(text).toContain('3 Tr')
+    expect(text).toContain('EPDF-OCR-LAYER')
   })
 
   test('a damaged or tampered language file is refused and named', async () => {
