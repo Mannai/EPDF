@@ -481,7 +481,6 @@ test.describe('library', () => {
       await expect(nameCells(page)).toHaveText(['contract.pdf'])
       // The folder shows up with a cloud icon and is no longer suggested.
       await expect(library(page).getByRole('navigation').getByRole('button', { name: /^OneDrive/ }).first()).toBeVisible()
-      await expect(library(page).getByRole('navigation').getByRole('img', { name: /cloud/i }).first()).toBeVisible().catch(() => undefined)
       await expect(library(page).getByRole('navigation').getByRole('button', { name: /Add OneDrive/ })).toHaveCount(0)
     } finally {
       await quitDiscarding(app, page)
