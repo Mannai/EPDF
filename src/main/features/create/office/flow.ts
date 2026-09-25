@@ -174,6 +174,11 @@ export interface FlowDocument {
   sections: Section[]
   defaultTabStop: number
   title?: string
+  /**
+   * Drop a paragraph's "space before" when it is the first thing on a page reached by an automatic page break
+   * (LibreOffice's behaviour for ODF and RTF; Word keeps it, so DOCX leaves this off).
+   */
+  suppressSpaceBeforeAtPageTop?: boolean
 }
 
 export const paragraph = (text: string, style: TextStyle, props: Partial<ParaProps> = {}): Paragraph => ({

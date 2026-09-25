@@ -181,26 +181,29 @@ export function paginateFlow(doc: FlowDocument, catalog: FontCatalog, warnings: 
         if (y > region.top + EPS && y + need > region.bottom + EPS && need <= bodyH) advance()
       }
       for (;;) {
+        // LibreOffice (ODF/RTF) drops the space above the first paragraph of a page reached by an automatic break.
+        if (doc.suppressSpaceBeforeAtPageTop && f.spaceBefore && !f.breakBefore && y <= region.top + EPS && infos.length > 1) {
+          const sb = f.spaceBefore
+          f = { ...f, ops: shiftOps(f.ops, 0, -sb), height: f.height - sb, breaks: f.breaks.map((b) => b - sb), softBreaks: f.softBreaks?.map((b) => b - sb), spaceBefore: 0 }
+        }
         const availH = region.bottom - y
-        if (f.height <= availH + EPS) {
+        // the space below the last line of a paragraph does not have to fit on the page
+        if (f.height - (f.spaceAfter ?? 0) <= availH + EPS) {
           emit(f)
           y += f.height
           break
         }
-        const fits = f.breaks.filter((b) => b <= availH + EPS && b > EPS)
-        let at: number | undefined = fits.length ? fits[fits.length - 1] : undefined
+        // Split at the last legal point that fits: between lines/rows, or (tables) between two lines inside a row.
+        const fits = f.breaks.concat(f.softBreaks ?? []).filter((b) => b <= availH + EPS && b > EPS)
+        const at: number | undefined = fits.length ? Math.max(...fits) : undefined
         if (at === undefined) {
           if (y > region.top + EPS) {
             advance()
             continue
           }
-          const soft = (f.softBreaks ?? []).filter((b) => b <= availH + EPS && b > EPS)
-          at = soft.length ? soft[soft.length - 1] : undefined
-          if (at === undefined) {
-            emit(f) // cannot be split: draw it anyway rather than lose it
-            y += f.height
-            break
-          }
+          emit(f) // cannot be split: draw it anyway rather than lose it
+          y += f.height
+          break
         }
         const [head, tail] = splitFragment(f, at)
         emit(head)
@@ -225,7 +228,7 @@ export function paginateFlow(doc: FlowDocument, catalog: FontCatalog, warnings: 
     const m = s.page.margins
     const width = s.page.width - m.left - m.right
     const kind = kindOf(s, info.indexInSection, info.number)
-    const ctx = ctxFor(s.page.height / 2, info.number, doc.sections.length ? nextNumber - 1 : total)
+    const ctx = ctxFor(s.page.height / 2, info.number, total)
     const hb = pickBlocks(s.header, kind)
     const fb = pickBlocks(s.footer, kind)
     if (hb && hb.length) {

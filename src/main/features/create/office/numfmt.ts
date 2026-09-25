@@ -463,6 +463,31 @@ export function generalText(v: number): string {
   return neg + ip + (fp.replace(/0+$/, '') ? '.' + fp.replace(/0+$/, '') : '')
 }
 
+/**
+ * "General" shows as many significant digits as fit in the column (up to 15), like Excel and LibreOffice. `fits`
+ * reports whether a candidate string fits the cell. Returns null when not even an exponent form fits (=> `####`).
+ */
+export function generalFit(v: number, fits: (text: string) => boolean): string | null {
+  if (!Number.isFinite(v)) return null
+  if (v === 0) return '0'
+  const a = Math.abs(v)
+  if (a < 1e15 && a >= 1e-4) {
+    for (let d = 15; d >= 1; d--) {
+      const rounded = Number(a.toPrecision(d))
+      if (!Number.isFinite(rounded) || rounded === 0) continue
+      const s = String(rounded)
+      if (/e/i.test(s)) continue
+      const t = (v < 0 ? '-' : '') + s
+      if (fits(t)) return t
+    }
+  }
+  for (let k = a >= 1e15 || a < 1e-4 ? 5 : 4; k >= 0; k--) {
+    const t = v.toExponential(k).replace(/\.?0+e/, 'e').replace('e', 'E').replace(/E([+-])(\d)$/, 'E$10$2')
+    if (fits(t)) return t
+  }
+  return null
+}
+
 function bestFraction(x: number, maxDen: number): [number, number] {
   let best: [number, number] = [Math.round(x), 1]
   let bestErr = Math.abs(x - best[0])

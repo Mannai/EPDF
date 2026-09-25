@@ -262,7 +262,9 @@ export function register(ctx: MainContext): void {
       const engine = prefs.get().engine === 'libreoffice' && findSoffice() ? 'libreoffice' : 'builtin'
       ctx.jobs.start('create:convert', { ids: picked.files.map((f) => f.id), saveMode: 'beside', openInApp: true, engine })
     } else {
-      pendingCombine = await describePaths(v.files, 'combine')
+      // Explorer starts one process per selected file: every call adds to the screen that is (or is about to be) open.
+      const more = await describePaths(v.files, 'combine')
+      pendingCombine = { files: [...(pendingCombine?.files ?? []), ...more.files], skipped: [...(pendingCombine?.skipped ?? []), ...more.skipped] }
       const w = ctx.windows.focused()
       if (w) {
         w.win.show()

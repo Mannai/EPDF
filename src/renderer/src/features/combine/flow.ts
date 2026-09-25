@@ -118,7 +118,12 @@ export function runCombine(): void {
 export async function takePendingCombine(): Promise<void> {
   try {
     const pending = await window.epdf.call<PickResult | null>('combine:takePending', {})
-    if (pending && (pending.files.length || pending.skipped.length)) await openCombine(pending)
+    if (!pending || (pending.files.length === 0 && pending.skipped.length === 0)) return
+    if (useCombineUi.getState().open) {
+      // the screen is already showing (several launches in a row): append instead of starting over
+      useCombineUi.getState().add(pending.files)
+      reportSkipped(pending)
+    } else await openCombine(pending)
   } catch {
     /* nothing pending */
   }

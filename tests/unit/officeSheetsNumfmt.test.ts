@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { builtinFormatCode, formatNumber, formatText, generalText, isDateFormat } from '../../src/main/features/create/office/numfmt'
+import { builtinFormatCode, formatNumber, formatText, generalFit, generalText, isDateFormat } from '../../src/main/features/create/office/numfmt'
+
+describe('General fitted to the column width', () => {
+  const room = (chars: number) => (t: string): boolean => t.length <= chars
+  it('shows as many significant digits as fit, up to 15', () => {
+    expect(generalFit(0.841470984807897, room(30))).toBe('0.841470984807897')
+    expect(generalFit(0.841470984807897, room(12))).toBe('0.8414709848')
+    expect(generalFit(1.17520119364, room(11))).toBe('1.175201194')
+    expect(generalFit(0.1 + 0.2, room(20))).toBe('0.3')
+    expect(generalFit(-1234.5678, room(6))).toBe('-1235')
+  })
+  it('switches to an exponent when the integer part is too wide, and gives up (####) when even that does not fit', () => {
+    expect(generalFit(123456789012, room(8))).toBe('1.23E+11')
+    expect(generalFit(123456789012, room(6))).toBe('1E+11')
+    expect(generalFit(1e-7, room(8))).toBe('1E-07')
+    expect(generalFit(123456789, room(3))).toBeNull()
+  })
+})
 
 const f = (v: number, code: string, date1904 = false): string => formatNumber(v, code, { date1904 }).text
 

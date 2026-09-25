@@ -11,6 +11,11 @@ import { makePng, makeTiff, solid, withExifOrientation } from '../support/images
 import { makePdf, makeEncryptedLookingPdf } from '../support/pdfs'
 import { buildDocx, para, p, r } from '../support/docxBuilder'
 import { readPdf } from '../support/pdfText'
+import { buildXlsx, simpleRow, worksheet } from '../support/xlsxBuilder'
+import { buildPptx, textBox as pptxTextBox } from '../support/pptxBuilder'
+import { odtPackage, p as odtP } from '../support/odt'
+import { buildOds, tcell, trow } from '../support/odsBuilder'
+import { buildOdp, frame as odpFrame, para as odpPara } from '../support/odpBuilder'
 
 const STUB_SOFFICE = resolve('tests/fixtures/stub-soffice.mjs')
 const REAL_SOFFICE = 'C:\\Program Files\\LibreOffice\\program\\soffice.exe'
@@ -603,6 +608,92 @@ test.describe('Office documents with the built-in engine', () => {
   })
 })
 
+test.describe('Every Office format through the UI (built-in engine, nothing else installed)', () => {
+  test('txt, csv, docx, xlsx, pptx, odt, ods, odp and rtf each become a PDF with their content', async () => {
+    test.setTimeout(240_000)
+    const formats: { name: string; bytes: Uint8Array | string; expect: string[] }[] = [
+      { name: 'plain.txt', bytes: 'Hello plain text world', expect: ['Hello plain text world'] },
+      { name: 'table.csv', bytes: 'Name,Qty\nWidget,12\nGadget,7\n', expect: ['Name', 'Widget', 'Gadget', '12'] },
+      { name: 'letter.docx', bytes: buildDocx({ body: para('Word heading', { style: 'Heading1' }) + para('Word body paragraph.') }), expect: ['Word heading', 'Word body paragraph.'] },
+      {
+        name: 'sheet.xlsx',
+        bytes: buildXlsx({ sheets: [{ name: 'Data', xml: worksheet({ rows: simpleRow(1, ['Item', 'Qty']) + simpleRow(2, ['Widget', 12]) + simpleRow(3, ['Gadget', 7]) }) }] }),
+        expect: ['Item', 'Widget', 'Gadget', '12']
+      },
+      { name: 'deck.pptx', bytes: buildPptx({ slides: [{ shapes: pptxTextBox(2, 914400, 914400, 4572000, 914400, ['First slide text']) }, { shapes: pptxTextBox(2, 914400, 914400, 4572000, 914400, ['Second slide text']) }] }), expect: ['First slide text', 'Second slide text'] },
+      { name: 'text.odt', bytes: odtPackage({ body: odtP('OpenDocument text body') }), expect: ['OpenDocument text body'] },
+      { name: 'calc.ods', bytes: buildOds({ tables: [{ name: 'S1', xml: trow(tcell('Alpha') + tcell(5)) + trow(tcell('Beta') + tcell(9)) }] }), expect: ['Alpha', 'Beta', '9'] },
+      { name: 'slides.odp', bytes: buildOdp({ slides: [{ body: odpFrame(2, 3, 10, 2, odpPara('ODP slide text')) }] }), expect: ['ODP slide text'] },
+      { name: 'memo.rtf', bytes: '{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Arial;}}\\f0\\fs24 Hello \\b bold\\b0  RTF world\\par Second line\\par}', expect: ['Hello', 'bold', 'RTF world', 'Second line'] }
+    ]
+    const dir = outDir('fmt')
+    const { app, page } = await launch({ env: { EPDF_DISABLE_SOFFICE_DISCOVERY: '1' } })
+    try {
+      await stubDialogs(app, {})
+      for (const f of formats) {
+        const src = file(`fmt/${f.name}`, f.bytes)
+        const target = join(dir, `${f.name}.pdf`.replace(/\.(\w+)\.pdf$/, '-$1.pdf'))
+        await setStubFiles(app, [src])
+        await pushSave(app, target)
+        await menuClick(app, 'File', 'Create PDF from File…')
+        const dlg = dialogOf(page, 'Create PDF from files')
+        await expect(dlg, f.name).toBeVisible()
+        await dlg.getByRole('button', { name: 'Create PDF…' }).click()
+        await expect(tabNamed(page, new RegExp(`${f.name.replace(/\.(\w+)$/, '-$1')}\\.pdf`)), f.name).toBeVisible({ timeout: 60_000 })
+        const pdf = await readPdfFile(target)
+        const all = pdf.pages.map((pg) => pg.text).join('\n')
+        for (const needle of f.expect) expect(all, `${f.name}: ${needle}`).toContain(needle)
+        expect(pdf.embeddedFonts.length, `${f.name} embeds fonts`).toBeGreaterThan(0)
+        // and the viewer really renders it (text layer present on the active tab)
+        await expect(page.locator('[data-page="1"] .textLayer')).toContainText(f.expect[0], { timeout: 30_000 })
+      }
+      await expect(page.getByRole('tab')).toHaveCount(formats.length)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+})
+
+test.describe('packaged build', () => {
+  const exe = process.env['EPDF_PACKAGED_EXE']
+  test('the packaged app finds the bundled fonts and the worker: docx, png and merge work from the asar', async () => {
+    test.skip(!exe, 'set EPDF_PACKAGED_EXE (e.g. dist/win-unpacked/Epdf.exe after `npm run dist:dir`) to run this')
+    test.setTimeout(120_000)
+    const { _electron: electron } = await import('@playwright/test')
+    const docx = file('pkg/doc.docx', buildDocx({ body: para('Packaged heading', { style: 'Heading1' }) + para('Packaged body text.') }))
+    const png = file('pkg/pic.png', makePng(40, 30, solid(9, 9, 9)))
+    const outA = join(outDir('pkg-out'), 'doc.pdf')
+    const outB = join(outDir('pkg-out'), 'pic.pdf')
+    const outC = join(outDir('pkg-out'), 'merged.pdf')
+    const app = await electron.launch({ executablePath: exe!, args: [], env: { ...process.env, EPDF_USER_DATA: mkdtempSync(join(tmpdir(), 'epdf-pkg-')), ELECTRON_RENDERER_URL: '', EPDF_DISABLE_SOFFICE_DISCOVERY: '1' } as Record<string, string> })
+    const page = await app.firstWindow()
+    try {
+      await expect(page.getByRole('button', { name: 'Open PDF', exact: true }).first()).toBeVisible({ timeout: 30_000 })
+      expect(await app.evaluate(({ app: a }) => a.isPackaged)).toBe(true)
+      await stubDialogs(app, { files: [docx], save: [outA] })
+      await menuClick(app, 'File', 'Create PDF from File…')
+      await dialogOf(page, 'Create PDF from files').getByRole('button', { name: 'Create PDF…' }).click()
+      await expect(tabNamed(page, /doc\.pdf/)).toBeVisible({ timeout: 60_000 })
+      expect((await readPdfFile(outA)).pages[0].text).toBe('Packaged heading\nPackaged body text.')
+      await setStubFiles(app, [png])
+      await pushSave(app, outB)
+      await menuClick(app, 'File', 'Create PDF from File…')
+      await dialogOf(page, 'Create PDF from files').getByRole('button', { name: 'Create PDF…' }).click()
+      await expect(tabNamed(page, /pic\.pdf/)).toBeVisible({ timeout: 60_000 })
+      await setStubFiles(app, [outA, outB])
+      await pushSave(app, outC)
+      await menuClick(app, 'File', 'Combine Files…')
+      const dlg = dialogOf(page, 'Combine files')
+      await dlg.getByRole('button', { name: 'Add files…' }).click()
+      await dlg.getByRole('button', { name: 'Combine…' }).click()
+      await expect(tabNamed(page, /merged\.pdf/)).toBeVisible({ timeout: 60_000 })
+      expect((await PDFDocument.load(readFileSync(outC))).getPageCount()).toBe(2)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+})
+
 // ---- Combine ------------------------------------------------------------------------------------------------
 
 test.describe('Combine files', () => {
@@ -815,6 +906,10 @@ test.describe('command-line verbs', () => {
       await expect(dialogOf(page, 'Combine files')).toBeVisible({ timeout: 30_000 })
       expect(await rowNames(page)).toEqual(['one.pdf', 'two.pdf'])
       await expect(page.getByRole('tab')).toHaveCount(0)
+      // Explorer starts one process per selected file: later launches add to the open screen
+      const c = file('cli3/three.pdf', await makePdf({ label: 'C' }))
+      await app.evaluate(({ app: a2 }, args) => void a2.emit('second-instance', {}, ['epdf', ...args.argv], args.cwd), { argv: ['--combine', c], cwd: work })
+      await expect.poll(() => rowNames(page)).toEqual(['one.pdf', 'two.pdf', 'three.pdf'])
       await dialogOf(page, 'Combine files').getByRole('button', { name: 'Cancel' }).click()
       await app.evaluate(({ app: a2 }, args) => void a2.emit('second-instance', {}, ['epdf', ...args.argv], args.cwd), { argv: ['--convert-to-pdf', png], cwd: work })
       await expect(tabNamed(page, /pic\.pdf/)).toBeVisible({ timeout: 60_000 })
@@ -881,6 +976,48 @@ test.describe('Export to Word / Excel / PowerPoint', () => {
       }
     })
   }
+
+  test('round trip: our own exports (docx, xlsx, pptx) convert back to PDF with the built-in engine, and with real LibreOffice when installed', async () => {
+    test.setTimeout(300_000)
+    const useLo = existsSync(REAL_SOFFICE)
+    const dir = outDir('exp-roundtrip')
+    const targets = { docx: join(dir, 'sample.docx'), xlsx: join(dir, 'sample.xlsx'), pptx: join(dir, 'sample.pptx') }
+    const { app, page } = await launch({ files: [join(FIX, 'sample.pdf')], env: { EPDF_DISABLE_SOFFICE_DISCOVERY: '1', ...(useLo ? { EPDF_TOOL_SOFFICE: REAL_SOFFICE } : {}) } })
+    try {
+      await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
+      await stubDialogs(app, {})
+      for (const [ext, menu] of [['docx', 'Word (.docx)'], ['xlsx', 'Excel (.xlsx)'], ['pptx', 'PowerPoint (.pptx)']] as const) {
+        await pushSave(app, targets[ext])
+        await menuSub(app, 'File', 'Export To', menu)
+        const dlg = dialogOf(page, `Export to ${menu}`)
+        await dlg.getByRole('button', { name: /^Export/ }).click()
+        await expect(dlg.getByTestId('export-done')).toBeVisible({ timeout: 60_000 })
+        await dlg.getByRole('button', { name: 'Close' }).click()
+      }
+      for (const engine of useLo ? (['builtin', 'libreoffice'] as const) : (['builtin'] as const)) {
+        const folder = outDir(`exp-roundtrip-${engine}`)
+        await setStubFiles(app, [targets.docx, targets.xlsx, targets.pptx])
+        await app.evaluate((_e, f) => void ((globalThis as unknown as { __stub: { folder: string } }).__stub.folder = f), folder)
+        await menuClick(app, 'File', 'Create PDF from File…')
+        const dlg = dialogOf(page, 'Create PDF from files')
+        if (engine === 'libreoffice') await dlg.getByLabel(/LibreOffice \(if installed\)/).check()
+        else await dlg.getByLabel(/Built-in converter/).check()
+        await dlg.getByRole('button', { name: 'Create 3 PDFs…' }).click()
+        await expect(page.getByRole('tab', { name: /sample(-\w+)?\.pdf|sample \(\d\)\.pdf/ }).last()).toBeVisible({ timeout: 240_000 })
+        await expect.poll(() => readdirSync(folder).length, { timeout: 240_000 }).toBe(3)
+        const texts: Record<string, string> = {}
+        for (const n of readdirSync(folder)) texts[n] = (await readPdfFile(join(folder, n))).pages.map((pg) => pg.text).join('\n')
+        const all = Object.values(texts).join('\n')
+        // every export carries the sample's text through our writer AND back through the reader
+        expect((all.match(/Epdf sample page 1/g) ?? []).length, `${engine}: page 1 text in all three`).toBeGreaterThanOrEqual(3)
+        expect(all).toContain('Epdf sample page 5')
+        expect(all).toContain('needle')
+        await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click({ timeout: 2000 }).catch(() => undefined)
+      }
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
 
   test('cancelling the Save dialog writes nothing; with no document open the user is told', async () => {
     const target = join(outDir('exp-none'), 'sample.docx')

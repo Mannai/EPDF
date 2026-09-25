@@ -22,6 +22,9 @@ export interface Fragment {
   floats?: FloatSpec[]
   /** Table header rows, repeated at the top of every continuation slice. */
   repeat?: { height: number; ops: Op[] }
+  /** Space above the first line / below the last line that is part of `height` (paragraphs). Trailing space need not fit on the page. */
+  spaceBefore?: number
+  spaceAfter?: number
 }
 
 export interface LayoutContext {
@@ -122,7 +125,9 @@ export function splitFragment(f: Fragment, at: number): [Fragment, Fragment] {
     floats: f.floats,
     keepNext: false,
     breakBefore: f.breakBefore,
-    repeat: f.repeat
+    repeat: f.repeat,
+    spaceBefore: f.spaceBefore,
+    spaceAfter: 0
   }
   const tail: Fragment = {
     height: f.height - at,
@@ -130,7 +135,9 @@ export function splitFragment(f: Fragment, at: number): [Fragment, Fragment] {
     breaks: f.breaks.filter((b) => b > at + EPS).map((b) => b - at),
     softBreaks: f.softBreaks?.filter((b) => b > at + EPS).map((b) => b - at),
     keepNext: f.keepNext,
-    repeat: f.repeat
+    repeat: f.repeat,
+    spaceBefore: 0,
+    spaceAfter: f.spaceAfter
   }
   return [head, tail]
 }
@@ -615,7 +622,7 @@ function buildParagraphFragment(ctx: LayoutContext, props: ParaProps, lines: Lin
     if (n < 4) allowed = []
     else allowed = breaks.filter((_, i) => i + 1 >= 2 && n - (i + 1) >= 2)
   }
-  return { height: y + after, ops, breaks: allowed, keepNext: props.keepNext }
+  return { height: y + after, ops, breaks: allowed, keepNext: props.keepNext, spaceBefore: before, spaceAfter: after }
 }
 
 const LEADER_CHAR: Record<NonNullable<TabStop['leader']>, string> = { dot: '.', hyphen: '-', underscore: '_', middleDot: '·' }
@@ -901,8 +908,29 @@ export function tableFragments(ctx: LayoutContext, t: Table, avail: number): Fra
     const inner = h - cl.pad.top - cl.pad.bottom
     const dy = cl.cell.vAlign === 'center' ? Math.max(0, (inner - cl.frag.height) / 2) : cl.cell.vAlign === 'bottom' ? Math.max(0, inner - cl.frag.height) : 0
     ops.push(...shiftOps(cl.frag.ops, x, y + cl.pad.top + dy))
-    if (cl.frag.softBreaks) soft.push(...cl.frag.softBreaks.map((b) => b + y + cl.pad.top + dy))
-    soft.push(...cl.frag.breaks.map((b) => b + y + cl.pad.top + dy))
+  }
+  // A row may be split between two lines of its text (as Word/LibreOffice do), but only where EVERY cell of the
+  // row has a line boundary (or has already ended), so no line is cut in half. Rows touched by a row-spanning cell,
+  // rows with an exact height and "can't split" rows are never split.
+  const spanned = new Set<number>()
+  for (const cl of layouts) if (cl.rowSpan > 1) for (let r = cl.row; r < cl.row + cl.rowSpan; r++) spanned.add(r)
+  const byRow: CellLayout[][] = Array.from({ length: R }, () => [])
+  for (const cl of layouts) byRow[cl.row].push(cl)
+  for (let r = 0; r < R; r++) {
+    if (spanned.has(r) || rows[r].cantSplit || rows[r].height?.rule === 'exact' || byRow[r].length === 0) continue
+    const info = byRow[r].map((cl) => {
+      const h = rowY[r + 1] - rowY[r]
+      const inner = h - cl.pad.top - cl.pad.bottom
+      const dy = cl.cell.vAlign === 'center' ? Math.max(0, (inner - cl.frag.height) / 2) : cl.cell.vAlign === 'bottom' ? Math.max(0, inner - cl.frag.height) : 0
+      const top = rowY[r] + cl.pad.top + dy
+      return { end: top + cl.frag.height, lines: cl.frag.breaks.map((b) => top + b) }
+    })
+    const cand = new Set<number>()
+    for (const ci of info) for (const y of ci.lines) cand.add(Math.round(y * 100) / 100)
+    for (const y of cand) {
+      if (y <= rowY[r] + 0.5 || y >= rowY[r + 1] - 0.5) continue
+      if (info.every((ci) => y >= ci.end - 0.01 || ci.lines.some((l) => Math.abs(l - y) < 0.02))) soft.push(y)
+    }
   }
   // horizontal edges, merged across equal neighbours
   for (let r = 0; r <= R; r++) {
@@ -932,14 +960,7 @@ export function tableFragments(ctx: LayoutContext, t: Table, avail: number): Fra
   while (headerRows < R && rows[headerRows].header) headerRows++
   const height = rowY[R]
   const frag: Fragment = { height, ops, breaks: breaks.filter((b) => b > EPS && b < height - EPS), softBreaks: soft.filter((b) => b > EPS && b < height - EPS && !breaks.includes(b)) }
-  // cantSplit rows: no soft breaks inside them
-  if (frag.softBreaks) {
-    frag.softBreaks = frag.softBreaks.filter((b) => {
-      const r = rowY.findIndex((y, i) => i < R && b > y && b < rowY[i + 1])
-      return r < 0 || !rows[r].cantSplit
-    })
-    if (frag.softBreaks.length === 0) frag.softBreaks = undefined
-  }
+  if (frag.softBreaks && frag.softBreaks.length === 0) frag.softBreaks = undefined
   if (headerRows > 0 && headerRows < R) {
     const hh = rowY[headerRows]
     frag.repeat = { height: hh, ops: sliceOps(ops, 0, hh).filter((o) => !(o.t === 'line' && Math.abs(o.y1 - o.y2) < EPS && o.y1 > hh - EPS && false)) }

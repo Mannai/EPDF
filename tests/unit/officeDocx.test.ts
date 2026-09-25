@@ -27,6 +27,15 @@ describe('docx: text, styles and fonts', () => {
     expect(res.warnings).toEqual([])
   })
 
+  it('resolves theme fonts and colours the way Word files reference them (asciiTheme / themeColor)', async () => {
+    const theme = `<?xml version="1.0"?><a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:clrScheme name="x"><a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1><a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="44546A"/></a:dk2><a:lt2><a:srgbClr val="E7E6E6"/></a:lt2><a:accent1><a:srgbClr val="4472C4"/></a:accent1></a:clrScheme><a:fontScheme name="x"><a:majorFont><a:latin typeface="Courier New"/></a:majorFont><a:minorFont><a:latin typeface="Times New Roman"/></a:minorFont></a:fontScheme></a:themeElements></a:theme>`
+    const styles = `<?xml version="1.0"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi"/><w:sz w:val="24"/></w:rPr></w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:rPr><w:rFonts w:asciiTheme="majorHAnsi" w:hAnsiTheme="majorHAnsi"/><w:color w:val="000000" w:themeColor="accent1"/><w:sz w:val="32"/></w:rPr></w:style></w:styles>`
+    const res = await conv({ styles, theme, body: para('Body in the minor theme font') + para('Heading in the major theme font', { style: 'Heading1' }) })
+    const { pages } = await readPdf(res.bytes)
+    expect(pages[0].items.find((i) => i.str.startsWith('Body'))!.font).toMatch(/LiberationSerif/)
+    expect(pages[0].items.find((i) => i.str.startsWith('Heading'))!.font).toMatch(/LiberationMono/)
+  })
+
   it('applies character formatting: bold, italic, underline, strike, colour, superscript, caps, highlight', async () => {
     const res = await conv({
       body: p([r('plain '), r('bold ', { b: true }), r('italic ', { i: true }), r('both', { b: true, i: true }), r(' x', {}), r('2', { vert: 'superscript' }), r(' shout', { caps: true }), r(' hi', { highlight: 'yellow' })])
@@ -211,6 +220,22 @@ describe('docx: tables', () => {
     for (const pg of pages) expect(pg.text).toContain('HEADER A')
     const flat = flattenText(pages)
     for (let i = 1; i <= 120; i++) expect(flat).toContain(`row-${i} value ${i}`)
+  })
+
+  it('splits a row taller than a page between its lines (no half-empty pages) and never loses a line', async () => {
+    const lines = Array.from({ length: 250 }, (_, i) => para(`Boxed line ${i + 1}`, { spacing: 'w:after="0"' }))
+    const t = tbl([tr([tc(lines.join(''), { w: 9360 })])], [9360], { style: 'TableGrid' })
+    const res = await conv({ body: para('Before the box') + t + para('After the box') })
+    const { pages } = await readPdf(res.bytes)
+    expect(pages.length).toBeGreaterThanOrEqual(5)
+    const flat = flattenText(pages)
+    for (let i = 1; i <= 250; i++) expect(flat).toContain(`Boxed line ${i} `)
+    expect(flat).toContain('After the box')
+    // the box keeps flowing over pages: every page but the last is filled down to the bottom margin
+    for (const pg of pages.slice(0, -1)) {
+      const ys = pg.items.filter((it) => it.str.trim()).map((it) => it.y)
+      expect(Math.max(...ys)).toBeGreaterThan(792 - 72 - 20)
+    }
   })
 
   it('handles vertical merges and nested tables', async () => {

@@ -61,7 +61,7 @@ export async function loadSource(name: string, bytes: Uint8Array): Promise<PDFDo
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     if (/encrypt/i.test(msg)) {
-      throw new MergeError(name, `“${name}” is password protected, so it cannot be merged. Open it, remove the password (Save a copy without one), and add the copy instead.`)
+      throw new MergeError(name, `“${name}” is password protected or restricted, so it cannot be merged. Remove the protection first (open it, enter the password and save an unprotected copy), then add that copy.`)
     }
     throw new MergeError(name, `“${name}” is damaged or is not a valid PDF, so it cannot be merged (${msg}).`)
   }

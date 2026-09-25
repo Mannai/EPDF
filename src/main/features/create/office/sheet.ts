@@ -1,5 +1,6 @@
 import { throwIfCancelled, type ConvertEnv } from './env'
 import type { Face } from './fonts'
+import { generalFit, generalText } from './numfmt'
 import type { Hex, ImageData, Op, Page, Stroke } from './ops'
 
 /**
@@ -713,9 +714,17 @@ function drawBlock(env: ConvertEnv, sheet: SheetModel, geo: Geometry, block: Blo
     const cell = cellAt(sheet, r, c)
     return !cell || (cell.kind === 'empty' && !cell.text)
   }
-  const drawCell = (r: number, c: number, cell: SheetCell, rect: { x: number; y: number; w: number; h: number }): void => {
+  const drawCell = (r: number, c: number, cell0: SheetCell, rect: { x: number; y: number; w: number; h: number }): void => {
+    let cell = cell0
     if (!cell.text && !cell.runs?.length) return
     const st = cell.style
+    if (cell.kind === 'number' && cell.value !== undefined && !st.wrap && !st.shrink && cell.text === generalText(cell.value)) {
+      // "General" numbers show as many digits as the column allows (like Excel/LibreOffice), or an exponent form
+      const room = rect.w - 2 * PAD - st.indent * INDENT_PT
+      const font = runsOf(cell, cell.color)[0].font
+      const fitted = generalFit(cell.value, (t) => layoutRuns(env, [{ text: t, font }], 1e9, false)[0].w <= room + 0.01)
+      if (fitted !== null && fitted !== cell.text) cell = { ...cell, text: fitted, runs: undefined }
+    }
     const runs = runsOf(cell, cell.color)
     let inner = rect.w - 2 * PAD - st.indent * INDENT_PT
     let sizeScale = 1

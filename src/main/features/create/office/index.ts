@@ -70,10 +70,10 @@ export async function convertOffice(input: { name: string; bytes: Uint8Array }, 
         pages = paginateFlow(await readDocx(input.bytes, env), catalog, warnings, { signal: opts.signal, onProgress: scale(0.1, 0.7) })
         break
       case 'odt':
-        pages = paginateFlow(await readOdt(input.bytes, env), catalog, warnings, { signal: opts.signal, onProgress: scale(0.1, 0.7) })
+        pages = paginateFlow({ ...(await readOdt(input.bytes, env)), suppressSpaceBeforeAtPageTop: true }, catalog, warnings, { signal: opts.signal, onProgress: scale(0.1, 0.7) })
         break
       case 'rtf':
-        pages = paginateFlow(readRtf(input.bytes, env), catalog, warnings, { signal: opts.signal, onProgress: scale(0.1, 0.7) })
+        pages = paginateFlow({ ...readRtf(input.bytes, env), suppressSpaceBeforeAtPageTop: true }, catalog, warnings, { signal: opts.signal, onProgress: scale(0.1, 0.7) })
         break
       case 'xlsx':
         pages = await convertXlsx(input.bytes, { ...env, progress: scale(0.05, 0.7) })
