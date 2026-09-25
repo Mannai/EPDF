@@ -9,6 +9,10 @@ files:
   - out/**/*
   - package.json
   - '!**/*.map'
+  # OCR (tesseract.js-core): the six engines (plain / SIMD / relaxed-SIMD, each with and without the legacy models)
+  # are loaded from disk as `<name>.js` + `<name>.wasm`. The `.wasm.js` copies with the WebAssembly embedded as
+  # base64 are for browsers and never used in Node; dropping them saves ~25 MB.
+  - '!**/node_modules/tesseract.js-core/*.wasm.js'
 
 # better-sqlite3 v13 ships N-API prebuilds for win/mac/linux (x64 + arm64), so no compiler toolchain
 # (Visual Studio / Xcode) is needed and there is nothing to rebuild against Electron's ABI.
@@ -25,10 +29,22 @@ extraResources:
   - from: resources/fonts
     to: fonts
     filter: ['*.ttf', '*.txt']
+  # OCR: the English trained data (tessdata_fast, Apache-2.0) with its license. Other languages are downloaded on demand.
+  - from: resources/ocr
+    to: ocr
+    filter: ['*.traineddata', '*.txt']
 
-# Native modules cannot be loaded from inside an asar archive.
+# Native modules cannot be loaded from inside an asar archive. The OCR engine runs in worker threads that
+# tesseract.js starts from its own script file and that load the WebAssembly core from disk, so tesseract.js,
+# its core and the few modules its worker script requires must live outside the archive.
 asarUnpack:
   - '**/node_modules/better-sqlite3/**'
+  - '**/node_modules/tesseract.js/**'
+  - '**/node_modules/tesseract.js-core/**'
+  - '**/node_modules/wasm-feature-detect/**'
+  - '**/node_modules/regenerator-runtime/**'
+  - '**/node_modules/is-url/**'
+  - '**/node_modules/bmp-js/**'
 
 # Register as a handler for .pdf ("Open with", double-click, drag onto the app icon).
 fileAssociations:

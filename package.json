@@ -26,6 +26,7 @@
     "better-sqlite3": "^13.0.3",
     "fflate": "^0.8.3",
     "jpeg-js": "^0.4.4",
+    "tesseract.js": "^7.0.0",
     "utif2": "^4.1.0"
   },
   "devDependencies": {
