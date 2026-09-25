@@ -2,8 +2,12 @@
 
 A desktop PDF application (Electron + TypeScript + React). Works fully offline for all local features.
 
-**Status: Phase 1 complete** — Electron shell, secure IPC, tabs/windows, native menus, file associations, and the
-PDF viewer (feature 1). Later phases are listed at the bottom.
+**Status: Phases 1 and 2 complete** — the secure Electron shell and PDF viewer (Phase 1), plus form filling,
+signing, creating/combining/exporting, text and image editing, markup, page organization and printing
+(Phase 2). Later phases are listed at the bottom. Epdf is **self-contained**: nothing besides Epdf itself needs to
+be installed (see "Licensing and self-containment").
+
+Each feature has its own page in `docs/features/`; how to add a feature is in `docs/FEATURES.md`.
 
 ## Requirements
 
@@ -150,26 +154,57 @@ after a normal quit they are restored if **restoreOnLaunch** is on (default).
 - [x] Light/dark following the OS; crash recovery; remembers the last page per file
 - [x] Accessible UI: WAI-ARIA tabs/toolbar, keyboard operable, live page announcements, axe-core WCAG 2.1 A/AA clean
 
+## Phase 2 feature checklist
+
+Details, limits and manual test steps for each are in `docs/features/`.
+
+- [x] **Editing pipeline** — every edit is undoable; Save / Save As / Save a Copy; unsaved-changes dot; autosave to
+      a recovery folder with crash recovery; local version history with restore; close/quit guard
+- [x] **Form filling** and **flat-PDF typing** (`forms-signing.md`) · **visual signatures** stored encrypted (`forms-signing.md`)
+- [x] **Create PDF** from images (JPG/PNG/TIFF; HEIC via the OS decoder), web pages, and Office/OpenDocument/RTF/text
+      files with Epdf's own converter (`create-export.md`) · **Combine files** with drag/keyboard ordering
+- [x] **Export** to Word, Excel and PowerPoint, written by Epdf's own OOXML writers (`create-export.md`)
+- [x] **Edit text and images** in the page content, with an in-house content-stream engine (`edit-content.md`)
+- [x] **Comments and markup** saved as standard annotations, with a comments panel, replies and resolve (`markup.md`)
+- [x] **Page organizer**, extract, insert, split (ranges / size / bookmarks) and **printing** + Print to PDF (`pages-print.md`)
+
+## Testing
+
+`npm test` (unit, ~950 tests), `npm run test:e2e` (~170 end-to-end tests driving the real app). The packaged app is
+covered by `npm run dist:dir` + `npm run test:packaged` (see Packaging).
+
 ## Known limitations / not yet verified
 
-- **macOS is unverified**: the universal `.dmg` build, Dock menu and `open-file` handling are written but were not
-  run on a Mac.
+- **macOS and Linux are unverified**: the universal `.dmg` build, Dock menu, `open-file` handling, the macOS/Linux
+  HEIC decoders and the macOS/Linux key-storage backends used for signatures are written but were not run.
 - **Installers** (`.exe`/`.msi`) are configured, but only the unpacked build (`--dir`) has been produced and tested.
-- Password-protected PDFs: the prompt is implemented but has no automated test yet (needs an encrypted fixture,
-  which arrives with qpdf in Phase 3).
+  The Explorer/Finder right-click entries ("Convert to PDF", "Combine files") need installer work (Phase 5); the app
+  side (`--convert-to-pdf`, `--combine`) is done and tested.
+- **Never opened in Acrobat, Word/Excel/PowerPoint or Preview.** Output was validated structurally and rendered with
+  PDF.js; Office conversion fidelity was compared against LibreOffice, not Microsoft Office.
+- **Real-world PDFs**: the text/image editing engine was tested on generated files that imitate Word, Chrome and
+  LibreOffice output, not on real third-party files. Set `EPDF_CORPUS_DIR` to run its opt-in corpus test on your own.
+- **Physical printing** and the native print dialog were not exercised; printed pages are rasterized.
+- **Password-protected PDFs** can be opened but not yet edited, saved through Print to PDF, or combined (Phase 3 adds
+  Epdf's own encryption and decryption).
+- **HEIC** depends on the operating system's codec (Microsoft HEIF extension on Windows); everything else is built in.
+- Old binary Office formats (`.doc`, `.xls`, `.ppt`) are not converted; save them as `.docx/.xlsx/.pptx` first.
 - Drag-a-tab-out-of-the-window is not implemented; use **Document ▸ Move Tab to New Window**.
-- Printing arrives in Phase 2 (feature 10). "Show in folder" is available to the IPC layer but has no UI yet.
 
-## Licensing notes
+## Licensing and self-containment
 
-The project may be sold, so **AGPL components are avoided**: no MuPDF and no Ghostscript. Planned replacements:
-pdf-lib and PDF.js for structure/rendering, qpdf (Apache-2.0) for encryption and linearization, Tesseract
-(Apache-2.0) for OCR, LibreOffice (MPL-2.0) for Office conversion, and in-house code for true redaction, text
-editing and compression. PDF.js, pdf-lib, React, zod and zustand are permissively licensed (Apache-2.0 / MIT).
+Epdf may be sold, so **AGPL/GPL components are avoided**: no MuPDF, no Ghostscript, no `jszip` (GPL option).
+It is **self-contained**: an end user installs Epdf and nothing else. There is no dependency on LibreOffice,
+Tesseract, qpdf or any other installed program. Office conversion, OOXML export, content editing, and (in Phase 3)
+encryption and compression are Epdf's own code; OCR will use `tesseract.js` (WASM, Apache-2.0) bundled in the app.
+LibreOffice is only an *optional* higher-fidelity engine, used if the user already has it and chooses it.
+Bundled fonts (Liberation, Carlito, Caladea, Noto Sans, and several script fonts) are SIL OFL / Apache-2.0 with
+their license texts in `resources/fonts`. PDF.js, pdf-lib, React, zod, zustand, fflate, utif2 and fontkit are MIT or
+Apache-2.0.
 
 ## Roadmap
 
-- **Phase 2** — features 2–10: forms, signing, create/combine, edit text & images, markup, export, page organizer, print
-- **Phase 3** — features 12, 13, 14, 16, 18, 19, 20 and the local library (15)
+- **Phase 3** — features 12, 13, 14, 16, 18, 19, 20 and the local library (15): OCR (`tesseract.js`), compression and
+  encryption (in-house), scanning, form builder, true redaction, compare
 - **Phase 4** — cloud backend: signature requests (11), sharing (15), shared review (17)
 - **Phase 5** — headers/footers/watermarks (21), links & bookmarks (22), performance, installers, signing, auto-update
