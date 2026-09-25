@@ -219,12 +219,8 @@ const centerIn = (p: Box, b: Box, inset = 0.5): boolean => cx(p) > b.x0 + inset 
 class Detector {
   private seq = 0
   readonly proposals: Proposal[] = []
-  private readonly names = new Set<string>()
 
-  constructor(
-    private readonly pc: PageContent,
-    private readonly takenNames: Set<string>
-  ) {}
+  constructor(private readonly pc: PageContent) {}
 
   private id(): string {
     return `p${this.pc.pageIndex}-${++this.seq}`
@@ -852,6 +848,17 @@ const shortKind: Record<DetectKind, string> = {
   signature: 'Signature'
 }
 
+/** "Full name:" -> "Full name" (labels shown to the user and stored as tooltips). */
+export function cleanLabel(text: string | undefined): string | undefined {
+  if (text === undefined) return undefined
+  const t = text
+    .replace(/[\s:：*._…-]+$/u, '')
+    .replace(/^\s*[•▪▫□☐■○●◦·*–—-]+\s*/u, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return t === '' ? undefined : t
+}
+
 /** Detects fields on one page. `takenNames` (existing and already proposed names) keeps names unique. */
 export function detectPage(pc: PageContent, takenNames: Set<string> = new Set()): DetectResult {
   const shapes = pc.hlines.length + pc.vlines.length + pc.rects.length + pc.circles.length
@@ -870,9 +877,13 @@ export function detectPage(pc: PageContent, takenNames: Set<string> = new Set())
   if (textCount === 0 && shapes === 0) {
     return { pageIndex: pc.pageIndex, status: 'empty', note: 'There is no text or line art on this page to analyse.', proposals: [] }
   }
-  const d = new Detector(pc, takenNames)
+  const d = new Detector(pc)
   d.run()
   const kept = suppress(d.proposals).sort((a, b) => b.rect.y1 - a.rect.y1 || a.rect.x0 - b.rect.x0)
+  for (const p of kept) {
+    p.label = cleanLabel(p.label)
+    p.buttons?.forEach((b) => (b.label = cleanLabel(b.label)))
+  }
   // Names, top to bottom.
   for (const p of kept) p.name = nameFor(p.label && !(p.kind === 'radio' && !p.label) ? p.label : undefined, shortKind[p.kind], takenNames)
   let note: string | undefined

@@ -16,6 +16,12 @@ export type Rotation = 0 | 90 | 180 | 270
 
 export const normRotation = (deg: number): Rotation => ((((Math.round((deg || 0) / 90) * 90) % 360) + 360) % 360) as Rotation
 
+/** The frame of a pdf-lib page (its crop box and /Rotate). */
+export function frameForPage(page: { getCropBox(): { x: number; y: number; width: number; height: number }; getRotation(): { angle: number } }): PageFrame {
+  const cb = page.getCropBox()
+  return new PageFrame([cb.x, cb.y, cb.x + cb.width, cb.y + cb.height], normRotation(page.getRotation().angle))
+}
+
 export class PageFrame {
   readonly width: number
   readonly height: number
