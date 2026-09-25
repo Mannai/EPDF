@@ -96,10 +96,18 @@ export function registerIpcHandlers(c: Controller): void {
     callFeatureChannel(req.channel, req.payload, { event: e, window: winOf(e.sender.id) })
   )
 
+  handle('window:closeAck', (_req, e) => {
+    const w = winOf(e.sender.id)
+    if (w) c.windows.ackClose(w)
+  })
+
   handle('window:close', (req, e) => {
     const w = winOf(e.sender.id)
     if (!w) return
-    if (req?.cancel) return c.cancelPendingQuit()
+    if (req?.cancel) {
+      c.windows.cancelClose(w)
+      return c.cancelPendingQuit()
+    }
     if (req?.discard) w.forceClose = true
     w.win.close()
   })

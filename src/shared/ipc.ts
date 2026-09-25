@@ -1,5 +1,6 @@
 import type { z } from 'zod'
 import {
+  CloseAckRequestSchema,
   DetachTabRequestSchema,
   DocIdRequestSchema,
   DroppedPathsRequestSchema,
@@ -42,6 +43,7 @@ export const INVOKE = {
   'tabs:detach': { req: DetachTabRequestSchema },
   'window:ready': { req: SetDefaultRequestSchema },
   'window:close': { req: ForceCloseRequestSchema },
+  'window:closeAck': { req: CloseAckRequestSchema },
   'settings:getAll': { req: SetDefaultRequestSchema },
   'settings:set': { req: SetSettingRequestSchema },
   'settings:get': { req: SettingsGetRequestSchema },
@@ -77,6 +79,7 @@ export interface InvokeResponses {
   'tabs:detach': void
   'window:ready': void
   'window:close': void
+  'window:closeAck': void
   'settings:getAll': Settings
   'settings:set': void
   'settings:get': Settings[keyof Settings]
@@ -122,6 +125,8 @@ export interface EpdfApi {
   closeWindow(discard?: boolean): Promise<void>
   /** The user chose Cancel in an unsaved-changes prompt: stay open (and abandon a quit that was waiting). */
   cancelClose(): Promise<void>
+  /** Tells main the close request arrived and is being handled (stops the "renderer is hung" watchdog). */
+  ackClose(): Promise<void>
   getSettings(): Promise<Settings>
   setSetting(req: InvokeRequest<'settings:set'>): Promise<void>
   getAppInfo(): Promise<AppInfo>

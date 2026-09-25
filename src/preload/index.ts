@@ -29,6 +29,7 @@ const api: EpdfApi = {
   ready: () => invoke('window:ready'),
   closeWindow: (discard) => invoke('window:close', { discard }),
   cancelClose: () => invoke('window:close', { cancel: true }),
+  ackClose: () => invoke('window:closeAck'),
   getSettings: () => invoke('settings:getAll'),
   setSetting: (req) => invoke('settings:set', req),
   getAppInfo: () => invoke('app:info'),

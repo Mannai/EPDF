@@ -13,7 +13,16 @@ export interface ManagedWindow {
   tabs: TabReport
   /** Set once the renderer has confirmed (save/discard) so the next close goes through. */
   forceClose: boolean
+  /** Watchdog: if the renderer never acknowledges a close request the window is closed anyway. */
+  closeAckTimer?: NodeJS.Timeout
+  /** A close request is waiting on the renderer (cleared when the user cancels or the window closes). */
+  closePending: boolean
+  /** Electron reported the renderer as hung; it can't answer prompts, so closing must not wait for it. */
+  unresponsive: boolean
 }
+
+/** How long a renderer gets to acknowledge a close request before we assume it is hung. */
+export const CLOSE_ACK_TIMEOUT_MS = 2500
 
 export class WindowManager {
   private windows = new Map<number, ManagedWindow>()
@@ -42,7 +51,15 @@ export class WindowManager {
         spellcheck: false
       }
     })
-    const managed: ManagedWindow = { win, ready: false, queue: [], tabs: { tabs: [], activeDocId: null }, forceClose: false }
+    const managed: ManagedWindow = {
+      win,
+      ready: false,
+      queue: [],
+      tabs: { tabs: [], activeDocId: null },
+      forceClose: false,
+      closePending: false,
+      unresponsive: false
+    }
     this.windows.set(win.id, managed)
 
     lockDownWebContents(win.webContents)
@@ -51,16 +68,42 @@ export class WindowManager {
       // The renderer is the source of truth for unsaved edits (main's copy of the dirty flag can lag
       // behind by a debounce), so a window that has documents open always asks it before closing. The
       // renderer replies with `window:close` immediately if nothing is dirty, or prompts first.
-      const canAsk = managed.ready && managed.tabs.tabs.length > 0 && !win.webContents.isCrashed()
+      const canAsk =
+        managed.ready && managed.tabs.tabs.length > 0 && !win.webContents.isCrashed() && !managed.unresponsive
       if (!managed.forceClose && canAsk) {
         e.preventDefault()
+        managed.closePending = true
         this.send(managed, 'window:closeRequested', undefined)
         this.onCloseBlocked?.(managed)
+        // A window must never get stuck: a renderer that is hung, crashed or broken cannot answer, so if
+        // it does not acknowledge within a couple of seconds we close anyway. (Unsaved edits are still in
+        // the autosaved recovery copy and are offered back on the next launch.)
+        if (!managed.closeAckTimer) {
+          managed.closeAckTimer = setTimeout(() => {
+            managed.closeAckTimer = undefined
+            if (win.isDestroyed()) return
+            managed.forceClose = true
+            win.close()
+          }, CLOSE_ACK_TIMEOUT_MS)
+        }
         return
       }
+      this.clearCloseWatchdog(managed)
       this.onBounds?.(win.getNormalBounds())
     })
+    // An unresponsive renderer cannot answer a close request either.
+    win.on('unresponsive', () => {
+      managed.unresponsive = true
+      if (managed.closePending) {
+        managed.forceClose = true
+        win.close()
+      }
+    })
+    win.on('responsive', () => {
+      managed.unresponsive = false
+    })
     win.on('closed', () => {
+      this.clearCloseWatchdog(managed)
       this.windows.delete(win.id)
       this.onClosed?.(managed)
     })
@@ -69,6 +112,22 @@ export class WindowManager {
     if (devUrl) void win.loadURL(devUrl)
     else void win.loadURL(`${APP_ORIGIN}/index.html`)
     return managed
+  }
+
+  /** The renderer received the close request and is handling it (possibly showing a prompt): stop the watchdog. */
+  ackClose(w: ManagedWindow): void {
+    this.clearCloseWatchdog(w)
+  }
+
+  /** The user backed out of closing this window. */
+  cancelClose(w: ManagedWindow): void {
+    w.closePending = false
+    this.clearCloseWatchdog(w)
+  }
+
+  private clearCloseWatchdog(w: ManagedWindow): void {
+    if (w.closeAckTimer) clearTimeout(w.closeAckTimer)
+    w.closeAckTimer = undefined
   }
 
   get(id: number): ManagedWindow | undefined {

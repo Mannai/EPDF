@@ -309,6 +309,53 @@ test.describe('unsaved-changes safety', () => {
     }
   })
 
+  test('a window whose page is frozen still closes (it can never get stuck)', async () => {
+    const { app, page } = await launch({ files: [copyFixture('sample.pdf')] })
+    try {
+      await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
+      // Hang the renderer's main thread for longer than main's acknowledgement watchdog.
+      void page.evaluate(() => {
+        const end = Date.now() + 9000
+        while (Date.now() < end) {
+          /* spin */
+        }
+      }).catch(() => undefined)
+      await new Promise((r) => setTimeout(r, 300))
+      const t0 = Date.now()
+      const closed = page.waitForEvent('close', { timeout: 7000 })
+      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
+      await closed
+      expect(Date.now() - t0).toBeLessThan(6000)
+    } finally {
+      await app.close().catch(() => undefined)
+    }
+  })
+
+  test('repeated close attempts while the prompt is open show one prompt and never wedge the window', async () => {
+    const { app, page } = await launch({ files: [copyFixture('sample.pdf')] })
+    try {
+      await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
+      await menuClick(app, 'Document', 'Rotate Page Clockwise')
+      await expect(dot(page)).toBeVisible()
+      for (let i = 0; i < 4; i++) await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
+      const dlg = page.getByRole('dialog', { name: /Save changes to “sample\.pdf”\?/ })
+      await expect(dlg).toBeVisible()
+      await page.waitForTimeout(3500) // longer than the watchdog: an acknowledged prompt must NOT be force-closed
+      await expect(dlg).toHaveCount(1)
+      expect(page.isClosed()).toBe(false)
+
+      await dlg.getByRole('button', { name: 'Cancel' }).click()
+      await expect(page.getByRole('dialog')).toHaveCount(0) // exactly one prompt was queued, none left over
+      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
+      await expect(dlg).toBeVisible() // and the window can be asked again
+      const closed = page.waitForEvent('close')
+      await dlg.getByRole('button', { name: 'Don’t Save' }).click()
+      await closed
+    } finally {
+      await app.close().catch(() => undefined)
+    }
+  })
+
   test('a window with no unsaved edits closes immediately', async () => {
     const { app, page } = await launch({ files: [copyFixture('sample.pdf')] })
     try {

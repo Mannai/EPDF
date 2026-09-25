@@ -62,6 +62,7 @@ export const FeatureCallRequestSchema = z.object({
   channel: z.string().regex(/^[a-z][a-zA-Z0-9]*:[a-zA-Z][a-zA-Z0-9]*$/).max(80),
   payload: z.unknown()
 })
+export const CloseAckRequestSchema = z.undefined().optional()
 /** `discard`: close now (the renderer already asked). `cancel`: the user backed out of closing/quitting. */
 export const ForceCloseRequestSchema = z.object({ discard: z.boolean().optional(), cancel: z.boolean().optional() }).optional()
 
