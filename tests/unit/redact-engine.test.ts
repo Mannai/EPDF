@@ -8,8 +8,6 @@ import { buildPdf, helvetica, register, stream, subsetSimpleFont, toUnicodeCMap,
 
 const N = (s: string): PDFName => PDFName.of(s)
 
-type Build = (doc: PDFDocument) => Record<string, PDFRef | Lit> | void
-
 /** One-page document with the given content; `setup` may add fonts/xobjects and returns the Resources entries. */
 async function page(content: string | string[], setup?: (doc: PDFDocument) => { fonts?: Record<string, PDFRef | Lit>; xobjects?: Record<string, PDFRef | Lit>; extra?: Record<string, unknown> }): Promise<{ doc: PDFDocument; bytes: Uint8Array }> {
   const { doc } = await buildPdf([{ content, fonts: {} }])
