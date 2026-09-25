@@ -47,6 +47,9 @@ describe('language catalogue', () => {
     expect(BeginRequestSchema.safeParse({ languages: ['eng'], total: 0 }).success).toBe(false)
     expect(AddPageRequestSchema.safeParse({ sessionId: 'abcdefgh', index: 0, image: new Uint8Array(3) }).success).toBe(true)
     expect(AddPageRequestSchema.safeParse({ sessionId: 'abcdefgh', index: 0, image: 'not bytes' }).success).toBe(false)
+    expect(AddPageRequestSchema.safeParse({ sessionId: 'abcdefgh', index: 0, image: { length: 3 } }).success).toBe(false)
+    expect(AddPageRequestSchema.safeParse({ sessionId: 'short', index: 0, image: new Uint8Array(3) }).success).toBe(false)
+    expect(AddPageRequestSchema.safeParse({ sessionId: 'abcdefgh', index: -1, image: new Uint8Array(3) }).success).toBe(false)
   })
 
   it('formats sizes', () => {

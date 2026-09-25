@@ -115,7 +115,9 @@ export const OCR_CHANNELS = {
 
 export const OCR_JOBS = { run: 'ocr:run', download: 'ocr:download' } as const
 
-const BytesSchema = z.custom<Uint8Array>((v) => v instanceof Uint8Array, 'Expected bytes')
+/** No page picture comes near this (a 30-megapixel PNG is a few MB); it only bounds what a bad caller can send. */
+export const MAX_IMAGE_BYTES = 256 * 1024 * 1024
+const BytesSchema = z.custom<Uint8Array>((v) => v instanceof Uint8Array && v.byteLength <= MAX_IMAGE_BYTES, 'Expected bytes (at most 256 MB)')
 const SessionIdSchema = z.string().min(8).max(64)
 
 export const BeginRequestSchema = z.object({ languages: LanguageListSchema, total: z.number().int().min(1).max(100000) })
