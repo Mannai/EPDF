@@ -126,9 +126,11 @@ export function CompressDialog(): JSX.Element | null {
       <div className="mb-3 rounded-md border border-line p-3" aria-live="polite" data-testid="compress-sizes">
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
           <dt className="text-ink-muted">Current size</dt>
-          <dd data-testid="size-before">{fmtSize(s.originalSize)}</dd>
+          <dd data-testid="size-before" data-bytes={s.originalSize}>
+            {fmtSize(s.originalSize)}
+          </dd>
           <dt className="text-ink-muted">{out ? 'New size' : 'Estimated size'}</dt>
-          <dd data-testid="size-after">
+          <dd data-testid="size-after" data-bytes={afterBytes} data-exact={out ? 'true' : 'false'}>
             {s.phase === 'loading' ? 'Analysing…' : out?.kept === 'original' ? `${fmtSize(out.originalSize)} (unchanged)` : `${out ? '' : '≈ '}${fmtSize(afterBytes)}`}
           </dd>
           <dt className="text-ink-muted">Saved</dt>
