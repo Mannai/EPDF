@@ -1,4 +1,4 @@
-import { PDFCheckBox, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFTextField, type PDFDocument } from 'pdf-lib'
+import { PDFCheckBox, PDFDropdown, PDFName, PDFOptionList, PDFRadioGroup, PDFTextField, type PDFDocument } from 'pdf-lib'
 import { fontForText, helvetica, unicodeFont, unsupportedChars, UnsupportedCharactersError, type UnicodeFontProvider } from './fonts'
 import { describeField, type FieldModel, type FieldValue } from './model'
 
@@ -94,6 +94,8 @@ export async function applyFieldValue(pdf: PDFDocument, name: string, value: Fie
     await fontForText(pdf, v as string, provider)
     if ((v as string) === '') field.setText(undefined)
     else field.setText(v as string)
+    // A rich-text value (/RV) would override the plain value in some readers: the edit replaces both.
+    field.acroField.dict.delete(PDFName.of('RV'))
   } else if (field instanceof PDFCheckBox) {
     if (v) field.check()
     else field.uncheck()

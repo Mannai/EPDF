@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { UnsupportedCharactersError } from '../../src/renderer/src/features/forms/fonts'
 import { extractFormModel, type FormModel } from '../../src/renderer/src/features/forms/model'
 import { FormValueError, applyFieldValue, validateValue } from '../../src/renderer/src/features/forms/values'
-import { createFormsPdf } from '../fixtures/forms-signing.mjs'
+import { createEncryptedFormPdf, createFormsPdf } from '../fixtures/forms-signing.mjs'
 
 const noto = new Uint8Array(readFileSync(join('resources', 'fonts', 'NotoSans-Regular.ttf')))
 const provider = async (): Promise<Uint8Array> => noto
@@ -35,6 +35,12 @@ const contentsOf = (s: PDFStream): string => {
   const raw = s as unknown as { contents?: Uint8Array }
   return Buffer.from(raw.contents ? decodePDFRawStream(s as never).decode() : s.getContents()).toString('latin1')
 }
+
+describe('encrypted documents', () => {
+  it('cannot be read or edited by pdf-lib (the app shows the form read-only and explains why)', async () => {
+    await expect(PDFDocument.load(createEncryptedFormPdf(), { updateMetadata: false })).rejects.toThrow(/encrypt/i)
+  })
+})
 
 describe('validateValue', () => {
   it('enforces MaxLen', () => {
@@ -160,6 +166,15 @@ describe('applyFieldValue: real PDF output', () => {
     const pdf = await PDFDocument.load(bytes)
     await expect(applyFieldValue(pdf, 'full_name', '你好', provider)).rejects.toBeInstanceOf(UnsupportedCharactersError)
     expect(pdf.getForm().getTextField('full_name').getText()).toBeUndefined()
+  })
+
+  it('drops a stale rich-text value (/RV) so no reader shows the old text', async () => {
+    const pdf = await PDFDocument.load(bytes)
+    const dict = pdf.getForm().getTextField('notes').acroField.dict
+    dict.set(PDFName.of('RV'), pdf.context.obj('<body>old</body>'))
+    await applyFieldValue(pdf, 'notes', 'new text', provider)
+    expect(dict.get(PDFName.of('RV'))).toBeUndefined()
+    expect(pdf.getForm().getTextField('notes').getText()).toBe('new text')
   })
 
   it('a multiline value keeps its line breaks', async () => {

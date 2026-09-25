@@ -1,5 +1,5 @@
 import type { SignatureKind } from '@shared/features/sign'
-import { useEffect, useRef, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useMemo, useRef, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { create } from 'zustand'
 import { degrees } from 'pdf-lib'
 import { editPdf } from '../../edit/session'
@@ -10,6 +10,7 @@ import type { PageOverlayProps } from '../api'
 import { dateLabel, drawDateAt } from '../forms/draw'
 import { loadUnicodeFont } from '../forms/fontClient'
 import { PageGeometry, geometryOf, normalizeRotation, type Matrix } from '../forms/geometry'
+import { isolateViewerKeys } from '../forms/keys'
 import { VISUAL_SIGNATURE_NOTICE } from './SignatureDialog'
 import { selectedItem, useSignatures, type SignatureItem } from './store'
 
@@ -84,7 +85,8 @@ export async function commitPlacement(): Promise<boolean> {
 
 /** Ribbon controls for the Sign / Initials tools. */
 export function SignOptions({ kind }: { kind: SignatureKind }): JSX.Element {
-  const items = useSignatures((s) => s.items.filter((i) => i.kind === kind))
+  const all = useSignatures((s) => s.items)
+  const items = useMemo(() => all.filter((i) => i.kind === kind), [all, kind])
   const selected = useSignatures((s) => s.selected[kind])
   const encryption = useSignatures((s) => s.encryptionAvailable)
   const withDate = useSignatures((s) => s.withDate)
@@ -100,7 +102,7 @@ export function SignOptions({ kind }: { kind: SignatureKind }): JSX.Element {
       {items.length > 0 ? (
         <label className="flex items-center gap-1 text-xs">
           {kind === 'signature' ? 'Signature' : 'Initials'}
-          <select className="field h-7 max-w-[10rem] px-1" value={selected ?? ''} onChange={(e) => useSignatures.getState().select(kind, Number(e.target.value))}>
+          <select className="field h-7 max-w-[10rem] px-1" aria-label={kind === 'signature' ? 'Signature to place' : 'Initials to place'} value={selected ?? ''} onChange={(e) => useSignatures.getState().select(kind, Number(e.target.value))}>
             {items.map((i) => (
               <option key={i.id} value={i.id}>
                 {i.name}
@@ -174,6 +176,7 @@ function Draft({ docId, pageIndex, viewport, scale }: PageOverlayProps): JSX.Ele
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
+    isolateViewerKeys(e) // the viewer would otherwise turn the arrow keys into page navigation
     const step = e.shiftKey ? 10 : 1
     const moves: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }
     if (e.key in moves) {

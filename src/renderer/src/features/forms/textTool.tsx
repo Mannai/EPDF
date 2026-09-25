@@ -8,6 +8,7 @@ import type { PageOverlayProps } from '../api'
 import { DEFAULT_TEXT_SIZE, LINE_HEIGHT, dateLabel, drawStamp, drawTextBlock, type StampKind } from './draw'
 import { loadUnicodeFont } from './fontClient'
 import { PageGeometry, geometryOf, normalizeRotation, type Matrix } from './geometry'
+import { isolateViewerKeys } from './keys'
 
 /**
  * "Add text" and the stamp tools (check, cross, dot, date) for flat PDFs. Everything is drawn into the page
@@ -157,6 +158,7 @@ function DraftBox({ docId, pageIndex, viewport, scale }: PageOverlayProps): JSX.
     e.currentTarget.releasePointerCapture?.(e.pointerId)
   }
   const nudge = (kind: 'move' | 'resize') => (e: KeyboardEvent<HTMLElement>) => {
+    isolateViewerKeys(e)
     const step = e.shiftKey ? 10 : 2
     const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key]
     if (!d) return
@@ -194,6 +196,7 @@ function DraftBox({ docId, pageIndex, viewport, scale }: PageOverlayProps): JSX.
         spellCheck={false}
         onChange={(e) => patch({ text: e.target.value })}
         onKeyDown={(e) => {
+          isolateViewerKeys(e)
           if (e.key === 'Escape') {
             e.stopPropagation()
             cancelTextDraft()

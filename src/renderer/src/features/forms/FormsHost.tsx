@@ -101,7 +101,7 @@ export function FormsHost(): JSX.Element | null {
       </span>
       <button
         type="button"
-        className="btn h-7 whitespace-nowrap px-2 text-xs aria-pressed:border-accent aria-pressed:bg-accent/15 aria-pressed:text-accent"
+        className="btn h-7 whitespace-nowrap px-2 text-xs aria-pressed:border-accent aria-pressed:bg-accent/25"
         aria-pressed={highlight}
         onClick={() => useForms.getState().toggleHighlight()}
       >

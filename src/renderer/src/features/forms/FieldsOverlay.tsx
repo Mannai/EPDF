@@ -6,6 +6,7 @@ import './forms.css'
 import { geometryOf, type PageGeometry } from './geometry'
 import type { FieldModel, FieldValue, WidgetModel } from './model'
 import { stepStop, tabStops, type Stop } from './tabOrder'
+import { isolateViewerKeys } from './keys'
 import { commitField, effectiveValue, useForms } from './store'
 
 /**
@@ -92,22 +93,29 @@ function TextWidget(p: WidgetProps): JSX.Element {
   const { docId, field, widget } = p
   const ref = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
   const [draft, setDraft] = useState<string | null>(null)
+  const abandon = useRef(false) // Escape: the blur that follows must not commit
   useFocusOnRequest(docId, widget.key, ref)
   const shown = draft ?? (typeof p.value === 'string' ? p.value : '')
   const { style } = boxStyle(p)
 
   const finish = (): void => {
+    if (abandon.current) {
+      abandon.current = false
+      setDraft(null)
+      return
+    }
     if (draft === null) return
     const v = draft
     setDraft(null)
     void commitField(docId, field, v)
   }
   const onKeyDown = (e: KeyboardEvent): void => {
+    isolateViewerKeys(e)
     if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey) {
       if (moveFocus(docId, widget.key, e.shiftKey ? -1 : 1)) e.preventDefault()
     } else if (e.key === 'Escape') {
       e.stopPropagation()
-      setDraft(null)
+      abandon.current = true
       ;(e.currentTarget as HTMLElement).blur()
     } else if (e.key === 'Enter' && (!field.multiline || e.ctrlKey || e.metaKey)) {
       e.preventDefault()
@@ -170,6 +178,7 @@ function CheckWidget(p: WidgetProps): JSX.Element {
         if (field.readOnly) e.preventDefault()
       }}
       onKeyDown={(e) => {
+        isolateViewerKeys(e)
         if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey && moveFocus(docId, widget.key, e.shiftKey ? -1 : 1)) e.preventDefault()
       }}
     />
@@ -180,11 +189,13 @@ function ChoiceWidget(p: WidgetProps): JSX.Element {
   const { docId, field, widget } = p
   const ref = useRef<HTMLSelectElement & HTMLInputElement>(null)
   const [draft, setDraft] = useState<string | null>(null)
+  const abandon = useRef(false)
   useFocusOnRequest(docId, widget.key, ref)
   const { style, scale } = boxStyle(p)
   const isList = field.kind === 'list'
   const listId = `${docId}-${field.name}-${widget.key}-opts`.replace(/[^A-Za-z0-9_-]/g, '_')
   const onKeyDown = (e: KeyboardEvent): void => {
+    isolateViewerKeys(e)
     if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey) {
       if (moveFocus(docId, widget.key, e.shiftKey ? -1 : 1)) e.preventDefault()
     }
@@ -213,18 +224,24 @@ function ChoiceWidget(p: WidgetProps): JSX.Element {
           {...aria}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={() => {
+            if (abandon.current) {
+              abandon.current = false
+              setDraft(null)
+              return
+            }
             if (draft === null) return
             const v = draft
             setDraft(null)
             void commitField(docId, field, v)
           }}
           onKeyDown={(e) => {
+            isolateViewerKeys(e)
             if (e.key === 'Enter') {
               e.preventDefault()
               e.currentTarget.blur()
             } else if (e.key === 'Escape') {
               e.stopPropagation()
-              setDraft(null)
+              abandon.current = true
               e.currentTarget.blur()
             } else onKeyDown(e)
           }}

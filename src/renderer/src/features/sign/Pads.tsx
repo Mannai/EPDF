@@ -117,6 +117,7 @@ export function DrawPad({ onChange }: PadProps): JSX.Element {
         role="img"
         aria-label="Signature drawing area. Draw with a mouse, trackpad, touch or pen. If you can’t draw, use the Type or Import tabs instead."
         data-testid="signature-pad"
+        tabIndex={-1}
         className="block w-full max-w-[560px] cursor-crosshair rounded-md border border-line bg-white"
         style={{ aspectRatio: `${PAD_W} / ${PAD_H}`, touchAction: 'none' }}
         onPointerDown={onDown}

@@ -157,7 +157,7 @@ function DialogBody({ close }: { close(): void }): JSX.Element {
           <legend className="sr-only">What to create</legend>
           {(['signature', 'initials'] as const).map((k) => (
             <label key={k} className="flex items-center gap-1">
-              <input type="radio" name="sig-kind" checked={kind === k} onChange={() => setKind(k)} />
+              <input type="radio" name="sig-kind" autoFocus={kind === k} checked={kind === k} onChange={() => setKind(k)} />
               {k === 'signature' ? 'Signature' : 'Initials'}
             </label>
           ))}
