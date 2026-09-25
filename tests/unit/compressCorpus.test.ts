@@ -71,14 +71,18 @@ describe('fixtures from every feature survive every preset', () => {
 
   it('a truncated file gives a readable error or a valid result, never a crash', async () => {
     const good = new Uint8Array(readFileSync(join(dir, 'heavy.pdf')))
+    let refused = 0
     for (const cut of [0.1, 0.5, 0.9]) {
       const bytes = good.subarray(0, Math.floor(good.length * cut))
       try {
         const r = await compressPdf(bytes, PRESETS.balanced, { codec: pureCodec })
         expect(r.bytes.length).toBeLessThanOrEqual(bytes.length)
       } catch (err) {
-        expect((err as Error).message).toMatch(/could not be read|Could not write/)
+        refused++
+        expect((err as Error).message).toMatch(/could not be read/)
       }
     }
+    // Damaged files are refused (and so left exactly as they are) rather than "repaired" into a file that silently lacks parts.
+    expect(refused).toBeGreaterThanOrEqual(1)
   })
 })

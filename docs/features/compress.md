@@ -120,7 +120,31 @@ native dialog, main hands back opaque tokens, results are created exclusively ne
 The pipeline finishes by **re-loading its own output** with pdf-lib and checking the page count; on any failure, or if the result is
 not smaller, the original bytes are returned untouched.
 
+## Measured results
+
+Real JPEG photographs (1920 x 1200, quality about 97, 0.5 MB, taken from the Windows wallpaper folder and embedded on one page):
+
+| Placed at | High | Balanced | Smallest |
+|---|---|---|---|
+| 200 dpi | 68 % smaller | 86 % | 94 % |
+| 300 dpi | 68 % | 92 % | 97 % |
+
+Other fixtures (numbers are from the tests, see the e2e log lines `[ratio]`, `[stress]`, `[visual]`):
+
+* 3-page report with a Flate photo, a 400 dpi JPEG, a duplicated picture and a graphic (4.18 MB): High 0.41 MB (90 %), Balanced
+  0.05 MB (99 %), Smallest 0.01 MB (100 %). The pictures are synthetic smooth noise, which is far easier to compress than real
+  photographs: treat these as upper bounds. Rendered difference from the original (mean absolute pixel difference of 255):
+  0.0-0.6 for whole pages, 0.6 / 1.4 / 2.0 inside the photo for High / Balanced / Smallest.
+* Fully embedded Noto Sans (620 KB font, 4 short pages): 0.32 MB -> 0.06 MB with *Smallest* (fonts trimmed), rendered text
+  pixel-identical.
+* 24 pages, each an incompressible 1800 x 1200 photo at 300 dpi: **139 MB -> 2.2 MB in 3-5 s**, longest gap between animation
+  frames of the UI while it ran: about 30 ms (the work is in a Web Worker).
+* Documents that are only text (e.g. the 500-page `large.pdf`): about 1 % (metadata, object streams); nothing else to remove.
+
 ## Limits and honest caveats
+
+* Damaged files are refused, not repaired: the parser is strict, so a file with unreadable objects is reported as damaged and left
+  exactly as it is (a tolerant parse would rewrite it without the parts it could not read).
 
 * Reducing a document rewrites the whole file: digital signatures no longer verify (the dialog warns), incremental-update history
   is dropped, and byte offsets change.
@@ -128,7 +152,10 @@ not smaller, the original bytes are returned untouched.
 * The estimate is a heuristic. On the synthetic fixtures it is within roughly 0.4x–4x of the real result; the exact size is always
   shown after the run.
 * Memory: parsing plus rewriting needs several times the file size in the worker; files over 1 GB are refused. A worker that runs
-  out of memory is reported as an error (very large images can still exhaust the renderer's memory).
+  out of memory is reported as an error (very large images can still exhaust the renderer's memory). A stream that would
+  inflate to more than 768 MB (a decompression bomb) is treated as undecodable and left alone.
+* Verified with the production build (`out/`, strict CSP, custom protocol) only; the worker is an ordinary Vite `?worker` asset
+  and needs no `extraResources`, but no electron-builder package was run here.
 * JPEG: 8-bit Huffman JPEG only (no arithmetic / 12-bit / lossless); such images are left as they are.
 * **Linearization ("Fast Web View") is NOT implemented.** A spec-correct linearized file needs hint tables and first-page
   ordering that we could not validate against an independent reference (qpdf is not allowed and none is available here); an

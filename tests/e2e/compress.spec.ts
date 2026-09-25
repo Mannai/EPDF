@@ -1,8 +1,8 @@
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import fontkit from '@pdf-lib/fontkit'
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFString, StandardFonts, rgb } from 'pdf-lib'
 import { pureCodec } from '../../src/renderer/src/features/compress/pdf/codec'
@@ -243,6 +243,7 @@ test.describe('Reduce File Size', () => {
         const after = await runPreset(page, preset)
         const before = await bytesOf(page, 'size-before')
         expect(after).toBeLessThan(before)
+        console.log(`[ratio] ${preset}: ${(before / 1048576).toFixed(2)} MB -> ${(after / 1048576).toFixed(2)} MB (${Math.round(((before - after) / before) * 100)}% saved)`)
         await expect(page.getByTestId('size-saved')).toHaveText(new RegExp(`^${Math.round(((before - after) / before) * 100)}%$`))
         await expect(page.getByTestId('compress-details')).toContainText('images reduced')
         await page.getByTestId('compress-apply').click()
@@ -504,6 +505,7 @@ test.describe('Reduce File Size', () => {
 
   test('Reduce Several Files: cancelling the file picker does nothing; Cancel stops a running batch', async () => {
     test.setTimeout(240_000)
+    const folder = mkdtempSync(join(tmpdir(), 'epdf-batch2-'))
     const { app, page } = await launch()
     try {
       await expect(page.getByRole('button', { name: 'Open PDF' }).first()).toBeVisible()
@@ -514,7 +516,6 @@ test.describe('Reduce File Size', () => {
       await page.waitForTimeout(500)
       await expect(page.getByRole('dialog')).toHaveCount(0)
 
-      const folder = mkdtempSync(join(tmpdir(), 'epdf-batch2-'))
       const paths: string[] = []
       const heavy = await buildStress(5, 1800, 1200) // ~35 MB each: several seconds of work in total
       for (let i = 0; i < 6; i++) {
@@ -536,6 +537,7 @@ test.describe('Reduce File Size', () => {
       await expect(page.getByRole('dialog')).toHaveCount(0)
     } finally {
       await app.close()
+      rmSync(folder, { recursive: true, force: true }) // ~200 MB of fixtures
     }
   })
 
@@ -644,6 +646,8 @@ test.describe('Reduce File Size', () => {
       await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
     } finally {
       await quitDiscarding(app, page)
+      rmSync(dirname(path), { recursive: true, force: true }) // ~140 MB each
+      rmSync(STRESS, { force: true })
     }
   })
 })

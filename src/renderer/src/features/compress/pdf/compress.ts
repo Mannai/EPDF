@@ -71,10 +71,15 @@ const emptyStats = (size: number): CompressStats => ({
 
 export async function loadForCompression(input: Uint8Array): Promise<PDFDocument> {
   try {
-    return await PDFDocument.load(input, { updateMetadata: false, throwOnInvalidObject: false })
+    // Strict on purpose: a damaged file that a tolerant parser "repairs" would be rewritten without the parts it could not read.
+    // Refusing leaves the user's file exactly as it is.
+    return await PDFDocument.load(input, { updateMetadata: false, throwOnInvalidObject: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     if (/encrypt/i.test(msg)) throw new CompressError('This document is password protected. Unlock it first.')
+    if (/invalid object|invalid.*ref/i.test(msg)) {
+      throw new CompressError(`This document could not be read: it contains damaged parts (${msg.slice(0, 120)}), so it was left unchanged.`)
+    }
     throw new CompressError(`This document could not be read: ${msg}`)
   }
 }
