@@ -51,6 +51,10 @@ export interface SheetCell {
   color?: Hex
   fill?: { index: number; ch: string }
   link?: string
+  /** Raw numeric value (used by conditional formatting). */
+  value?: number
+  /** Data bar from conditional formatting: fraction of the cell width and its colour. */
+  bar?: { frac: number; color: Hex }
 }
 
 export interface Range {
@@ -69,6 +73,8 @@ export interface SheetImage {
   image?: ImageData
   /** Placeholder label for charts/shapes that cannot be drawn. */
   label?: string
+  /** `from.dx`/`from.dy` are absolute sheet coordinates (points from the top-left of cell A1). */
+  abs?: boolean
 }
 
 export interface HFRun {
@@ -285,7 +291,6 @@ export function layoutRuns(env: ConvertEnv, runs: RichRun[], maxW: number, wrap:
       continue
     }
     if (a.kind === 'space') {
-      if (cur.pieces.length === 0 && lines.length > 0 && wrap && cur.w === 0 && pending.length === 0 && false) continue
       pending.push(a)
       pendingW += a.w
       continue
@@ -350,10 +355,16 @@ function runsOf(cell: SheetCell, colorOverride?: Hex): RichRun[] {
 function makeGeometry(env: ConvertEnv, sheet: SheetModel, mergeAnchors: Map<string, Range>): Geometry {
   const colW = (c: number): number => (sheet.hiddenCols.has(c) ? 0 : (sheet.colWidths.get(c) ?? sheet.defaultColWidth))
   const rowCache = new Map<number, number>()
-  const mergedCovered = (r: number, c: number): boolean => {
-    for (const m of sheet.merges) if (r >= m.r1 && r <= m.r2 && c >= m.c1 && c <= m.c2) return true
-    return false
+  // merged ranges indexed by row so auto row heights stay cheap on sheets with many merges
+  const mergesByRow = new Map<number, Range[]>()
+  for (const m of sheet.merges) {
+    for (let r = m.r1; r <= Math.min(m.r2, m.r1 + 5000); r++) {
+      const l = mergesByRow.get(r)
+      if (l) l.push(m)
+      else mergesByRow.set(r, [m])
+    }
   }
+  const mergedCovered = (r: number, c: number): boolean => !!mergesByRow.get(r)?.some((m) => c >= m.c1 && c <= m.c2)
   const rowH = (r: number): number => {
     if (sheet.hiddenRows.has(r)) return 0
     const explicit = sheet.rowHeights.get(r)
@@ -402,6 +413,18 @@ function makeGeometry(env: ConvertEnv, sheet: SheetModel, mergeAnchors: Map<stri
   }
 }
 
+/** Anchor cell + offsets of an image; absolute positions are mapped onto the column/row grid. */
+function anchorOf(geo: Geometry, im: SheetImage): SheetImage['from'] {
+  if (!im.abs) return im.from
+  const x = im.from.dx
+  const y = im.from.dy
+  let col = 0
+  while (col < 16384 && geo.colStart(col + 1) <= x) col++
+  let row = 0
+  while (row < 1048576 && geo.rowStart(row + 1) <= y && row < 20000) row++
+  return { col, row, dx: x - geo.colStart(col), dy: y - geo.rowStart(row) }
+}
+
 function usedRange(sheet: SheetModel, geo: Geometry): Range | null {
   let r1 = Infinity
   let r2 = -1
@@ -424,13 +447,13 @@ function usedRange(sheet: SheetModel, geo: Geometry): Range | null {
     }
   }
   for (const im of sheet.images) {
-    const end = im.to ?? im.from
-    r1 = Math.min(r1, im.from.row)
-    c1 = Math.min(c1, im.from.col)
+    const from = anchorOf(geo, im)
+    const end = im.to ?? from
+    r1 = Math.min(r1, from.row)
+    c1 = Math.min(c1, from.col)
     r2 = Math.max(r2, end.row)
     c2 = Math.max(c2, end.col)
   }
-  void geo
   if (r2 < 0 || c2 < 0) return null
   // Excel prints from A1 (the sheet origin), not from the first used cell.
   return { r1: 0, c1: 0, r2, c2 }
@@ -609,12 +632,6 @@ function drawBlock(env: ConvertEnv, sheet: SheetModel, geo: Geometry, block: Blo
     for (const r of rs) for (const c of cs) merged.set(`${r}:${c}`, rect)
   }
 
-  const cellRect = (r: number, c: number): { x: number; y: number; w: number; h: number } => {
-    const mr = merged.get(`${r}:${c}`)
-    if (mr) return mr
-    return { x: colX.get(c)!, y: rowY.get(r)!, w: geo.colW(c), h: geo.rowH(r) }
-  }
-
   // 1. fills
   for (const r of block.rows) {
     const row = sheet.cells.get(r)
@@ -625,6 +642,10 @@ function drawBlock(env: ConvertEnv, sheet: SheetModel, geo: Geometry, block: Blo
       const mr = merged.get(`${r}:${c}`)
       if (mr) continue
       if (cell.style.fill) ops.push({ t: 'rect', x: X(colX.get(c)!), y: Y(rowY.get(r)!), w: geo.colW(c) * S, h: geo.rowH(r) * S, fill: cell.style.fill })
+      if (cell.bar && cell.bar.frac > 0) {
+        const bw = Math.max(0, (geo.colW(c) - 4) * cell.bar.frac)
+        ops.push({ t: 'rect', x: X(colX.get(c)!) + 2 * S, y: Y(rowY.get(r)!) + 1.5 * S, w: bw * S, h: Math.max(1, geo.rowH(r) - 3) * S, fill: cell.bar.color })
+      }
     }
   }
   for (const mr of mergedRects) {
@@ -814,12 +835,12 @@ function drawBlock(env: ConvertEnv, sheet: SheetModel, geo: Geometry, block: Blo
     const anchor = cellAt(sheet, mr.m.r1, mr.m.c1)
     if (anchor) drawCell(mr.m.r1, mr.m.c1, anchor, mr)
   }
-  void cellRect
 
   // 5. pictures / placeholders anchored in this block
   for (const im of sheet.images) {
-    const x0 = geo.colStart(im.from.col) + im.from.dx
-    const y0 = geo.rowStart(im.from.row) + im.from.dy
+    const from = anchorOf(geo, im)
+    const x0 = geo.colStart(from.col) + from.dx
+    const y0 = geo.rowStart(from.row) + from.dy
     let w = im.w ?? 0
     let h = im.h ?? 0
     if (im.to) {
@@ -827,11 +848,9 @@ function drawBlock(env: ConvertEnv, sheet: SheetModel, geo: Geometry, block: Blo
       h = geo.rowStart(im.to.row) + im.to.dy - y0
     }
     if (w <= 0 || h <= 0) continue
-    if (!colSet.has(im.from.col) || !rowSet.has(im.from.row)) continue
-    const bx = colX.get(im.from.col)! + im.from.dx
-    const by = rowY.get(im.from.row)! + im.from.dy
-    void x0
-    void y0
+    if (!colSet.has(from.col) || !rowSet.has(from.row)) continue
+    const bx = colX.get(from.col)! + from.dx
+    const by = rowY.get(from.row)! + from.dy
     ops.push({ t: 'push', clip: { x: X(0), y: Y(0), w: Math.max(totalW * S, 1), h: Math.max(totalH * S, 1) } })
     if (im.image) ops.push({ t: 'image', x: X(bx), y: Y(by), w: w * S, h: h * S, image: im.image })
     else {

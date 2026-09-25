@@ -88,7 +88,7 @@ describe('csv conversion', () => {
     expect((flat.match(/lorem/g) ?? []).length).toBe(30)
     expect((flat.match(/amet/g) ?? []).length).toBe(30)
     expect(flat).toContain('short')
-    expect(flat).toContain('abc')
+    expect(flat).toContain('a b c')
   })
 
   it('rejects an empty file with a clear message', async () => {

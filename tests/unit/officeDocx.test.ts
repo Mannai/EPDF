@@ -3,7 +3,7 @@ import { PDFArray, PDFDict, PDFDocument, PDFName, PDFString } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import { convertOffice } from '../../src/main/features/create/office'
 import { anchorImage, buildDocx, inlineImage, p, pageBreak, para, r, tbl, tc, tr, NUMBERING, type DocxParts } from '../support/docxBuilder'
-import { makePng, solid } from '../support/images'
+import { makePng } from '../support/images'
 import { flattenText, readPdf } from '../support/pdfText'
 
 const fontsDir = resolve('resources/fonts')

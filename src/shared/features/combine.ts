@@ -11,6 +11,7 @@ export const CombineRunPayloadSchema = z.object({
   /** Add one bookmark per input file (with that file's own bookmarks nested beneath it). */
   bookmarks: z.boolean().default(true),
   images: z.object({ pageSize: z.enum(['image', 'a4', 'letter']).default('image') }).default({ pageSize: 'image' }),
+  engine: z.enum(['builtin', 'libreoffice']).default('builtin'),
   openInApp: z.boolean().default(false)
 })
 export type CombineRunPayload = z.infer<typeof CombineRunPayloadSchema>

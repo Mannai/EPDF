@@ -1,6 +1,7 @@
 import fontkit from '@pdf-lib/fontkit'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { stripHinting } from './fontHinting'
 
 /**
  * Fonts for the built-in Office converter. Only permissively licensed fonts are bundled (resources/fonts,
@@ -96,7 +97,8 @@ export class FontCatalog {
   private load(face: Face): Loaded {
     let l = this.loaded.get(face.key)
     if (!l) {
-      const bytes = this.read(join(this.dir, `${face.key}.ttf`))
+      // Hinting is removed: fontkit's subsetter breaks hinted fonts (see fontHinting.ts).
+      const bytes = stripHinting(this.read(join(this.dir, `${face.key}.ttf`)))
       const fk = fontkit.create(bytes)
       const upem = fk.unitsPerEm || 1000
       l = {

@@ -48,6 +48,8 @@ export function paginateFlow(doc: FlowDocument, catalog: FontCatalog, warnings: 
   let cur: PageInfo | null = null
   let y = 0
   let col = 0
+  /** Lowest y reached in the columns already filled on this page (a continuous section continues below all of them). */
+  let colsMaxY = 0
   let region = { top: 0, bottom: 0, left: 0, colW: 0, colGap: 0, cols: 1 }
 
   const setRegion = (info: PageInfo): void => {
@@ -72,11 +74,13 @@ export function paginateFlow(doc: FlowDocument, catalog: FontCatalog, warnings: 
     setRegion(cur)
     y = region.top
     col = 0
+    colsMaxY = 0
   }
 
   const advance = (): void => {
     if (!cur) return
     if (col + 1 < region.cols) {
+      colsMaxY = Math.max(colsMaxY, y)
       col++
       y = region.top
     } else startPage(cur.section, cur.indexInSection + 1)
@@ -148,6 +152,8 @@ export function paginateFlow(doc: FlowDocument, catalog: FontCatalog, warnings: 
       const cols = Math.max(1, s.columns?.count ?? 1)
       const gap = s.columns?.gap ?? 36
       region = { ...region, cols, colGap: gap, colW: cols > 1 ? (width - gap * (cols - 1)) / cols : width }
+      if (col > 0 || colsMaxY > 0) y = Math.max(y, colsMaxY) // continue below the tallest column
+      colsMaxY = 0
       col = 0
       void info
     }

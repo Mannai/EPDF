@@ -858,19 +858,31 @@ export function tableFragments(ctx: LayoutContext, t: Table, avail: number): Fra
   }
   for (let r = 0; r <= R; r++) for (let c = 0; c < nCols; c++) H[r][c] = r === 0 ? t.borders.top : r === R ? t.borders.bottom : t.borders.insideH
   for (let r = 0; r < R; r++) for (let c = 0; c <= nCols; c++) V[r][c] = c === 0 ? t.borders.left : c === nCols ? t.borders.right : t.borders.insideV
+  // Cell borders override the table's; where two neighbouring cells both specify the shared edge, the visible /
+  // wider one wins (a bottom border of one cell must not be erased by the "none" of the cell below it).
+  const hSet = new Set<string>()
+  const vSet = new Set<string>()
+  const assign = (arr: Edge[], seen: Set<string>, key: string, i: number, b: Edge): void => {
+    if (b === undefined) return
+    if (!seen.has(key)) {
+      seen.add(key)
+      arr[i] = b
+      return
+    }
+    setEdge(arr, i, b)
+  }
   for (const cl of layouts) {
     const b = cl.cell.borders
     if (!b) continue
     for (let c = cl.col; c < cl.col + cl.colSpan; c++) {
-      if (b.top !== undefined) H[cl.row][c] = b.top === null ? null : b.top
-      if (b.bottom !== undefined) H[cl.row + cl.rowSpan][c] = b.bottom === null ? null : b.bottom
+      assign(H[cl.row], hSet, `${cl.row}:${c}`, c, b.top)
+      assign(H[cl.row + cl.rowSpan], hSet, `${cl.row + cl.rowSpan}:${c}`, c, b.bottom)
     }
     for (let r = cl.row; r < cl.row + cl.rowSpan; r++) {
-      if (b.left !== undefined) V[r][cl.col] = b.left === null ? null : b.left
-      if (b.right !== undefined) V[r][cl.col + cl.colSpan] = b.right === null ? null : b.right
+      assign(V[r], vSet, `${r}:${cl.col}`, cl.col, b.left)
+      assign(V[r], vSet, `${r}:${cl.col + cl.colSpan}`, cl.col + cl.colSpan, b.right)
     }
   }
-  void setEdge
 
   // Build ops.
   const ops: Op[] = []

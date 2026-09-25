@@ -26,7 +26,7 @@ import { DEFAULT_PARA_PROPS } from './flow'
 import { tableFragments, shiftOps, stackFragments } from './layout'
 import type { Op, Page, PathSeg, Stroke } from './ops'
 import { imageFormat, openPackage, relationshipsOf, type Pkg, type Relationship } from './package'
-import { arrowHeadOps, layoutTextBlock, mapPath, presetPath, presetTextInset, rectPath } from './slideShapes'
+import { arrowHeadOps, layoutTextBlock, mapPath, placeholderBox as placeholderBoxShared, presetPath, presetTextInset, rectPath } from './slideShapes'
 import { attr, child, childrenNamed, numAttr, path as xpath, type XNode } from './xml'
 
 /**
@@ -307,13 +307,13 @@ function findPh(tree: Tree | undefined, ph: PhInfo, byClassOnly: boolean): XNode
   if (!tree?.spTree) return undefined
   const all = tree.spTree.children.filter((c) => (c.name === 'sp' || c.name === 'pic') && phOf(c))
   if (!byClassOnly && ph.idx !== undefined) {
-    const byIdx = all.find((c) => phOf(c)!.idx === ph.idx && (phClass(phOf(c)!.type) === phClass(ph.type) || true))
+    const byIdx = all.find((c) => phOf(c)!.idx === ph.idx)
     if (byIdx) return byIdx
   }
   const cls = phClass(ph.type)
   const sameType = all.find((c) => phOf(c)!.type === ph.type)
   if (sameType && !byClassOnly) return sameType
-  return all.find((c) => phClass(phOf(c)!.type) === cls && (cls !== 'body' || phOf(c)!.type === 'body' || ph.type === 'obj' || ph.type === 'subTitle' || true))
+  return all.find((c) => phClass(phOf(c)!.type) === cls)
 }
 
 interface Chain {
@@ -696,18 +696,7 @@ function loadImage(ctx: Ctx, rid: string): LoadedImage | undefined {
 }
 
 function placeholderBox(ctx: Ctx, out: Op[], x: number, y: number, w: number, h: number, label: string): void {
-  out.push({ t: 'rect', x, y, w, h, fill: '#f2f2f2', stroke: { color: '#999999', width: 0.75, dash: [4, 3] } })
-  const face = ctx.env.catalog.face('Liberation Sans', false, false)
-  const size = Math.max(6, Math.min(14, h / 3, w / Math.max(4, label.length * 0.6)))
-  const segs = ctx.env.catalog.segment(face, label)
-  const total = segs.reduce((s, sg) => s + ctx.env.catalog.measure(sg.face, sg.text) * size, 0)
-  let cx = x + (w - total) / 2
-  const m = ctx.env.catalog.metrics(face)
-  const baseline = y + h / 2 + (m.ascent - m.descent) * size * 0.5
-  for (const sg of segs) {
-    out.push({ t: 'text', x: cx, y: baseline, text: sg.text, face: sg.face, size, color: '#666666' })
-    cx += ctx.env.catalog.measure(sg.face, sg.text) * size
-  }
+  placeholderBoxShared(ctx.env, out, x, y, w, h, label)
 }
 
 function renderPic(ctx: Ctx, tree: Tree, pic: XNode, xf: Xf, ops: Op[], drawPh: boolean): void {
@@ -848,10 +837,10 @@ function buildParagraphs(ctx: Ctx, tree: Tree, txBody: XNode, chain: XNode[], ba
     for (const node of chain) applyPPr(pp, child(node, `lvl${lvl + 1}pPr`), cc)
     applyPPr(pp, pPr, cc)
     const styleFor = (rPrNode: XNode | undefined): { st: TextStyle; link?: string } => {
-      const r: RPr = { ...base, ...{} }
-      Object.assign(r, { ...base })
-      const layered: RPr = { ...base }
+      // list styles first, then the shape/table style's colour and weight (fontRef, table style), then the run itself
+      const layered: RPr = {}
       applyRPrInto(layered, pp.defRPr)
+      applyRPrInto(layered, base)
       applyRPr(layered, rPrNode, cc)
       const size = (layered.sz ?? 18) * scale
       let color = layered.color?.hex ?? cc.theme.colors[cc.clrMap['tx1'] ?? 'dk1'] ?? '000000'
@@ -866,7 +855,6 @@ function buildParagraphs(ctx: Ctx, tree: Tree, txBody: XNode, chain: XNode[], ba
           underline = true
         }
       }
-      void r
       return {
         st: {
           family: layered.family ?? cc.theme.minor,

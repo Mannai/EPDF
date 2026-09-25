@@ -13,7 +13,7 @@ const EXTENSIONS: Record<SourceKind, readonly string[]> = {
   image: ['jpg', 'jpeg', 'png'],
   tiff: ['tif', 'tiff'],
   heic: ['heic', 'heif'],
-  office: ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf', 'txt']
+  office: ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf', 'txt', 'csv']
 }
 
 export const SOURCE_EXTENSIONS = EXTENSIONS
@@ -53,6 +53,19 @@ export type PickedFile = z.infer<typeof PickedFileSchema>
 
 export const PickRequestSchema = z.object({ purpose: z.enum(['create', 'combine']) })
 
+export interface PickResult {
+  files: PickedFile[]
+  /** Files that were chosen but cannot be used, with the reason. */
+  skipped: { name: string; reason: string }[]
+}
+
+/** Office conversion engine: Epdf's own converter (default, needs nothing installed) or an installed LibreOffice. */
+export const EngineSchema = z.enum(['builtin', 'libreoffice'])
+export type Engine = z.infer<typeof EngineSchema>
+
+export const CreatePrefsSchema = z.object({ engine: EngineSchema.default('builtin') })
+export type CreatePrefs = z.infer<typeof CreatePrefsSchema>
+
 export const ImageOptionsSchema = z.object({
   /** `image`: the page is the size of the image. `a4`/`letter`: fit the image on that page with a margin. */
   pageSize: z.enum(['image', 'a4', 'letter']).default('image')
@@ -62,6 +75,7 @@ export type ImageOptions = z.infer<typeof ImageOptionsSchema>
 export const CreateConvertPayloadSchema = z.object({
   ids: z.array(z.string().max(64)).min(1).max(200),
   images: ImageOptionsSchema.default({ pageSize: 'image' }),
+  engine: EngineSchema.default('builtin'),
   /** `ask`: a Save dialog (one file) or a folder chooser (several). `beside`: next to each source, no dialog. */
   saveMode: z.enum(['ask', 'beside']).default('ask'),
   /** Open the results in the app from main (command-line use). The renderer does this itself for menu use. */
@@ -85,10 +99,14 @@ export interface CreateResult {
   notes: string[]
 }
 
-export interface ToolStatus {
-  soffice: boolean
-  /** Where LibreOffice would be looked up, for the "not installed" instructions. */
+export interface CreateEnvironment {
+  /** Path of an installed LibreOffice `soffice`, or null. Only used when the user picks the LibreOffice engine. */
+  soffice: string | null
+  /** The engine preference saved for this user. */
+  engine: Engine
+  /** Where LibreOffice is looked for, for the "not installed" help text. */
   sofficeHelp: string
+  platform: 'win32' | 'darwin' | 'linux'
 }
 
 // ---------------------------------------------------------------------------------------------------

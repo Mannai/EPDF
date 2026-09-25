@@ -77,6 +77,17 @@ export function makeFakeJpeg(width: number, height: number, opts: { orientation?
   return new Uint8Array(parts.flat())
 }
 
+/** Inserts an EXIF APP1 segment with the given orientation right after the SOI marker of a real JPEG. */
+export function withExifOrientation(jpeg: Uint8Array, orientation: number): Uint8Array {
+  const body = [0x45, 0x78, 0x69, 0x66, 0, 0, 0x4d, 0x4d, 0, 0x2a, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, orientation, 0, 0, 0, 0, 0, 0]
+  const seg = [0xff, 0xe1, (body.length + 2) >> 8, (body.length + 2) & 255, ...body]
+  const out = new Uint8Array(jpeg.length + seg.length)
+  out.set(jpeg.subarray(0, 2), 0)
+  out.set(seg, 2)
+  out.set(jpeg.subarray(2), 2 + seg.length)
+  return out
+}
+
 export interface TiffFrame {
   w: number
   h: number

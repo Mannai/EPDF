@@ -33,8 +33,7 @@ export async function readPdf(bytes: Uint8Array): Promise<{ pages: PdfPageText[]
   const pdfjs = await loadPdfjs()
   const task = pdfjs.getDocument({
     data: bytes.slice(),
-    standardFontDataUrl: pathToFileURL(resolve('node_modules/pdfjs-dist/standard_fonts')).href + '/',
-    isEvalSupported: false,
+    standardFontDataUrl: resolve('node_modules/pdfjs-dist/standard_fonts').replace(/\\/g, '/') + '/',
     useSystemFonts: false
   })
   const doc = await task.promise

@@ -399,6 +399,22 @@ export function arrowHeadOps(x: number, y: number, angle: number, lineWidth: num
   return [{ t: 'path', d: polygonPath(pts), fill: color, opacity }]
 }
 
+/** A dashed grey box with a centred label, standing in for content that cannot be rendered. */
+export function placeholderBox(env: ConvertEnv, out: Op[], x: number, y: number, w: number, h: number, label: string): void {
+  out.push({ t: 'rect', x, y, w, h, fill: '#f2f2f2', stroke: { color: '#999999', width: 0.75, dash: [4, 3] } })
+  const face = env.catalog.face('Liberation Sans', false, false)
+  const size = Math.max(6, Math.min(14, h / 3, w / Math.max(4, label.length * 0.6)))
+  const segs = env.catalog.segment(face, label)
+  const total = segs.reduce((s, sg) => s + env.catalog.measure(sg.face, sg.text) * size, 0)
+  let cx = x + (w - total) / 2
+  const m = env.catalog.metrics(face)
+  const baseline = y + h / 2 + (m.ascent - m.descent) * size * 0.5
+  for (const sg of segs) {
+    out.push({ t: 'text', x: cx, y: baseline, text: sg.text, face: sg.face, size, color: '#666666' })
+    cx += env.catalog.measure(sg.face, sg.text) * size
+  }
+}
+
 // ---------------------------------------------------------------------------------------------------
 // Text blocks
 // ---------------------------------------------------------------------------------------------------

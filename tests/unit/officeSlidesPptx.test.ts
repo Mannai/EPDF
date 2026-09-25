@@ -1,8 +1,11 @@
-import { resolve } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { PDFArray, PDFDocument, PDFRawStream, decodePDFRawStream } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import { convertOffice } from '../../src/main/features/create/office'
-import { bodyPlaceholder, buildPptx, EMU, picture, run, shape, solidFill, textBox, titlePlaceholder, xfrm } from '../support/pptxBuilder'
+import { bodyPlaceholder, buildPptx, picture, run, shape, solidFill, textBox, titlePlaceholder, xfrm } from '../support/pptxBuilder'
 import { makePng, solid } from '../support/images'
 import { flattenText, readPdf } from '../support/pdfText'
 
@@ -112,9 +115,9 @@ describe('pptx: slides, text and inheritance', () => {
     expect(c).toMatch(/0\.75294\d* 0\.31372\d* 0\.30196\d* rg/)
     expect(c).toMatch(/1 0 0 rg/)
     // accent1 4F81BD with lumMod 50% is darker than the original blue
-    const m = /(0\.\d+) (0\.\d+) (0\.\d+) rg\s+[\d.-]+ [\d.-]+ [\d.-]+ [\d.-]+ re/.exec(c)
-    expect(m).toBeTruthy()
-    expect(parseFloat(m![3])).toBeLessThan(0.45)
+    const dark = [...c.matchAll(/(0\.\d+) (0\.\d+) (0\.\d+) rg\s+0 78\.7\d* m/g)]
+    expect(dark.length).toBe(1)
+    expect(parseFloat(dark[0][3])).toBeLessThan(0.45)
   })
 
   it('renders bullets, numbered lists, levels, bold/italic/underline runs and line breaks', async () => {
@@ -211,16 +214,18 @@ describe('pptx: slides, text and inheritance', () => {
   })
 
   it('never loses text that overflows its box, and shrinks normAutofit text using fontScale', async () => {
-    const long = Array.from({ length: 30 }, (_, i) => `Overflowing paragraph number ${i + 1} with a few extra words`)
-    const box = (auto: string): string => `<p:sp><p:nvSpPr><p:cNvPr id="2" name="Body"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr>${xfrm(457200, 457200, 3000000, 1000000)}</p:spPr><p:txBody><a:bodyPr wrap="square">${auto}</a:bodyPr><a:lstStyle/>${long.map((t) => `<a:p>${run(t)}</a:p>`).join('')}</p:txBody></p:sp>`
+    const long = Array.from({ length: 12 }, (_, i) => `Overflowing paragraph number ${i + 1}`)
+    const box = (auto: string): string => `<p:sp><p:nvSpPr><p:cNvPr id="2" name="Body"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr>${xfrm(457200, 457200, 6000000, 1000000)}</p:spPr><p:txBody><a:bodyPr wrap="square">${auto}</a:bodyPr><a:lstStyle/>${long.map((t) => `<a:p>${run(t)}</a:p>`).join('')}</p:txBody></p:sp>`
     const plain = await readPdf((await convert(buildPptx({ slides: [{ shapes: box('') }] }))).bytes)
-    for (const t of long) expect(plain.pages[0].text.replace(/\s+/g, ' ')).toContain(t.split(' ').slice(0, 4).join(' '))
+    for (const t of long) expect(plain.pages[0].text.replace(/\s+/g, ' ')).toContain(t)
+    // the box is only 79pt tall but the text runs on below it (nothing is clipped or dropped)
+    expect(plain.pages[0].items[plain.pages[0].items.length - 1].y).toBeGreaterThan(36 + 79 + 100)
     const scaled = await readPdf((await convert(buildPptx({ slides: [{ shapes: box('<a:normAutofit fontScale="50000" lnSpcReduction="20000"/>') }] }))).bytes)
     const size = scaled.pages[0].items[0].size
     expect(size).toBeCloseTo(9, 0)
     const auto = await readPdf((await convert(buildPptx({ slides: [{ shapes: box('<a:normAutofit/>') }] }))).bytes)
     expect(auto.pages[0].items[0].size).toBeLessThan(18)
-    expect(flattenText(auto.pages)).toContain('number 30')
+    expect(flattenText(auto.pages)).toContain('number 12')
   })
 
   it('handles no-wrap text boxes: long lines stay on one line', async () => {
@@ -232,7 +237,7 @@ describe('pptx: slides, text and inheritance', () => {
   it('warns about vertical text, shadows and gradient fills instead of dropping content silently', async () => {
     const shadow = `<a:solidFill><a:srgbClr val="00FF00"/></a:solidFill><a:effectLst><a:outerShdw blurRad="50800" dist="38100"><a:srgbClr val="000000"/></a:outerShdw></a:effectLst>`
     const grad = `<a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs><a:gs pos="100000"><a:srgbClr val="0000FF"/></a:gs></a:gsLst></a:gradFill>`
-    const vert = `<p:sp><p:nvSpPr><p:cNvPr id="4" name="V"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr>${xfrm(0, 0, 500000, 2000000)}</p:spPr><p:txBody><a:bodyPr vert="vert270"/><a:lstStyle/><a:p>${run('Vertical words')}</a:p></p:txBody></p:sp>`
+    const vert = `<p:sp><p:nvSpPr><p:cNvPr id="4" name="V"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr>${xfrm(0, 2000000, 2500000, 2000000)}</p:spPr><p:txBody><a:bodyPr vert="vert270"/><a:lstStyle/><a:p>${run('Vertical words')}</a:p></p:txBody></p:sp>`
     const r = await convert(buildPptx({ slides: [{ shapes: shape(2, 'rect', 0, 0, 900000, 900000, shadow) + shape(3, 'rect', 1000000, 0, 900000, 900000, grad) + vert }] }))
     const w = r.warnings.join('\n')
     expect(w).toMatch(/Shadows, glow/)
@@ -247,6 +252,56 @@ describe('pptx: slides, text and inheritance', () => {
     await expect(convert(buildPptx({ slides: [{ shapes: '' }] }), 'a.pptx', { signal: ac.signal })).rejects.toThrow('Cancelled')
     await expect(convert(new TextEncoder().encode('this is not a zip file'), 'bad.pptx')).rejects.toThrow(/damaged or is not a valid Office file/)
   })
+})
+
+const SOFFICE = 'C:\\Program Files\\LibreOffice\\program\\soffice.exe'
+
+describe.skipIf(!existsSync(SOFFICE))('pptx: comparison with real LibreOffice', () => {
+  it('produces the same page count, page size and text (at similar positions) as LibreOffice for a realistic slide', async () => {
+    const png = makePng(60, 30, (x, y) => [x * 4, y * 8, 200, 255])
+    const cell = (t: string): string => `<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p>${run(t)}</a:p></a:txBody><a:tcPr/></a:tc>`
+    const tbl = `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="4" name="Table 3"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="457200" y="3500000"/><a:ext cx="5486400" cy="1219200"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl><a:tblPr firstRow="1" bandRow="1"><a:tableStyleId>{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}</a:tableStyleId></a:tblPr><a:tblGrid><a:gridCol w="1828800"/><a:gridCol w="1828800"/><a:gridCol w="1828800"/></a:tblGrid><a:tr h="370840">${cell('Name')}${cell('Qty')}${cell('Price')}</a:tr><a:tr h="370840">${cell('Apple')}${cell('3')}${cell('1.50')}</a:tr></a:tbl></a:graphicData></a:graphic></p:graphicFrame>`
+    const pptx = buildPptx({
+      media: { 'ppt/media/image1.png': png },
+      slides: [
+        {
+          shapes:
+            titlePlaceholder(2, 'Quarterly Review') +
+            bodyPlaceholder(3, [`<a:p>${run('Highlights', 'b="1"')}</a:p>`, `<a:p><a:pPr lvl="1"/>${run('Revenue up twelve percent')}</a:p>`], `<p:spPr>${xfrm(457200, 1400000, 5000000, 1800000)}</p:spPr>`) +
+            tbl +
+            shape(10, 'ellipse', 6500000, 1500000, 1800000, 900000, solidFill('F79646'), 'Circle') +
+            picture(13, 'rId5', 6500000, 4800000, 1800000, 900000),
+          rels: [{ id: 'rId5', type: 'image', target: '../media/image1.png' }]
+        },
+        { shapes: textBox(2, 914400, 914400, 4572000, 914400, ['Second slide text']) }
+      ]
+    })
+    const tmp = mkdtempSync(join(tmpdir(), 'epdf-pptx-'))
+    try {
+      mkdirSync(join(tmp, 'profile'))
+      const src = join(tmp, 'in.pptx')
+      writeFileSync(src, pptx)
+      execFileSync(SOFFICE, ['--headless', '--convert-to', 'pdf', '--outdir', tmp, `-env:UserInstallation=file:///${tmp.replace(/\\/g, '/')}/profile`, src], { timeout: 120000, stdio: 'ignore' })
+      const lo = await readPdf(new Uint8Array(readFileSync(join(tmp, 'in.pdf'))))
+      const ours = await readPdf((await convert(pptx, 'in.pptx')).bytes)
+      expect(ours.pages.length).toBe(lo.pages.length)
+      expect(ours.pages[0].width).toBeCloseTo(lo.pages[0].width, 0)
+      expect(ours.pages[0].height).toBeCloseTo(lo.pages[0].height, 0)
+      const words = (t: string): string[] => t.toLowerCase().split(/\s+/).filter((w) => /[a-z0-9]/.test(w))
+      const mine = new Set(words(flattenText(ours.pages)))
+      for (const w of words(flattenText(lo.pages))) expect(mine.has(w), `word “${w}” from LibreOffice is missing`).toBe(true)
+      for (const s of ['Quarterly Review', 'Highlights', 'Name', 'Apple']) {
+        const a = ours.pages[0].items.find((i) => i.str.includes(s))!
+        const b = lo.pages[0].items.find((i) => i.str.includes(s))!
+        expect(Math.abs(a.x - b.x), `x of ${s}`).toBeLessThan(10)
+        expect(Math.abs(a.y - b.y), `y of ${s}`).toBeLessThan(12)
+        expect(Math.abs(a.size - b.size), `size of ${s}`).toBeLessThan(1.5)
+      }
+      expect(ours.pages[0].imageCount).toBe(lo.pages[0].imageCount)
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  }, 180000)
 })
 
 describe('pptx: shapes, pictures, groups, tables', () => {
@@ -287,8 +342,8 @@ describe('pptx: shapes, pictures, groups, tables', () => {
     const c = await contentOf(r.bytes)
     expect(c).toMatch(/100 100 m\s+300 200 l/) // 1270000 EMU = 100pt, 2540000 = 200pt
     expect(c).toMatch(/1.5 w/)
-    expect(c).toMatch(/300 400 m\s+[\d.]+ 300 l/.source.replace('\\s+', '\\s+')) // flipV: starts at the bottom left
-    expect(c.match(/ f\n/g)?.length ?? 0).toBeGreaterThanOrEqual(2) // arrow heads are filled paths
+    expect(c).toMatch(/100 400 m\s+200 400 l\s+200 300 l\s+300 300 l/) // flipV: starts at the bottom left
+    expect(c.match(/^f$/gm)?.length ?? 0).toBeGreaterThanOrEqual(2) // arrow heads are filled paths
     expect(r.warnings).toEqual([])
   })
 
@@ -324,7 +379,7 @@ describe('pptx: shapes, pictures, groups, tables', () => {
     // child 635000 -> scaled x2 = 1270000 EMU = 100pt square at 100,100
     expect(c).toMatch(/100 100 m\s+200 100 l\s+200 200 l\s+100 200 l/)
     // rotated 90 degrees about its centre (cx = 400+50 = 450, cy = 100+25 = 125): cm with cos=0 sin=1
-    expect(c).toMatch(/0 1 -1 0 [\d.-]+ [\d.-]+ cm/)
+    expect(c).toMatch(/[\d.e-]+ 1 -1 [\d.e-]+ 575 -325 cm/)
   })
 
   it('lays out tables: column widths, spans, fills, borders, header style and text', async () => {
@@ -360,6 +415,79 @@ describe('pptx: shapes, pictures, groups, tables', () => {
     expect(w).toMatch(/Chart “Sales Chart” on slide 1 is not rendered/)
     expect(w).toMatch(/SmartArt diagram “Org”/)
     expect(flattenText((await readPdf(r.bytes)).pages)).toContain('Chart: Sales Chart')
+  })
+
+  it('takes fill, outline, text colour and effects from the shape style references (as PowerPoint writes them)', async () => {
+    const styled = `<p:sp><p:nvSpPr><p:cNvPr id="2" name="Styled"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr>${xfrm(1270000, 1270000, 2540000, 1270000)}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:style><a:lnRef idx="2"><a:schemeClr val="accent1"><a:shade val="50000"/></a:schemeClr></a:lnRef><a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="2"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef></p:style><p:txBody><a:bodyPr anchor="ctr"/><a:lstStyle/><a:p><a:pPr algn="ctr"/>${run('Styled text')}</a:p></p:txBody></p:sp>`
+    const r = await convert(buildPptx({ slides: [{ shapes: styled }] }))
+    const c = await contentOf(r.bytes)
+    expect(c).toMatch(/0\.30980\d* 0\.50588\d* 0\.74117\d* rg/) // accent1 fill
+    expect(c).toMatch(/2 w/) // theme line style 2 = 25400 EMU
+    expect(c).toMatch(/1 1 1 rg/) // fontRef lt1: white text
+    expect(r.warnings.join('\n')).toMatch(/Shadows, glow/)
+    const { pages } = await readPdf(r.bytes)
+    const t = pages[0].items.find((i) => i.str === 'Styled text')!
+    expect(t.x + t.w / 2).toBeCloseTo(100 + 100, 0)
+  })
+
+  it('applies fill transparency, picture flips, nested group rotation and slide-level list styles', async () => {
+    const png = makePng(10, 10, solid(0, 0, 255))
+    const half = `<a:solidFill><a:srgbClr val="FF0000"><a:alpha val="50000"/></a:srgbClr></a:solidFill>`
+    const inner = `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="21" name="Inner"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm rot="5400000"><a:off x="2540000" y="2540000"/><a:ext cx="1270000" cy="1270000"/><a:chOff x="0" y="0"/><a:chExt cx="1270000" cy="1270000"/></a:xfrm></p:grpSpPr>${shape(22, 'rect', 0, 0, 1270000, 635000, solidFill('00FF00'))}</p:grpSp>`
+    const outer = `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="20" name="Outer"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="6350000" cy="6350000"/><a:chOff x="0" y="0"/><a:chExt cx="6350000" cy="6350000"/></a:xfrm></p:grpSpPr>${inner}</p:grpSp>`
+    const lst = `<a:lvl1pPr><a:defRPr sz="2000" b="1"/></a:lvl1pPr>`
+    const r = await convert(
+      buildPptx({
+        media: { 'ppt/media/image1.png': png },
+        slides: [
+          {
+            shapes:
+              shape(2, 'rect', 0, 0, 1270000, 1270000, half) +
+              picture(3, 'rId5', 1270000, 1270000, 2540000, 1270000).replace('<p:spPr>', '<p:spPr>').replace('<a:xfrm>', '<a:xfrm flipH="1">') +
+              outer +
+              textBox(30, 0, 5500000, 3000000, 500000, ['Styled by slide list style'], { lst }),
+            rels: [{ id: 'rId5', type: 'image', target: '../media/image1.png' }]
+          }
+        ]
+      })
+    )
+    const c = await contentOf(r.bytes)
+    expect(c).toMatch(/\/GS1 gs/) // 50% alpha uses an ExtGState
+    expect(c).toMatch(/-200 0 0 -100 300 200 cm/) // flipH picture: mirrored via a negative width
+    expect(c).toMatch(/[\d.e-]+ 1 -1 [\d.e-]+ [\d.-]+ [\d.-]+ cm/) // the inner group is rotated 90 degrees
+    const { pages } = await readPdf(r.bytes)
+    const t = pages[0].items.find((i) => i.str === 'Styled by slide list style')!
+    expect(t.size).toBeCloseTo(20, 0)
+    expect(t.font).toMatch(/Bold/i)
+  })
+
+  it('renders superscript, subscript, strike-through, caps and character spacing', async () => {
+    const p = `<a:p>${run('x')}${run('2', 'baseline="30000"')}${run(' H')}${run('2', 'baseline="-25000"')}${run(' gone', 'strike="sngStrike"')}${run(' caps', 'cap="all"')}${run(' wide', 'spc="300"')}</a:p>`
+    const r = await convert(buildPptx({ slides: [{ shapes: textBox(2, 0, 0, 6000000, 800000, [p]) }] }))
+    const { pages } = await readPdf(r.bytes)
+    const sup = pages[0].items.find((i) => i.str === '2')!
+    expect(sup.size).toBeCloseTo(18 * 0.65, 0)
+    expect(pages[0].text).toContain('CAPS')
+    expect(pages[0].text).toContain('gone')
+    const c = await contentOf(r.bytes)
+    expect(c.match(/ l\nS/g)?.length ?? 0).toBeGreaterThanOrEqual(1) // strike-through line
+  })
+
+  it('handles row-spanning cells and explicit cell borders in tables', async () => {
+    const tc = (t: string, attrs = '', pr = ''): string => `<a:tc${attrs}><a:txBody><a:bodyPr/><a:lstStyle/><a:p>${t ? run(t) : '<a:endParaRPr lang="en-US"/>'}</a:p></a:txBody><a:tcPr>${pr}</a:tcPr></a:tc>`
+    const ln = `<a:lnB w="38100"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:lnB>`
+    const tbl = `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="4" name="T"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="914400" y="914400"/><a:ext cx="3657600" cy="1000000"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl><a:tblPr/><a:tblGrid><a:gridCol w="1828800"/><a:gridCol w="1828800"/></a:tblGrid><a:tr h="400000">${tc('Tall', ' rowSpan="2"')}${tc('Top', '', ln)}</a:tr><a:tr h="400000">${tc('', ' vMerge="1"')}${tc('Bottom')}</a:tr></a:tbl></a:graphicData></a:graphic></p:graphicFrame>`
+    const r = await convert(buildPptx({ slides: [{ shapes: tbl }] }))
+    const { pages } = await readPdf(r.bytes)
+    const tall = pages[0].items.find((i) => i.str === 'Tall')!
+    const top = pages[0].items.find((i) => i.str === 'Top')!
+    const bottom = pages[0].items.find((i) => i.str === 'Bottom')!
+    expect(bottom.x).toBeCloseTo(top.x, 0)
+    expect(bottom.y).toBeGreaterThan(top.y + 20)
+    expect(top.x - tall.x).toBeCloseTo(144, 0)
+    const c = await contentOf(r.bytes)
+    expect(c).toMatch(/1 0 0 RG/)
+    expect(c).toMatch(/3 w/) // 38100 EMU bottom border of the first-row cell
   })
 
   it('draws custom geometry paths scaled to the shape', async () => {

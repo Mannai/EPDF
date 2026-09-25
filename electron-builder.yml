@@ -20,6 +20,10 @@ extraResources:
   - from: resources/bin/${os}-${arch}
     to: bin
     filter: ['**/*']
+  # Fonts for the built-in Office converter (SIL OFL: Liberation, Carlito, Caladea, Noto Sans; licences included).
+  - from: resources/fonts
+    to: fonts
+    filter: ['*.ttf', 'LICENSE-*.txt']
 
 # Native modules cannot be loaded from inside an asar archive.
 asarUnpack:

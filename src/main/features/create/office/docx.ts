@@ -206,6 +206,7 @@ class DocxReader {
         set[t === 'first' ? 'first' : t === 'even' ? 'even' : 'default'] = this.readHeaderFooter(rel.target)
       }
     }
+    applyContextualSpacing(blocks)
     const copy = (s: HeaderFooterSet): HeaderFooterSet => ({ ...s })
     const marginLeft = m('left', 72)
     const marginRight = m('right', 72)
@@ -239,6 +240,7 @@ class DocxReader {
     const ctx: PartCtx = { part, rels: relationshipsOf(this.pkg, part) }
     const out: Block[] = []
     for (const el of root.children) this.readBodyElement2(el, out, ctx)
+    applyContextualSpacing(out)
     return out
   }
 
@@ -858,6 +860,7 @@ class DocxReader {
         const blocks: Block[] = []
         for (const el of tc.children) this.readBodyElement2(el, blocks, ctx, tctx)
         if (blocks.length === 0 || blocks[blocks.length - 1].k === 'table') blocks.push(this.emptyParagraph())
+        applyContextualSpacing(blocks)
         const borders: Cell['borders'] = {}
         for (const side of ['top', 'bottom', 'left', 'right'] as const) {
           const v = tcp.borders?.[side] !== undefined ? tcp.borders[side] : cTc.borders?.[side]
@@ -933,6 +936,19 @@ class DocxReader {
 // ---------------------------------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------------------------------
+
+/** "Don't add space between paragraphs of the same style": drops the space between neighbours that share a style and ask for it. */
+function applyContextualSpacing(blocks: Block[]): void {
+  type Tagged = Paragraph & { _style?: string; _ctx?: boolean }
+  for (let i = 0; i + 1 < blocks.length; i++) {
+    const a = blocks[i] as Tagged
+    const b = blocks[i + 1] as Tagged
+    if (a.k === 'p' && b.k === 'p' && a._ctx && b._ctx && a._style === b._style) {
+      a.props.spaceAfter = 0
+      b.props.spaceBefore = 0
+    }
+  }
+}
 
 const emptyNode = (): XNode => ({ name: '', prefix: '', attrs: {}, children: [], text: '', nodes: [], parent: null })
 

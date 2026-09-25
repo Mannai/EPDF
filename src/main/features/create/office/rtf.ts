@@ -344,6 +344,8 @@ interface SectionDraft {
   cols: number
   colsx: number
   titlepg: boolean
+  /** \sbknone: the section starts on the same page as the previous one. */
+  cont?: boolean
   headery: number
   footery: number
   pgnstart?: number
@@ -616,7 +618,8 @@ export function readRtf(bytes: Uint8Array, env: ConvertEnv): FlowDocument {
     const fi = p.fi ?? (lm ? (lm.fi ?? 0) : 0)
     const props: ParaProps = {
       ...DEFAULT_PARA_PROPS,
-      align: p.qa,
+      // RTF alignment is physical; the layout mirrors left/right for RTL paragraphs, so pre-flip it here
+      align: p.rtl ? (p.qa === 'left' ? 'right' : p.qa === 'right' ? 'left' : p.qa) : p.qa,
       spaceBefore: tw(p.sb),
       spaceAfter: tw(p.sa),
       line: p.sl === 0 ? { rule: 'auto', value: 1 } : p.slmult === 1 ? { rule: 'auto', value: Math.max(0.1, p.sl / 240) } : p.sl > 0 ? { rule: 'atLeast', value: tw(p.sl) } : { rule: 'exact', value: tw(-p.sl) },
@@ -801,7 +804,7 @@ export function readRtf(bytes: Uint8Array, env: ConvertEnv): FlowDocument {
     prevFooter = footer
     const s: Section = {
       page: pageFor(sec),
-      type: 'nextPage',
+      type: sec.cont && sections.length > 0 ? 'continuous' : 'nextPage',
       blocks: blocks.length ? blocks : [emptyPara()],
       header,
       footer,
@@ -1198,6 +1201,12 @@ export function readRtf(bytes: Uint8Array, env: ConvertEnv): FlowDocument {
         return true
       case 'titlepg':
         sec.titlepg = true
+        return true
+      case 'sbknone':
+        sec.cont = true
+        return true
+      case 'sbkpage':
+        sec.cont = false
         return true
       case 'pgnstarts':
         sec.pgnstart = p ?? 1
@@ -1674,7 +1683,7 @@ export function readRtf(bytes: Uint8Array, env: ConvertEnv): FlowDocument {
         const firstSectd = !sectdSeen
         sectdSeen = true
         // headers defined before the first \sectd belong to the first section
-        sec = { ...docPage, header: firstSectd ? { ...docPage.header } : {}, footer: firstSectd ? { ...docPage.footer } : {}, titlepg: false, pgnstart: undefined, cols: 1, colsx: 720 }
+        sec = { ...docPage, header: firstSectd ? { ...docPage.header } : {}, footer: firstSectd ? { ...docPage.footer } : {}, titlepg: false, cont: false, pgnstart: undefined, cols: 1, colsx: 720 }
         return
       }
       case 'sect':

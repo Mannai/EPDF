@@ -13,6 +13,7 @@ import {
   PDFString,
   type PDFPage
 } from 'pdf-lib'
+import { parsePageRange } from '../../../shared/features/combine'
 
 /**
  * Merges PDFs with pdf-lib: page sizes/rotation are preserved (pages are copied, never redrawn), each source's
@@ -37,6 +38,8 @@ export interface MergeInput {
   bytes: Uint8Array
   /** 0-based page indexes to take, in order. Default: every page. */
   pages?: number[]
+  /** Page range text such as `1-3, 5` (used when `pages` is not given); resolved once the page count is known. */
+  rangeText?: string
 }
 
 export interface MergeOptions {
@@ -366,7 +369,12 @@ export async function mergePdfs(
     const input = inputs[i]
     onProgress?.(i / inputs.length, `Merging ${input.name}`)
     const src = await loadSource(input.name, input.bytes)
-    const indices = input.pages ?? src.getPageIndices()
+    let indices = input.pages
+    if (!indices) {
+      const parsed = parsePageRange(input.rangeText, src.getPageCount())
+      if (!parsed.ok) throw new MergeError(input.name, `Pages for “${input.name}”: ${parsed.error}`)
+      indices = parsed.pages
+    }
     for (const idx of indices) if (idx < 0 || idx >= src.getPageCount()) throw new MergeError(input.name, `“${input.name}” has no page ${idx + 1}.`)
     if (indices.length === 0) throw new MergeError(input.name, `No pages were selected from “${input.name}”.`)
 
