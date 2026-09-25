@@ -1,5 +1,6 @@
 import {
   PDFCheckBox,
+  PDFDict,
   PDFDropdown,
   PDFHexString,
   PDFName,
@@ -50,6 +51,8 @@ export interface WidgetModel {
   borderWidth: number
   /** Push-button caption. */
   caption?: string
+  /** Position of this widget in its page's /Annots array (the "structure" tab order; see `tabOrder.ts`). */
+  annotOrder?: number
 }
 
 export interface FieldModel {
@@ -72,12 +75,19 @@ export interface FieldModel {
   editable: boolean
   /** Radio buttons that can't be switched off once on (the default for radio groups). */
   widgets: WidgetModel[]
+  /**
+   * The JavaScript source of the field's format / validate actions (/AA /F, /AA /V). Never executed: extensions
+   * (the form builder) recognise known shapes and check values themselves, see `registerValueCheck` in values.ts.
+   */
+  scripts?: { format?: string; validate?: string }
 }
 
 export interface FormModel {
   fields: FieldModel[]
   /** Set when pdf-lib could not read the form at all. */
   error?: string
+  /** Pages whose /Tabs entry is R (rows), C (columns) or S (structure = /Annots order), by 0-based page index. */
+  pageTabs?: Record<number, 'R' | 'C' | 'S'>
 }
 
 const F_HIDDEN = 1 << 1
@@ -129,17 +139,37 @@ function widgetDA(widget: { getDefaultAppearance(): string | undefined }): strin
 }
 
 /** Maps each annotation ref to the 0-based page it sits on (a widget's own /P entry is not trusted). */
-export function annotationPages(pdf: PDFDocument): Map<string, number> {
+export function annotationPages(pdf: PDFDocument, orders?: Map<string, number>): Map<string, number> {
   const map = new Map<string, number>()
   pdf.getPages().forEach((page, i) => {
     const annots = page.node.Annots()
     if (!annots) return
     for (let k = 0; k < annots.size(); k++) {
       const ref = annots.get(k)
-      if (ref instanceof PDFRef) map.set(ref.toString(), i)
+      if (ref instanceof PDFRef) {
+        map.set(ref.toString(), i)
+        orders?.set(ref.toString(), k)
+      }
     }
   })
   return map
+}
+
+/** The JavaScript text of a field's /AA format and validate actions (as data: it is never run). */
+function fieldScripts(field: PDFField): FieldModel['scripts'] {
+  const out: NonNullable<FieldModel['scripts']> = {}
+  const dicts = [field.acroField.dict, ...field.acroField.getWidgets().map((w) => w.dict)]
+  for (const d of dicts) {
+    const aa = safe(() => d.lookupMaybe(PDFName.of('AA'), PDFDict), undefined)
+    if (!aa) continue
+    const js = (key: string): string | undefined => {
+      const act = safe(() => aa.lookupMaybe(PDFName.of(key), PDFDict), undefined)
+      return text(act ? safe(() => act.lookup(PDFName.of('JS')), undefined) : undefined)
+    }
+    out.format ??= js('F')
+    out.validate ??= js('V')
+  }
+  return out.format || out.validate ? out : undefined
 }
 
 function kindOf(field: PDFField): FieldKind | null {
@@ -167,7 +197,8 @@ export function describeField(
   field: PDFField,
   pages?: Map<string, number>,
   acroFormDA?: string,
-  rotations?: number[]
+  rotations?: number[],
+  orders?: Map<string, number>
 ): FieldModel | null {
   const kind = kindOf(field)
   if (!kind) return null
@@ -188,7 +219,8 @@ export function describeField(
     options: [],
     multiSelect: false,
     editable: false,
-    widgets: []
+    widgets: [],
+    scripts: fieldScripts(field)
   }
 
   if (field instanceof PDFTextField) {
@@ -247,7 +279,8 @@ export function describeField(
       background: cssColor(safe(() => ap?.getBackgroundColor(), undefined)),
       borderColor: cssColor(safe(() => ap?.getBorderColor(), undefined)),
       borderWidth: safe(() => bs?.getWidth() ?? (ap?.getBorderColor() ? 1 : 0), 0),
-      caption: kind === 'button' ? safe(() => ap?.getCaptions().normal, undefined) : undefined
+      caption: kind === 'button' ? safe(() => ap?.getCaptions().normal, undefined) : undefined,
+      annotOrder: ref ? orders?.get(ref.toString()) : undefined
     })
   })
   return m
@@ -258,14 +291,21 @@ export function extractFormModel(pdf: PDFDocument): FormModel {
   try {
     const form = pdf.getForm()
     const acroFormDA = text(form.acroForm.dict.get(PDFName.of('DA')))
-    const pages = annotationPages(pdf)
+    const orders = new Map<string, number>()
+    const pages = annotationPages(pdf, orders)
     const rotations = pdf.getPages().map((p) => safe(() => (((p.getRotation().angle % 360) + 360) % 360), 0))
     const fields: FieldModel[] = []
     for (const f of form.getFields()) {
-      const d = safe(() => describeField(pdf, f, pages, acroFormDA, rotations), null)
+      const d = safe(() => describeField(pdf, f, pages, acroFormDA, rotations, orders), null)
       if (d && d.widgets.length > 0) fields.push(d)
     }
-    return { fields }
+    const pageTabs: Record<number, 'R' | 'C' | 'S'> = {}
+    pdf.getPages().forEach((p, i) => {
+      const t = safe(() => p.node.lookup(PDFName.of('Tabs')), undefined)
+      const v = t instanceof PDFName ? t.decodeText() : ''
+      if (v === 'R' || v === 'C' || v === 'S') pageTabs[i] = v
+    })
+    return Object.keys(pageTabs).length ? { fields, pageTabs } : { fields }
   } catch (err) {
     return { fields: [], error: err instanceof Error ? err.message : String(err) }
   }
