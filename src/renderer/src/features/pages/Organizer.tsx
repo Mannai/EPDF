@@ -61,7 +61,6 @@ export function Organizer({ tab }: { tab: Tab }): JSX.Element {
   selRef.current = sel
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
-  const [status, setStatus] = useState('')
   const [drag, setDrag] = useState<DragState | null>(null)
   const [focused, setFocused] = useState(false)
   const [sizesVersion, setSizesVersion] = useState(0)
@@ -139,6 +138,7 @@ export function Organizer({ tab }: { tab: Tab }): JSX.Element {
       setSel({ selected: pending, anchor: pending[0] ?? null, focus: pending[0] ?? 0 })
       if (pending.length) setTimeout(() => ensureVisible(pending[0]), 0)
     } else setSel((prev) => clampSelection(prev, loaded.numPages))
+    if (waitingLoad.current) release()
     // ensureVisible depends on geometry; only react to a new document here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded])
@@ -160,19 +160,34 @@ export function Organizer({ tab }: { tab: Tab }): JSX.Element {
   // ---- actions ----------------------------------------------------------------------------------------------
   const targets = (): number[] => (selRef.current.selected.length ? selRef.current.selected : n ? [selRef.current.focus] : [])
 
-  const run = useCallback(async (fn: () => Promise<PagePlan | boolean | null>): Promise<void> => {
-    if (busyRef.current) return
-    busyRef.current = true
-    setBusy(true)
-    try {
-      const r = await fn()
-      if (r && typeof r === 'object') pendingSel.current = r.selection
-    } finally {
-      busyRef.current = false
-      setBusy(false)
-      scroller.current?.focus()
-    }
+  // An action stays "busy" until the edited document has loaded, so the grid never shows (or acts on) stale pages.
+  const waitingLoad = useRef(false)
+  const release = useCallback(() => {
+    waitingLoad.current = false
+    busyRef.current = false
+    setBusy(false)
+    scroller.current?.focus()
   }, [])
+
+  const run = useCallback(
+    async (fn: () => Promise<PagePlan | boolean | null>): Promise<void> => {
+      if (busyRef.current) return
+      busyRef.current = true
+      setBusy(true)
+      let edited = false
+      try {
+        const r = await fn()
+        if (r && typeof r === 'object') pendingSel.current = r.selection
+        edited = !!r
+      } finally {
+        if (edited) {
+          waitingLoad.current = true
+          setTimeout(() => waitingLoad.current && release(), 10_000) // safety net
+        } else release()
+      }
+    },
+    [release]
+  )
 
   const done = useCallback(
     (page?: number) => {
@@ -194,7 +209,6 @@ export function Organizer({ tab }: { tab: Tab }): JSX.Element {
       const ok = await applyPlan(docId, pages.length === 1 ? `Move page ${pages[0] + 1}` : `Move ${pages.length} pages`, plan)
       if (!ok) return null
       announce(describeMove(plan.selection))
-      setStatus(describeMove(plan.selection))
       return plan
     })
   const doMoveTo = (slot: number): void =>
@@ -204,7 +218,7 @@ export function Organizer({ tab }: { tab: Tab }): JSX.Element {
       if (!plan) return null
       const ok = await applyPlan(docId, pages.length === 1 ? `Move page ${pages[0] + 1}` : `Move ${pages.length} pages`, plan)
       if (!ok) return null
-      setStatus(describeMove(plan.selection))
+      announce(describeMove(plan.selection))
       return plan
     })
   const openDialog = (kind: 'blank' | 'insert' | 'extract' | 'split'): void => usePageDialog.getState().open(kind, docId, { pages: selRef.current.selected })
@@ -285,7 +299,7 @@ export function Organizer({ tab }: { tab: Tab }): JSX.Element {
       if (moved) {
         void run(async () => {
           const plan = await movePages(docId, n, moving, slot)
-          if (plan) setStatus(describeMove(plan.selection))
+          if (plan) announce(describeMove(plan.selection))
           return plan
         })
       } else if (alreadySelected) setSel(clickSelect(selRef.current, i, {}, n))
@@ -331,12 +345,12 @@ export function Organizer({ tab }: { tab: Tab }): JSX.Element {
     if (mod && (e.key === 'a' || e.key === 'A')) {
       e.preventDefault()
       setSel(selectAll(n, cur.focus))
-      setStatus(`All ${n} pages selected.`)
+      announce(`All ${n} pages selected.`)
     } else if (e.key === ' ' || e.key === 'Spacebar') {
       e.preventDefault()
       const next = e.shiftKey ? clickSelect({ ...cur, anchor: cur.anchor ?? cur.focus }, cur.focus, { shift: true }, n) : clickSelect(cur, cur.focus, { ctrl: true }, n)
       setSel(next)
-      setStatus(`Page ${cur.focus + 1} ${next.selected.includes(cur.focus) ? 'selected' : 'deselected'}. ${next.selected.length} selected.`)
+      announce(`Page ${cur.focus + 1} ${next.selected.includes(cur.focus) ? 'selected' : 'deselected'}. ${next.selected.length} selected.`)
     } else if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault()
       doDelete()
@@ -513,9 +527,6 @@ export function Organizer({ tab }: { tab: Tab }): JSX.Element {
           {drag.indices.length === 1 ? `Page ${drag.indices[0] + 1}` : `${drag.indices.length} pages`}
         </div>
       )}
-      <div className="sr-only" role="status" aria-live="polite">
-        {status}
-      </div>
     </div>
   )
 }
