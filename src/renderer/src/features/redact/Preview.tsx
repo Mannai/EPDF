@@ -99,7 +99,7 @@ export function Preview({ docId, afterBytes, marks }: { docId: string; afterByte
           {error}
         </p>
       )}
-      <div className="max-h-[50vh] overflow-auto rounded bg-canvas p-2">
+      <div tabIndex={0} role="region" aria-label="Page preview" className="max-h-[50vh] overflow-auto rounded bg-canvas p-2 outline-none focus-visible:ring-2 focus-visible:ring-accent">
         <div className="relative mx-auto bg-white" style={size ? { width: size.w, height: size.h } : { width: 320, height: 200 }}>
           <canvas ref={canvasRef} data-testid="preview-canvas" aria-label={`Preview of page ${pageIndex + 1}, ${mode === 'before' ? 'before' : 'after'} redaction`} role="img" />
           {boxes.map((b, i) => (

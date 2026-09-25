@@ -4,7 +4,7 @@ import jpeg from 'jpeg-js'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PDFDocument, PDFHexString, PDFName, PDFString, StandardFonts } from 'pdf-lib'
+import { PDFDocument, PDFHexString, PDFName, PDFString, StandardFonts, degrees } from 'pdf-lib'
 
 export const SECRET = 'TOPSECRET-4711'
 
@@ -224,6 +224,52 @@ export async function createProofPdf(secret = SECRET) {
   return { bytes: await doc.save(), secret, positions }
 }
 
+/** A small document full of things the built-in patterns look for (and look-alikes they must not match). */
+export async function createPatternsPdf() {
+  const doc = await PDFDocument.create()
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const p1 = doc.addPage([612, 792])
+  const lines1 = [
+    'Contact: jane.doe@example.com or sales@shop.example.org',
+    'Call (555) 123-4567 or +44 20 7946 0958',
+    'Card 4111 1111 1111 1111 valid, 4111 1111 1111 1112 invalid',
+    'SSN 123-45-6789 and ID 000-12-3456',
+    'IBAN DE89 3704 0044 0532 0130 00 and DE00 1234',
+    'Date 2024-03-15 and 31/02/2024 and March 15, 2024',
+    'Site https://example.com/path?q=1 and 192.168.0.1 and 999.1.1.1'
+  ]
+  lines1.forEach((t, i) => p1.drawText(t, { x: 60, y: 720 - i * 30, size: 12, font }))
+  const p2 = doc.addPage([612, 792])
+  p2.drawText('Second page: bob@example.net', { x: 60, y: 720, size: 12, font })
+  p2.drawText('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!', { x: 60, y: 690, size: 12, font })
+  return doc.save()
+}
+
+/** A page whose secret also sits in an attachment, in JavaScript and in page labels (hidden data). */
+export async function createHiddenDataPdf() {
+  const doc = await PDFDocument.create()
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const p = doc.addPage([612, 792])
+  p.drawText('Visible line with ATTACHSECRET inside', { x: 60, y: 700, size: 14, font })
+  p.drawText('Another line that stays', { x: 60, y: 660, size: 14, font })
+  await doc.attach(new TextEncoder().encode('the code ATTACHSECRET appears in this attachment'), 'notes.txt', { mimeType: 'text/plain', description: 'Notes about ATTACHSECRET' })
+  doc.catalog.set(N('OpenAction'), doc.context.obj({ S: 'JavaScript', JS: PDFString.of("app.alert('ATTACHSECRET')") }))
+  doc.catalog.set(N('PageLabels'), doc.context.obj({ Nums: [0, { S: 'D', P: PDFString.of('Sec-') }] }))
+  doc.setTitle('Plain title')
+  return doc.save()
+}
+
+/** A page turned by 90 degrees with text on it (marks and the overlay must follow the rotation). */
+export async function createRotatedPdf() {
+  const doc = await PDFDocument.create()
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const p = doc.addPage([612, 792])
+  p.setRotation(degrees(90))
+  p.drawText('Rotated page with ROTATEDSECRET in the middle', { x: 72, y: 500, size: 16, font })
+  p.drawText('Second rotated line that stays', { x: 72, y: 460, size: 16, font })
+  return doc.save()
+}
+
 /** A tiny two-page document whose second page reuses the first page's form (copy-on-write tests). */
 export async function createSharedFormPdf() {
   const doc = await PDFDocument.create()
@@ -243,6 +289,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   mkdirSync(out, { recursive: true })
   const proof = await createProofPdf()
   writeFileSync(join(out, 'redact-proof.pdf'), proof.bytes)
-  writeFileSync(join(out, 'redact-proof.json'), JSON.stringify({ secret: proof.secret, positions: proof.positions }))
+  writeFileSync(join(out, 'redact-proof.json'), JSON.stringify({ secret: proof.secret, positions: proof.positions, raster: RASTER }))
+  writeFileSync(join(out, 'redact-proof.raster'), rasterPixels(proof.secret))
   writeFileSync(join(out, 'redact-shared.pdf'), await createSharedFormPdf())
+  writeFileSync(join(out, 'redact-patterns.pdf'), await createPatternsPdf())
+  writeFileSync(join(out, 'redact-hidden.pdf'), await createHiddenDataPdf())
+  writeFileSync(join(out, 'redact-rotated.pdf'), await createRotatedPdf())
 }

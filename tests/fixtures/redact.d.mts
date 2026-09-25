@@ -14,3 +14,6 @@ export function createProofPdf(secret?: string): Promise<{
   positions: { rawLeft: Box; jpegLeft: Box; vectorArea: Box; invisible: Box }
 }>
 export function createSharedFormPdf(): Promise<Uint8Array>
+export function createPatternsPdf(): Promise<Uint8Array>
+export function createHiddenDataPdf(): Promise<Uint8Array>
+export function createRotatedPdf(): Promise<Uint8Array>

@@ -4,7 +4,7 @@ import { notify } from '../../state/notify'
 import { applyRedactions, previewRedactions, type ApplyResult, type PreviewResult } from './apply'
 import { summarize } from './logic/redact'
 import { Preview } from './Preview'
-import { pagesOf, totalRects, useRedact } from './store'
+import { pagesOf, totalRects, useDocRedact, useRedact } from './store'
 
 type Failure = Extract<ApplyResult, { ok: false }>
 
@@ -13,7 +13,7 @@ export function RedactDialog(): JSX.Element | null {
   const docId = useRedact((s) => s.dialogDoc)
   const settings = useRedact((s) => s.settings)
   const patch = useRedact((s) => s.patchSettings)
-  const marks = useRedact((s) => (docId ? (s.docs[docId]?.marks ?? []) : []))
+  const marks = useDocRedact(docId).marks // (a stable empty document when there is none: a fresh [] per render would loop)
   const [busy, setBusy] = useState<null | 'preview' | 'apply'>(null)
   const [progress, setProgress] = useState('')
   const [preview, setPreview] = useState<PreviewResult | null>(null)

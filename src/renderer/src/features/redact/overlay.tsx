@@ -64,7 +64,10 @@ export const markLabel = (m: UiMark): string => `${m.kind === 'area' ? 'Area' : 
 
 /** The per-page layer: redaction marks (translucent red), pending search hits, and the area tool. */
 export function RedactOverlay(props: PageOverlayProps): JSX.Element | null {
-  const { docId, pageIndex, scale, width, height, viewport, renderVersion } = props
+  const { docId, pageIndex, scale, width, height, renderVersion } = props
+  // While the page canvas re-renders after a zoom/resize, `props.viewport` still has the previous scale;
+  // marks are placed with the current one so they never lag behind the layout.
+  const viewport = useMemo(() => (props.viewport && Math.abs(props.viewport.scale - scale) > 1e-9 ? props.viewport.clone({ scale }) : props.viewport), [props.viewport, scale])
   const rootRef = useRef<HTMLDivElement>(null)
   const tool = useWorkspace((s) => s.activeTool)
   const d = useDocRedact(docId)

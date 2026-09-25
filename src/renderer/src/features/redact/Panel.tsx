@@ -43,8 +43,8 @@ function viewRect(vp: PageViewport, r: Rect): { left: number; top: number; width
 }
 
 /** Numeric fields (points from the top-left of the displayed page) to add an area mark or edit the selected one. */
-function AreaFields({ docId, tab, selected }: { docId: string; tab: Tab; selected: UiMark | undefined }): JSX.Element {
-  const editing = selected && selected.kind === 'area' && selected.rects.length === 1 ? selected : undefined
+function AreaFields({ docId, tab, mode, selected }: { docId: string; tab: Tab; mode: 'add' | 'edit'; selected?: UiMark }): JSX.Element {
+  const editing = mode === 'edit' && selected && selected.kind === 'area' && selected.rects.length === 1 ? selected : undefined
   const [page, setPage] = useState(tab.view.page)
   useEffect(() => {
     if (!editing) setPage(tab.view.page)
@@ -90,7 +90,7 @@ function AreaFields({ docId, tab, selected }: { docId: string; tab: Tab; selecte
         type="number"
         inputMode="decimal"
         className="field mt-0.5 w-full select-text px-1"
-        aria-label={`${label} in points`}
+        aria-label={`${mode === 'add' ? 'New area' : 'Selected area'} ${label.toLowerCase()} in points`}
         value={vals[key]}
         onChange={(e) => setVals({ ...vals, [key]: e.target.value })}
         onBlur={commit}
@@ -105,7 +105,7 @@ function AreaFields({ docId, tab, selected }: { docId: string; tab: Tab; selecte
   )
 
   return (
-    <fieldset className="rounded-md border border-line p-2" data-testid="redact-area-fields">
+    <fieldset className="rounded-md border border-line p-2" data-testid={mode === 'add' ? 'redact-add-area-fields' : 'redact-edit-area-fields'}>
       <legend className="px-1 text-xs font-semibold text-ink-muted">{editing ? 'Selected area (points from top-left)' : 'Add an area (points from top-left)'}</legend>
       {!editing && (
         <label className="mb-1 flex items-center gap-2 text-xs text-ink-muted">
@@ -362,7 +362,8 @@ export function RedactPanel({ tab }: { tab: Tab }): JSX.Element {
       )}
 
       <MarksList docId={docId} marks={d.marks} selectedId={d.selectedId} />
-      <AreaFields docId={docId} tab={tab} selected={selected} />
+      {selected && selected.kind === 'area' && selected.rects.length === 1 && <AreaFields key={selected.id} docId={docId} tab={tab} mode="edit" selected={selected} />}
+      <AreaFields docId={docId} tab={tab} mode="add" />
       <FindSection docId={docId} tab={tab} />
       <p className="sr-only" role="status" aria-live="polite" data-testid="redact-announcer">
         {announcement}

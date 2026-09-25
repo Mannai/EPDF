@@ -1,13 +1,14 @@
-import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFStream, PDFString, decodePDFRawStream, PDFRawStream } from 'pdf-lib'
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFStream, PDFString } from 'pdf-lib'
 import { describe, expect, it, beforeAll } from 'vitest'
-import { analyzePage, fontFromDict } from '../../src/renderer/src/features/textedit/pdfcontent/analyze'
-import { bytesToLatin1, parseContent } from '../../src/renderer/src/features/textedit/pdfcontent/content'
+import { analyzePage } from '../../src/renderer/src/features/textedit/pdfcontent/analyze'
+import { bytesToLatin1 } from '../../src/renderer/src/features/textedit/pdfcontent/content'
 import { decodeImage } from '../../src/renderer/src/features/redact/logic/imageRedact'
 import { redactDocument, type MarkInput, DEFAULT_OPTIONS, type RedactOptions } from '../../src/renderer/src/features/redact/logic/redact'
 import { searchDocument } from '../../src/renderer/src/features/redact/logic/search'
 import { verifyRedaction } from '../../src/renderer/src/features/redact/logic/verify'
 import { RASTER, SECRET, createProofPdf, rasterPixels } from '../fixtures/redact.mjs'
 import { flattenText, readPdf } from '../support/pdfText'
+import { decoded, residue } from '../support/redactProof'
 
 /**
  * THE proof: a document with the secret in every form we handle is redacted; afterwards the secret cannot be
@@ -32,7 +33,7 @@ beforeAll(async () => {
   proof = await createProofPdf()
   const src = await PDFDocument.load(proof.bytes)
   const hits = await searchDocument(src, { kind: 'literal', query: SECRET, caseSensitive: true, wholeWord: false })
-  marks = hits.map((h, i) => ({ id: `s${i}`, pageIndex: h.pageIndex, rects: h.rects, text: h.text }))
+  marks = hits.map((h, i) => ({ id: `s${i}`, pageIndex: h.pageIndex, rects: h.rects, quads: h.quads, text: h.text }))
   const p = proof.positions
   marks.push({ id: 'raw', pageIndex: 0, rects: [{ ...p.rawLeft }] }, { id: 'jpg', pageIndex: 0, rects: [{ ...p.jpegLeft }] }, { id: 'vec', pageIndex: 0, rects: [{ ...p.vectorArea }] })
   const res = redactDocument(src, marks, OPTIONS)
@@ -43,111 +44,6 @@ beforeAll(async () => {
   outPdf = await PDFDocument.load(out)
 })
 
-// ---- helpers -----------------------------------------------------------------------------------------------
-
-function* allObjects(pdf: PDFDocument): Generator<[PDFRef, unknown]> {
-  for (const [ref, obj] of pdf.context.enumerateIndirectObjects()) yield [ref, obj]
-}
-
-function decoded(s: PDFStream): Uint8Array | null {
-  try {
-    return s instanceof PDFRawStream ? decodePDFRawStream(s).decode() : null
-  } catch {
-    return null
-  }
-}
-
-const hexOf = (b: Uint8Array): string => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')
-const utf16 = (s: string): Uint8Array => Uint8Array.from(Array.from(s).flatMap((c) => [c.charCodeAt(0) >> 8, c.charCodeAt(0) & 255]))
-const latin = (s: string): Uint8Array => Uint8Array.from(Array.from(s, (c) => c.charCodeAt(0) & 255))
-
-function bytesIncludes(hay: Uint8Array, needle: Uint8Array): boolean {
-  outer: for (let i = 0; i + needle.length <= hay.length; i++) {
-    for (let j = 0; j < needle.length; j++) if (hay[i + j] !== needle[j]) continue outer
-    return true
-  }
-  return false
-}
-
-/** Every spelling of `secret` we can think of: literal, UTF-16BE, hex of both, and the glyph codes of every font. */
-function spellings(pdf: PDFDocument, secret: string): { name: string; bytes: Uint8Array }[] {
-  const out: { name: string; bytes: Uint8Array }[] = [
-    { name: 'literal', bytes: latin(secret) },
-    { name: 'utf16be', bytes: utf16(secret) },
-    { name: 'hex', bytes: latin(hexOf(latin(secret))) },
-    { name: 'hex-utf16', bytes: latin(hexOf(utf16(secret))) },
-    { name: 'HEX', bytes: latin(hexOf(latin(secret)).toUpperCase()) }
-  ]
-  for (const [ref, obj] of allObjects(pdf)) {
-    if (!(obj instanceof PDFDict) || obj.lookup(N('Type')) !== N('Font')) continue
-    const font = fontFromDict(obj)
-    const used = new Set<number>(Array.from({ length: 0x10000 }, (_, i) => i))
-    const codes: number[][] = []
-    let ok = true
-    for (const ch of secret) {
-      const c = font.encode(ch, used)
-      if (!c) {
-        ok = false
-        break
-      }
-      codes.push(c)
-    }
-    if (!ok) continue
-    const seq = Uint8Array.from(codes.flat())
-    out.push({ name: `glyph codes of font ${ref.objectNumber}`, bytes: seq }, { name: `glyph codes (hex) of font ${ref.objectNumber}`, bytes: latin(hexOf(seq)) }, { name: `glyph codes (HEX) of font ${ref.objectNumber}`, bytes: latin(hexOf(seq).toUpperCase()) })
-  }
-  return out
-}
-
-/** Text-showing operand strings of a content stream, TJ pieces joined. */
-function shownStrings(bytes: Uint8Array): Uint8Array[] {
-  let ops
-  try {
-    ops = parseContent(bytes).ops
-  } catch {
-    return []
-  }
-  const res: Uint8Array[] = []
-  for (const op of ops) {
-    if (op.op === 'TJ' && op.args[0]?.t === 'arr') {
-      const parts = op.args[0].v.flatMap((x) => (x.t === 'str' ? [...x.b] : []))
-      res.push(Uint8Array.from(parts))
-    } else if (['Tj', "'", '"'].includes(op.op)) {
-      const s = op.args[op.op === '"' ? 2 : 0]
-      if (s?.t === 'str') res.push(s.b)
-    }
-  }
-  return res
-}
-
-/** Where (if anywhere) `secret` still occurs: decompressed streams, joined show strings, object strings, raw bytes. */
-function residue(bytes: Uint8Array, pdf: PDFDocument, secret: string): string[] {
-  const found: string[] = []
-  const sp = spellings(pdf, secret)
-  for (const { name, bytes: needle } of sp) if (bytesIncludes(bytes, needle) && name !== 'glyph codes of font') found.push(`raw file bytes: ${name}`)
-  for (const [ref, obj] of allObjects(pdf)) {
-    if (obj instanceof PDFStream) {
-      const d = decoded(obj)
-      if (!d) continue
-      for (const { name, bytes: needle } of sp) {
-        if (bytesIncludes(d, needle)) found.push(`stream ${ref.objectNumber}: ${name}`)
-        for (const s of shownStrings(d)) if (bytesIncludes(s, needle)) found.push(`stream ${ref.objectNumber} (joined show strings): ${name}`)
-      }
-    }
-    // strings inside dictionaries/arrays
-    const visit = (o: unknown, depth = 0): void => {
-      if (depth > 20) return
-      if (o instanceof PDFStream) return visit(o.dict, depth + 1)
-      if (o instanceof PDFString || o instanceof PDFHexString) {
-        const b = o.asBytes()
-        for (const { name, bytes: needle } of sp.slice(0, 2)) if (bytesIncludes(b, needle)) found.push(`string in object ${ref.objectNumber}: ${name}`)
-      } else if (o instanceof PDFDict) for (const [, v] of o.entries()) visit(v, depth + 1)
-      else if (o instanceof PDFArray) for (let i = 0; i < o.size(); i++) visit(o.get(i), depth + 1)
-    }
-    visit(obj)
-  }
-  return found
-}
 
 const pageRefs = (pdf: PDFDocument): PDFDict[] => pdf.getPages().map((p) => p.node)
 

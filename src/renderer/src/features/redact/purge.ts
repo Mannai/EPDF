@@ -1,5 +1,5 @@
 import { APPLY_LABEL } from './apply'
-import { useEdits } from '../../edit/session'
+import { reloadFromDisk, useEdits } from '../../edit/session'
 import { askConfirm } from '../../state/confirm'
 import { errorMessage, notify } from '../../state/notify'
 import { useTabs } from '../../state/tabs'
@@ -28,6 +28,7 @@ async function offer(docId: string, pathAtApply: string): Promise<void> {
     notify('info', `The redacted copy was saved as “${tab.name}”. The original file “${pathAtApply.split(/[\\/]/).pop()}” is unchanged and still contains the unredacted content.`)
     return
   }
+  notify('info', 'The redaction is saved and permanent. The undo history for this document was cleared.')
   let info = { versions: 0, recovery: false }
   try {
     info = await window.epdf.call<typeof info>('redact:historyInfo', { docId })
@@ -70,6 +71,9 @@ export function watchSaves(): void {
       // saved with the redaction as the newest step (undoing it before saving leaves a different undo label)
       if (!info.dirty && info.undoLabel === APPLY_LABEL && !asking.has(docId)) {
         asking.add(docId)
+        // A saved redaction is irreversible: drop the in-memory undo history (which still holds the unredacted
+        // bytes) and continue from what is on disk. Deferred so the save flow that triggered this can finish.
+        setTimeout(() => reloadFromDisk(docId), 0)
         void offer(docId, p.path).finally(() => asking.delete(docId))
       }
     }
