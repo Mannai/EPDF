@@ -254,42 +254,26 @@ interface Measurer {
 /** Greedy wrap: explicit newlines are kept; words longer than a line are broken by characters. */
 export function wrapLines(text: string, measure: (s: string) => number, maxWidth: (lineIndex: number) => number): string[] {
   const out: string[] = []
+  const limit = (): number => Math.max(maxWidth(out.length), 0)
   for (const para of text.split('\n')) {
-    const tokens = para.match(/\S+\s*|\s+/g) ?? ['']
     let cur = ''
-    const push = (s: string): void => {
-      out.push(s)
+    const flush = (): void => {
+      out.push(cur.trimEnd())
       cur = ''
     }
-    for (const tok of tokens) {
-      const limit = maxWidth(out.length)
-      if (cur === '' || measure((cur + tok).trimEnd()) <= limit) {
-        cur += tok
-        if (cur !== '' && measure(cur.trimEnd()) > limit && cur.trimEnd() === tok.trimEnd()) {
-          // a single long word: break it by characters
-          const chars = Array.from(cur.trimEnd())
-          let piece = ''
-          for (const ch of chars) {
-            if (piece !== '' && measure(piece + ch) > maxWidth(out.length)) push(piece)
-            piece += ch
-          }
-          cur = piece
-        }
-      } else {
-        push(cur.trimEnd())
-        cur = tok
-        if (measure(cur.trimEnd()) > maxWidth(out.length)) {
-          const chars = Array.from(cur.trimEnd())
-          let piece = ''
-          for (const ch of chars) {
-            if (piece !== '' && measure(piece + ch) > maxWidth(out.length)) push(piece)
-            piece += ch
-          }
-          cur = piece
-        }
+    for (let tok of para.match(/\S+\s*|\s+/g) ?? []) {
+      if (cur !== '' && measure((cur + tok).trimEnd()) > limit()) flush()
+      // A word longer than a whole line is cut into pieces that each fit (at least one character).
+      while (cur === '' && Array.from(tok.trimEnd()).length > 1 && measure(tok.trimEnd()) > limit()) {
+        const chars = Array.from(tok)
+        let n = 1
+        while (n < chars.length - 1 && measure(chars.slice(0, n + 1).join('').trimEnd()) <= limit()) n++
+        out.push(chars.slice(0, n).join('').trimEnd())
+        tok = chars.slice(n).join('')
       }
+      cur += tok
     }
-    push(cur.trimEnd())
+    flush()
   }
   return out
 }
@@ -405,13 +389,15 @@ async function replaceBlock(
       }
     } else {
       if (!loader) throw refuse('The new text uses characters that need a Unicode font, which is not available here.')
-      pdf.registerFontkit(fontkit)
       const bytes = await loader.unicodeFont(first.font.style)
-      pdfFont = await pdf.embedFont(bytes, { subset: true })
-      const missing = Array.from(new Set(Array.from(newText.replace(/\n/g, '')).filter((ch) => !pdfFont.getCharacterSet().includes(ch.codePointAt(0)!))))
+      // Check coverage before embedding anything, so a refusal leaves the document exactly as it was.
+      const probe = fontkit.create(bytes) as { hasGlyphForCodePoint(cp: number): boolean }
+      const missing = Array.from(new Set(Array.from(newText.replace(/\n/g, '')).filter((ch) => !probe.hasGlyphForCodePoint(ch.codePointAt(0)!))))
       if (missing.length) {
         throw refuse(`No font that Epdf can use has the character${missing.length > 1 ? 's' : ''} ${missing.slice(0, 5).map((c) => `“${c}”`).join(' ')}. Nothing was changed.`)
       }
+      pdf.registerFontkit(fontkit)
+      pdfFont = await pdf.embedFont(bytes, { subset: true })
       label = 'Noto Sans'
       fontOperand = nameObj(addResource(pdf, source, 'Font', 'EpdfF', pdfFont.ref))
     }

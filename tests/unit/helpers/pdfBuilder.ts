@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { deflateSync } from 'node:zlib'
 import fontkit from '@pdf-lib/fontkit'
 import { PDFDocument, PDFName, PDFRef, StandardFonts, rgb, type PDFObject, type PDFPage } from 'pdf-lib'
 import { analyzePage } from '../../../src/renderer/src/features/textedit/pdfcontent/analyze'
@@ -11,6 +12,10 @@ export const NOTO_DIR = resolve('src/renderer/src/features/textedit/fonts')
 export const notoBytes = (variant = 'Regular'): Uint8Array => new Uint8Array(readFileSync(resolve(NOTO_DIR, `NotoSans-${variant}.ttf`)))
 
 export type Lit = Record<string, unknown>
+export interface Pdf {
+  doc: PDFDocument
+  bytes: Uint8Array
+}
 
 export interface PageSpec {
   size?: [number, number]
@@ -34,7 +39,7 @@ export function stream(doc: PDFDocument, content: string | Uint8Array, dict: Lit
 }
 
 /** Builds a document from page specs, all objects hand-made (no pdf-lib drawing helpers). */
-export async function buildPdf(pages: PageSpec[], setup?: (doc: PDFDocument) => void): Promise<{ doc: PDFDocument; bytes: Uint8Array }> {
+export async function buildPdf(pages: PageSpec[], setup?: (doc: PDFDocument) => void): Promise<Pdf> {
   const doc = await PDFDocument.create()
   setup?.(doc)
   for (const spec of pages) {
@@ -143,6 +148,69 @@ export async function sampleTextPdf(): Promise<Uint8Array> {
     page.drawText('Hello world from Epdf', { x: 72, y: 700, size: 24, font, color: rgb(0, 0, 0) })
     page.drawText('The quick brown fox jumps over the lazy dog.', { x: 72, y: 640, size: 14, font })
   })
+}
+
+// ---- pictures ------------------------------------------------------------------------------------------
+
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256)
+  for (let n = 0; n < 256; n++) {
+    let c = n
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+    t[n] = c >>> 0
+  }
+  return t
+})()
+
+function crc32(buf: Uint8Array): number {
+  let c = 0xffffffff
+  for (const b of buf) c = CRC_TABLE[(c ^ b) & 255] ^ (c >>> 8)
+  return (c ^ 0xffffffff) >>> 0
+}
+
+/** A valid solid-colour PNG (8-bit RGB), built by hand so tests need no image library. */
+export function makePng(w: number, h: number, color: [number, number, number] = [200, 30, 30]): Uint8Array {
+  const chunk = (type: string, data: Uint8Array): Uint8Array => {
+    const out = new Uint8Array(12 + data.length)
+    const dv = new DataView(out.buffer)
+    dv.setUint32(0, data.length)
+    for (let i = 0; i < 4; i++) out[4 + i] = type.charCodeAt(i)
+    out.set(data, 8)
+    dv.setUint32(8 + data.length, crc32(out.subarray(4, 8 + data.length)))
+    return out
+  }
+  const ihdr = new Uint8Array(13)
+  const dv = new DataView(ihdr.buffer)
+  dv.setUint32(0, w)
+  dv.setUint32(4, h)
+  ihdr[8] = 8
+  ihdr[9] = 2
+  const raw = new Uint8Array((w * 3 + 1) * h)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) raw.set(color, y * (w * 3 + 1) + 1 + x * 3)
+  const parts = [Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', new Uint8Array(deflateSync(raw))), chunk('IEND', new Uint8Array(0))]
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0))
+  let o = 0
+  for (const p of parts) {
+    out.set(p, o)
+    o += p.length
+  }
+  return out
+}
+
+/** A structurally valid baseline JPEG header + payload (enough for embedding; not meant to be decoded). */
+export function makeFakeJpeg(w: number, h: number): Uint8Array {
+  return Uint8Array.from([
+    0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0,
+    0xff, 0xc0, 0, 17, 8, h >> 8, h & 255, w >> 8, w & 255, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1,
+    0xff, 0xda, 0, 12, 3, 1, 0, 2, 0x11, 3, 0x11, 0, 63, 0, 0x7f, 0x7f, 0xff, 0xd9
+  ])
+}
+
+/** Adds a raw RGB image XObject to a document and returns its reference. */
+export function addRawImage(doc: PDFDocument, w: number, h: number): PDFRef {
+  return doc.context.register(
+    doc.context.stream(new Uint8Array(w * h * 3).fill(120), { Type: 'XObject', Subtype: 'Image', Width: w, Height: h, ColorSpace: 'DeviceRGB', BitsPerComponent: 8 } as never)
+  )
 }
 
 // ---- reading back --------------------------------------------------------------------------------------
