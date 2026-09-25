@@ -1,4 +1,3 @@
-import { P_BIT, hasBit } from '@shared/features/security'
 import { currentBytes } from '../../edit/session'
 import { getAcceptedPassword, getLoaded } from '../../pdf/docCache'
 import { activeTab } from '../../state/actions'
@@ -7,6 +6,7 @@ import { useTabs } from '../../state/tabs'
 import { getCommand } from '../api'
 import { inspectEncryption } from './crypto/document'
 import { authenticate } from './crypto/handler'
+import { isAllowed, type Restricted } from './logic'
 import { forgetAccess, getAccess, setAccess } from './session'
 
 /**
@@ -19,25 +19,19 @@ import { forgetAccess, getAccess, setAccess } from './session'
 const PDFJS_PRINT = 0x04
 const PDFJS_COPY = 0x10
 
-type What = 'print' | 'copy'
+type What = Restricted
 
 const MESSAGES: Record<What, string> = {
   print: 'Printing is not allowed by this document’s permissions. Open it with the owner password to print.',
   copy: 'Copying is not allowed by this document’s permissions. Open it with the owner password to copy.'
 }
 
-/** True unless the document was opened with a user password whose permissions forbid `what`. */
-export function isAllowed(docId: string | undefined, what: What): boolean {
-  if (!docId) return true
-  const a = getAccess(docId)
-  if (!a || a.kind === 'owner') return true
-  return hasBit(a.P, what === 'print' ? P_BIT.print : P_BIT.copy)
-}
+const allowed = (docId: string | undefined, what: What): boolean => !docId || isAllowed(getAccess(docId), what)
 
 /** Refuses politely (a toast) when `what` is not allowed for the active document. Returns whether it is allowed. */
 export function checkAllowed(what: What): boolean {
   const t = activeTab()
-  if (isAllowed(t?.docId, what)) return true
+  if (allowed(t?.docId, what)) return true
   notify('info', MESSAGES[what])
   return false
 }
@@ -92,7 +86,7 @@ export function installGates(): void {
     'copy',
     (e) => {
       const t = activeTab()
-      if (!t || isAllowed(t.docId, 'copy')) return
+      if (!t || allowed(t.docId, 'copy')) return
       const node = window.getSelection()?.anchorNode
       const el = node instanceof Element ? node : node?.parentElement
       if (!el?.closest('.epdf-page, .textLayer')) return // a search box or form field: not document content

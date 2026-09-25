@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { ProtectSettings } from '@shared/features/security'
+import type { SecurityInfo } from './logic'
 
 /** UI state of the Security feature's three dialogs. Nothing here is persisted; passwords live only while a dialog is open. */
 
@@ -61,22 +62,6 @@ export const useProtectDialog = create<ProtectDialogState>((set, get) => ({
     r?.resolve(s)
   }
 }))
-
-export interface InfoRow {
-  label: string
-  value: string
-}
-
-export interface SecurityInfo {
-  fileName: string
-  protectedDoc: boolean
-  /** Short headline, e.g. "Protected with a password". */
-  summary: string
-  rows: InfoRow[]
-  permissions: { label: string; allowed: boolean; detail: string }[]
-  /** Extra explanation lines (unsaved state, restrictions notice, ...). */
-  notes: string[]
-}
 
 interface InfoState {
   info: SecurityInfo | null

@@ -1,13 +1,14 @@
 import { PDFDocument } from 'pdf-lib'
-import { ALL_PERMISSIONS, ALGORITHM_LABEL, P_BIT, describePermissions, hasBit, permissionsToP, pToPermissions, type Algorithm, type ProtectSettings } from '@shared/features/security'
+import { permissionsToP, pToPermissions, type ProtectSettings } from '@shared/features/security'
 import { currentBytes, editPdf, ensureEditable, isDirty } from '../../edit/session'
 import { getAcceptedPassword } from '../../pdf/docCache'
 import { askConfirm } from '../../state/confirm'
 import { errorMessage, notify } from '../../state/notify'
 import { useTabs } from '../../state/tabs'
 import { decryptDocument, embedMarker, hasMarker, inspectEncryption, makeProtection, readMarker, removeMarker } from './crypto/document'
-import { authenticate, describeAlgorithm, type Access, type EncryptionInfo, type Protection } from './crypto/handler'
-import { useInfoDialog, usePasswordPrompt, useProtectDialog, type SecurityInfo } from './store'
+import { authenticate, type Access, type EncryptionInfo, type Protection } from './crypto/handler'
+import { DEFAULT_SETTINGS, algorithmOf, describeProtection, mayEdit, type DocAccess } from './logic'
+import { useInfoDialog, usePasswordPrompt, useProtectDialog } from './store'
 
 /**
  * The Security feature's document logic: unlocking encrypted documents for editing, protecting, changing and
@@ -16,12 +17,6 @@ import { useInfoDialog, usePasswordPrompt, useProtectDialog, type SecurityInfo }
  *    stay consistent and `beforeWrite` knows how to re-encrypt, and
  *  - in `accessByDoc`, which password level (owner/user) opened the document in this window.
  */
-
-export interface DocAccess {
-  kind: 'user' | 'owner'
-  P: number
-  R: number
-}
 
 const accessByDoc = new Map<string, DocAccess>()
 
@@ -64,9 +59,6 @@ async function obtainAccess(docId: string, info: EncryptionInfo, purpose: Purpos
     incorrect = true
   }
 }
-
-/** Editing needs the "modify content" permission unless the owner password was used. */
-export const mayEdit = (kind: 'user' | 'owner', P: number): boolean => kind === 'owner' || hasBit(P, P_BIT.modify)
 
 /**
  * The `decrypt` edit hook: unlock an encrypted document for editing. Returns the plaintext (carrying the protection
@@ -115,18 +107,6 @@ async function ensureOwner(docId: string, prot: Protection): Promise<boolean> {
   if (!access) return false
   setAccess(docId, { kind: 'owner', P: prot.info.P, R: prot.info.R })
   return true
-}
-
-export function algorithmOf(info: Pick<EncryptionInfo, 'R' | 'stmMethod'>): Algorithm {
-  return info.R >= 5 ? 'aes256' : info.stmMethod === 'AESV2' ? 'aes128' : 'rc4-128'
-}
-
-export const DEFAULT_SETTINGS: ProtectSettings = {
-  algorithm: 'aes256',
-  userPassword: '',
-  ownerPassword: '',
-  permissions: { ...ALL_PERMISSIONS },
-  encryptMetadata: true
 }
 
 /** Tools ▸ Protect with Password… (also used to change the passwords/permissions of a protected document). */
@@ -195,38 +175,6 @@ export async function removeFlow(docId: string): Promise<void> {
   }
 }
 
-const yesNo = (b: boolean): string => (b ? 'Yes' : 'No')
-
-/** Builds what the read-only info dialog shows (also unit-tested). */
-export async function describeProtection(fileName: string, info: EncryptionInfo | null, opts: { unsaved?: boolean; access?: DocAccess } = {}): Promise<SecurityInfo> {
-  if (!info) {
-    return { fileName, protectedDoc: false, summary: 'This document is not password protected.', rows: [], permissions: [], notes: [] }
-  }
-  const perms = pToPermissions(info.P, info.R)
-  const opensFree = !!(await authenticate(info, ''))
-  const notes: string[] = []
-  if (opts.unsaved) notes.push('This is the protection the document has in Epdf now, with unsaved changes. It is written to the file when you save; the file on disk may still have different settings.')
-  if (info.stmMethod === 'RC4') notes.push('RC4 is an old cipher with known weaknesses. Use AES-256 unless an old reader needs to open the file.')
-  if (info.R === 5) notes.push('This file uses an early draft of AES-256 (revision 5) that is deprecated. Protect it again to upgrade it to revision 6.')
-  notes.push('Restrictions are honoured only by programs that choose to. The password to open is what actually keeps the content private.')
-  const rows: SecurityInfo['rows'] = [
-    { label: 'Encryption', value: describeAlgorithm(info) },
-    { label: 'Key length', value: `${info.keyBits}-bit` },
-    { label: 'Security handler', value: `Standard (version ${info.V}, revision ${info.R})` },
-    { label: 'Opens without a password', value: opensFree ? 'Yes: the password to open is empty' : 'No: a password is required' },
-    { label: 'Metadata encrypted', value: yesNo(info.encryptMetadata) }
-  ]
-  if (opts.access) rows.push({ label: 'Opened in this window with', value: opts.access.kind === 'owner' ? 'The owner password (all permissions)' : 'A user password (restricted by the permissions below)' })
-  return {
-    fileName,
-    protectedDoc: true,
-    summary: opensFree && perms.print === 'high' && perms.copy && perms.edit ? 'Protected: the password only restricts changes.' : 'This document is password protected.',
-    rows,
-    permissions: describePermissions(perms),
-    notes
-  }
-}
-
 /** Tools ▸ Document Properties ▸ Security… */
 export async function infoFlow(docId: string): Promise<void> {
   try {
@@ -239,5 +187,3 @@ export async function infoFlow(docId: string): Promise<void> {
     notify('error', `Couldn’t read the document’s security settings: ${errorMessage(err)}`)
   }
 }
-
-export const ALGORITHM_CHOICES: { value: Algorithm; label: string }[] = (['aes256', 'aes128', 'rc4-128'] as Algorithm[]).map((value) => ({ value, label: ALGORITHM_LABEL[value] }))

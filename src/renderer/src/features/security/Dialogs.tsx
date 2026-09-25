@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { isRestricted, type Permissions, type PrintPermission, type ProtectSettings } from '@shared/features/security'
 import { Modal } from '../../components/Modal'
-import { ALGORITHM_CHOICES } from './session'
+import { ALGORITHM_CHOICES } from './logic'
 import { useInfoDialog, usePasswordPrompt, useProtectDialog } from './store'
 
 /** The three dialogs of the Security feature, all built on the shared accessible `Modal`. */
