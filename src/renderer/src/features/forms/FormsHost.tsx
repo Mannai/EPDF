@@ -93,13 +93,18 @@ export function FormsHost(): JSX.Element | null {
       role="region"
       aria-label="Form"
       data-testid="form-banner"
-      className="fixed bottom-4 right-6 z-[45] flex max-w-md items-center gap-3 rounded-lg border border-line bg-raised px-3 py-2 text-sm shadow-lg"
+      className="fixed bottom-4 right-6 z-[45] flex max-w-xl items-center gap-3 rounded-lg border border-line bg-raised px-3 py-2 text-sm shadow-lg"
     >
       <span>
         This form has {fields.length} {fields.length === 1 ? 'field' : 'fields'}
         {unsupported > 0 ? ` (${unsupported} can’t be edited here)` : ''}
       </span>
-      <button type="button" className="btn h-7 px-2 text-xs" aria-pressed={highlight} onClick={() => useForms.getState().toggleHighlight()}>
+      <button
+        type="button"
+        className="btn h-7 whitespace-nowrap px-2 text-xs aria-pressed:border-accent aria-pressed:bg-accent/15 aria-pressed:text-accent"
+        aria-pressed={highlight}
+        onClick={() => useForms.getState().toggleHighlight()}
+      >
         Highlight fields
       </button>
       <button type="button" className="btn-icon h-7 w-7" aria-label="Dismiss form banner" onClick={() => useForms.getState().dismissBanner(docId)}>

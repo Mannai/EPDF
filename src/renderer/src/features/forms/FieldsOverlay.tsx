@@ -63,12 +63,10 @@ function boxStyle(p: WidgetProps): { style: CSSProperties; scale: number; height
   const box = p.geom.rectToCss(p.widget.rect)
   const bw = p.widget.borderWidth * scale
   const heightPt = Math.abs(p.widget.rect.y2 - p.widget.rect.y1)
-  const fontPt =
-    p.widget.fontSize && p.widget.fontSize > 0
-      ? p.widget.fontSize
-      : p.field.multiline
-        ? 12
-        : Math.min(14, Math.max(5, (heightPt - 2 * p.widget.borderWidth - 2) * 0.72))
+  const fits = Math.max(4, (heightPt - 2 * p.widget.borderWidth - 2) * 0.72)
+  let fontPt = p.widget.fontSize && p.widget.fontSize > 0 ? p.widget.fontSize : p.field.multiline ? 12 : Math.min(12, fits)
+  // Text can never be bigger than the box it lives in (some files declare a huge size for tiny fields).
+  if (!p.field.multiline) fontPt = Math.min(fontPt, Math.max(4, heightPt - 2 * p.widget.borderWidth - 1))
   const style: CSSProperties = {
     left: box.left,
     top: box.top,
@@ -267,21 +265,24 @@ function ChoiceWidget(p: WidgetProps): JSX.Element {
   )
 }
 
+/**
+ * Push buttons and signature fields can't be filled in: buttons only run PDF scripts (never executed here)
+ * and real digital signatures need a certificate. PDF.js still paints their appearance on the page, so this
+ * is just an invisible, labelled marker (outlined while "Highlight fields" is on).
+ */
 function UnsupportedWidget(p: WidgetProps): JSX.Element {
-  const { field, widget } = p
+  const { field } = p
   const { style } = boxStyle(p)
-  const what = field.kind === 'signature' ? 'Signature field' : field.kind === 'button' ? (widget.caption ?? 'Button') : 'Field'
-  const why = field.kind === 'signature' ? 'not supported (use the Sign tool)' : 'not supported'
+  const why = field.kind === 'signature' ? 'signature field, not supported here (use the Sign tool for a visual signature)' : 'button, not supported'
   return (
     <div
       role="note"
       aria-label={`${field.label}: ${why}`}
-      className="epdf-field-unsupported"
+      title={`${field.label}: ${why}`}
+      className={`epdf-field-unsupported ${p.highlight ? 'epdf-field-unsupported-hl' : ''}`}
       data-field={field.name}
-      style={{ left: style.left, top: style.top, width: style.width, height: style.height, fontSize: Math.min(11, (Number(style.height) || 14) * 0.6) }}
-    >
-      <span className="truncate px-1">{what}</span>
-    </div>
+      style={{ left: style.left, top: style.top, width: style.width, height: style.height }}
+    />
   )
 }
 

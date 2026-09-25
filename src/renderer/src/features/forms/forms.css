@@ -27,24 +27,17 @@
 .epdf-field:disabled {
   cursor: default;
 }
-.epdf-field-inert {
-  pointer-events: none !important;
-}
 .epdf-field-check {
   accent-color: #2457d6;
   padding: 0;
 }
+/* A marker for fields that cannot be edited: invisible unless highlighted. */
 .epdf-field-unsupported {
   position: absolute;
   box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  border: 1px dashed #59636e;
-  background: rgb(255 255 255 / 0.6);
-  color: #1f2328;
-  font: 11px Arial, Helvetica, sans-serif;
-  text-align: center;
   cursor: not-allowed;
+}
+.epdf-field-unsupported-hl {
+  outline: 1px dashed #2457d6;
+  background: rgb(120 170 255 / 0.15);
 }
