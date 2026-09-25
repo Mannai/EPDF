@@ -478,28 +478,35 @@ test.describe('form filling', () => {
     }
   })
 
-  test('a password-protected form is shown but cannot be filled, and editing it explains why', async () => {
-    const { app, page } = await launch({ files: [copyFixture('forms-encrypted.pdf')] })
+  test('a password-protected form is shown but is not fillable until unlocked; an edit unlocks it (empty user password) and saving keeps it protected', async () => {
+    // Since the Security feature registered the edit hooks, an encrypted document can be edited when its password is
+    // known (here the user password is empty): the edit is applied and the file stays encrypted when saved.
+    const path = copyFixture('forms-encrypted.pdf')
+    const { app, page } = await launch({ files: [path] })
     try {
       await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
       await expect(page.locator('[role="region"][aria-label="Form"]')).toContainText('password protected')
       await expect(page.locator('[data-field="locked_field"]')).toHaveCount(0)
       await expect(page.locator('[data-page="1"] .textLayer')).toContainText('Encrypted form')
 
-      // Other edits are refused with the standard message and leave the document untouched.
+      // Editing unlocks the document in memory and applies the edit as one undo step.
       await tool(page, 'Add text').click()
       const b = await box(page.locator('[data-page="1"]'))
       await page.mouse.click(b.x + 200, b.y + 200)
-      await page.getByLabel('Text to add to the page').fill('nope')
+      await page.getByLabel('Text to add to the page').fill('unlocked edit')
       await page.getByLabel('Text to add to the page').press('Control+Enter')
-      await expect(page.getByRole('alert').filter({ hasText: /password protected/ })).toBeVisible()
-      await expect(undoBtn(page)).toBeDisabled()
-      await expect(dot(page)).toHaveCount(0)
+      await expect(dot(page)).toBeVisible()
+      await expect(undoBtn(page)).toBeEnabled()
+      await expect(page.getByRole('alert').filter({ hasText: /password protected/ })).toHaveCount(0)
+
+      // Saving writes the document encrypted again (no plaintext), and the same (empty) password still opens it.
+      await save(page)
+      expect(readFileSync(path).toString('latin1')).toContain('/Encrypt')
+      await expect(PDFDocument.load(readFileSync(path), { updateMetadata: false })).rejects.toThrow(/encrypt/i)
     } finally {
-      await app.close()
+      await quitDiscarding(app, page)
     }
   })
-
   test('a form on a page rotated 90 degrees: inputs sit on their widgets, at any zoom, and the fill is saved correctly', async () => {
     const path = copyFixture('forms-rotated.pdf')
     const { app, page } = await launch({ files: [path] })

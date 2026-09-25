@@ -6,7 +6,7 @@ import { PDFDocument } from 'pdf-lib'
 import { afterAll, describe, expect, it } from 'vitest'
 import { ALL_PERMISSIONS, permissionsToP, type Algorithm, type Permissions } from '@shared/features/security'
 import { protectBytes, inspectEncryption } from '../../src/renderer/src/features/security/crypto/document'
-import { authenticate } from '../../src/renderer/src/features/security/crypto/handler'
+import { authenticate, permsMatch } from '../../src/renderer/src/features/security/crypto/handler'
 import { expectFixturePlaintext, fixtureBytes, openWith } from './helpers/securityHelpers'
 
 const QPDF = process.env.QPDF ?? 'C:\\Program Files\\qpdf 12.4.1\\bin\\qpdf.exe'
@@ -83,6 +83,16 @@ describe('files we encrypt: round trip through our own decryptor', () => {
       expect(await expectFixturePlaintext((await openWith(b, 'open sesame')).plain)).toEqual([])
     })
   }
+
+  it('AES-256: the /Perms block we write decrypts to a block that matches /P (Algorithm 2.A step h); qpdf\'s does too', async () => {
+    const ours = await openWith(await protect('aes256', { perms: NO_PERMS }), 'boss')
+    expect(permsMatch(ours.info, ours.access.key)).toBe(true)
+    const theirs = await openWith(fixtureBytes('aes-256-r6'), 'user256')
+    expect(permsMatch(theirs.info, theirs.access.key)).toBe(true)
+    // A wrong key or a changed /P fails the check.
+    expect(permsMatch(ours.info, new Uint8Array(32))).toBe(false)
+    expect(permsMatch({ ...ours.info, P: ours.info.P ^ 4 }, ours.access.key)).toBe(false)
+  })
 
   it('EncryptMetadata=false: the XMP stream stays readable, everything else is encrypted (AES-128 and AES-256)', async () => {
     for (const alg of ['aes128', 'aes256'] as Algorithm[]) {

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PDFDocument } from 'pdf-lib'
 import { allStreamText, fixtureBytes, openWith } from '../unit/helpers/securityHelpers'
-import { axeViolations, canvasHasInk, copyFixture, fixture, launch, menuClick, quitDiscarding } from './helpers'
+import { axeViolations, canvasHasInk, copyFixture, crash, fixture, launch, menuClick, quitDiscarding } from './helpers'
 
 /**
  * Password protection driven through the real app: protect, save, reopen, edit, recover, remove, change, permissions.
@@ -339,7 +339,8 @@ test.describe('security: editing and saving protected documents', () => {
       await owner.getByRole('button', { name: 'Cancel' }).click()
       await expect(unsavedDot(page)).toHaveCount(0)
 
-      // The document is unlocked now: editing works without another prompt, and the save is still protected.
+      // The document is unlocked now (the tab reloads from the unlocked copy): editing works without another prompt, and the save is still protected.
+      await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
       await menuClick(app, 'Document', 'Rotate Page Clockwise')
       await expect(unsavedDot(page)).toBeVisible()
       await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
@@ -350,6 +351,42 @@ test.describe('security: editing and saving protected documents', () => {
     expect(await pdfLibRefuses(path)).toBe(true)
     expect(await rotationOnDisk(path, 'user128')).toBe(90)
     expect(latin(bytesOf(path))).toMatch(/\/Length\s+128/)
+  })
+})
+test.describe('security: crash recovery of protected work', () => {
+  test('protection chosen but not yet saved survives a crash: the recovery copy is encrypted, recovering asks for the password, saving writes it protected', async () => {
+    const path = copyFixture('sample.pdf')
+    const first = await launch({ files: [path], env: { EPDF_AUTOSAVE_MS: '300' } })
+    await expectPageRenders(first.page)
+    await protectViaUi(first.app, first.page, { user: 'crash-pw', owner: 'crash-own' })
+    const recoveryDir = join(first.userData, 'recovery')
+    await expect.poll(() => existsSync(recoveryDir) && readdirSync(recoveryDir).length > 0, { timeout: 15_000 }).toBe(true)
+    await first.page.waitForTimeout(800)
+    await crash(first.app)
+    expect(isEncrypted(path)).toBe(false) // the file itself was never touched
+    for (const f of readdirSync(recoveryDir)) {
+      const p = join(recoveryDir, f)
+      expect(isEncrypted(p), `recovery file ${f} must be encrypted`).toBe(true)
+      expect(await pdfLibRefuses(p)).toBe(true)
+      expect(await textOnDisk(p, 'crash-pw')).toContain('(Epdf sample page 1) Tj')
+    }
+
+    const second = await launch({ userData: first.userData, env: { EPDF_AUTOSAVE_MS: '300' } })
+    try {
+      const dlg = second.page.getByRole('dialog', { name: /Recover unsaved changes to “sample\.pdf”\?/ })
+      await expect(dlg).toBeVisible()
+      await dlg.getByRole('button', { name: 'Recover' }).click()
+      await openPrompt(second.page, 'crash-pw') // the recovered snapshot is the encrypted one
+      await expectPageRenders(second.page)
+      await expect(unsavedDot(second.page)).toBeVisible()
+      await saveButton(second.page).click()
+      await expect(unsavedDot(second.page)).toHaveCount(0)
+    } finally {
+      await second.app.close()
+    }
+    expect(await pdfLibRefuses(path)).toBe(true)
+    expect(await textOnDisk(path, 'crash-pw')).toContain('(Epdf sample page 4) Tj')
+    expect((await openWith(bytesOf(path), 'crash-own')).access.kind).toBe('owner')
   })
 })
 test.describe('security: removing and changing protection', () => {
