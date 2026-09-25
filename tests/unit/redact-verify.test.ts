@@ -138,7 +138,7 @@ describe('the self-check', () => {
       const xo = pdf.getPage(0).node.Resources()!.lookup(N('XObject')) as PDFDict
       for (const [k] of xo.entries()) {
         const s = xo.lookup(k)
-        if (s && (s as { dict?: PDFDict }).dict && String((s as { dict: PDFDict }).dict.lookup(N('Filter'))) === '/FlateDecode' && String((s as { dict: PDFDict }).dict.lookup(N('Subtype'))) === '/Image') {
+        if (s && (s as unknown as { dict?: PDFDict }).dict && String((s as unknown as { dict: PDFDict }).dict.lookup(N('Filter'))) === '/FlateDecode' && String((s as unknown as { dict: PDFDict }).dict.lookup(N('Subtype'))) === '/Image') {
           const img = pdf.context.flateStream(rasterPixels(), { Type: 'XObject', Subtype: 'Image', Width: 200, Height: 40, ColorSpace: 'DeviceRGB', BitsPerComponent: 8 })
           xo.set(k, pdf.context.register(img))
         }

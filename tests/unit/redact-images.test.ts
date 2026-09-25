@@ -86,7 +86,7 @@ describe('pixelSpans', () => {
 })
 
 describe('predictors (pdf-lib does not undo them, so we do)', () => {
-  const dictOf = async (o: Record<string, number>): Promise<PDFDict> => (await PDFDocument.create()).context.obj(o as never) as PDFDict
+  const dictOf = async (o: Record<string, number>): Promise<PDFDict> => (await PDFDocument.create()).context.obj(o as never) as unknown as PDFDict
 
   /** PNG-filters `rows` with the given filter type per row (0-4) exactly as an encoder would. */
   function pngEncode(rows: Uint8Array[], types: number[], bpp: number): Uint8Array {
