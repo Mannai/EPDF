@@ -1,4 +1,4 @@
-import { currentBytes, replaceBytes, useEdits, whenEditsSettled } from '../../edit/session'
+import { bytesForWriting, replaceBytes, useEdits, whenEditsSettled } from '../../edit/session'
 import { askConfirm } from '../../state/confirm'
 import { tabAddedListeners } from '../../state/tabs'
 
@@ -12,7 +12,8 @@ export async function flushRecovery(docId: string): Promise<void> {
   await whenEditsSettled(docId)
   const info = useEdits.getState()[docId]
   if (!info?.dirty) return
-  await window.epdf.writeRecovery(docId, await currentBytes(docId))
+  // Through the same write hooks as Save, so a protected document never lands in the recovery folder as plaintext.
+  await window.epdf.writeRecovery(docId, await bytesForWriting(docId))
   written.set(docId, info.version)
 }
 

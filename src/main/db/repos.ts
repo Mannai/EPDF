@@ -5,6 +5,47 @@ import type { DocViewState, RecentFile, Settings, VersionInfo } from '../../shar
 const MAX_RECENT = 100
 export const MAX_VERSIONS_PER_DOC = 20
 
+/**
+ * Small persistent key/value state scoped to one feature: `ctx.kv('ocr').set('languages', ['eng'])`.
+ * Values are JSON. Reads of missing or corrupt values return the fallback. For large or relational data
+ * (or anything needing an index), a feature owns real tables instead — coordinate the migration number.
+ */
+export class FeatureKv {
+  constructor(
+    private db: Database.Database,
+    readonly feature: string
+  ) {}
+
+  get<T>(key: string, fallback: T): T {
+    const row = this.db
+      .prepare('SELECT value_json FROM feature_kv WHERE feature = ? AND key = ?')
+      .get(this.feature, key) as { value_json: string } | undefined
+    if (!row) return fallback
+    try {
+      return JSON.parse(row.value_json) as T
+    } catch {
+      return fallback
+    }
+  }
+
+  set(key: string, value: unknown): void {
+    this.db
+      .prepare(
+        `INSERT INTO feature_kv (feature, key, value_json) VALUES (?, ?, ?)
+         ON CONFLICT(feature, key) DO UPDATE SET value_json = excluded.value_json`
+      )
+      .run(this.feature, key, JSON.stringify(value))
+  }
+
+  delete(key: string): void {
+    this.db.prepare('DELETE FROM feature_kv WHERE feature = ? AND key = ?').run(this.feature, key)
+  }
+
+  keys(): string[] {
+    return (this.db.prepare('SELECT key FROM feature_kv WHERE feature = ? ORDER BY key').all(this.feature) as { key: string }[]).map((r) => r.key)
+  }
+}
+
 export class RecoveryRepo {
   constructor(private db: Database.Database) {}
 

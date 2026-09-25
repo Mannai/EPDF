@@ -73,6 +73,19 @@ export const MIGRATIONS: { version: number; sql: string }[] = [
         created_at INTEGER NOT NULL
       );
     `
+  },
+  {
+    version: 4,
+    sql: `
+      -- Small per-feature settings/state (see FeatureKv). Features use this instead of adding tables,
+      -- so parallel features never fight over migration numbers.
+      CREATE TABLE feature_kv (
+        feature    TEXT NOT NULL,
+        key        TEXT NOT NULL,
+        value_json TEXT NOT NULL,
+        PRIMARY KEY (feature, key)
+      );
+    `
   }
 ]
 

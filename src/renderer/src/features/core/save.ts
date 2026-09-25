@@ -1,4 +1,4 @@
-import { currentBytes, isDirty, markSaved, whenEditsSettled } from '../../edit/session'
+import { bytesForWriting, isDirty, markSaved, whenEditsSettled } from '../../edit/session'
 import { askConfirm } from '../../state/confirm'
 import { errorMessage, notify } from '../../state/notify'
 import { useTabs } from '../../state/tabs'
@@ -31,7 +31,7 @@ export async function saveDoc(docId: string): Promise<boolean> {
   }
 
   try {
-    const bytes = await currentBytes(docId)
+    const bytes = await bytesForWriting(docId)
     await window.epdf.saveFile(docId, bytes)
     markSaved(docId)
     useTabs.getState().patchTab(docId, { changedOnDisk: false })
@@ -50,7 +50,7 @@ export async function saveDocAs(docId: string): Promise<boolean> {
   const tab = tabOf(docId)
   if (!tab) return false
   try {
-    const bytes = await currentBytes(docId)
+    const bytes = await bytesForWriting(docId)
     const res = await window.epdf.saveFileAs(docId, bytes)
     if (!res) return false
     markSaved(docId)
@@ -67,7 +67,7 @@ export async function saveDocCopy(docId: string): Promise<boolean> {
   const tab = tabOf(docId)
   if (!tab) return false
   try {
-    const res = await window.epdf.saveCopy(docId, await currentBytes(docId))
+    const res = await window.epdf.saveCopy(docId, await bytesForWriting(docId))
     if (res) notify('success', `Saved a copy as “${res.name}”.`, { label: 'Show in folder', run: () => void window.epdf.revealDoc(docId) })
     return !!res
   } catch (err) {

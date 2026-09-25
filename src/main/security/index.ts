@@ -40,9 +40,18 @@ export function installSecurity(): void {
   session.defaultSession.webRequest.onHeadersReceived((details, cb) => {
     cb({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [csp] } })
   })
-  // The viewer needs no device or notification permissions.
-  session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false))
-  session.defaultSession.setPermissionCheckHandler(() => false)
+  // Everything is denied except a VIDEO-ONLY camera stream for Epdf's own pages (webcam scanning). No
+  // microphone, no geolocation, no notifications, nothing for any other origin.
+  const trustedOrigin = (origin: string): boolean => isTrustedUrl(origin.endsWith('/') ? origin : `${origin}/`)
+  session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details) => {
+    const media = details as { mediaTypes?: string[] }
+    const videoOnly = !!media.mediaTypes && media.mediaTypes.length > 0 && media.mediaTypes.every((t) => t === 'video')
+    cb(permission === 'media' && videoOnly && trustedOrigin(new URL(wc.getURL()).origin))
+  })
+  session.defaultSession.setPermissionCheckHandler((_wc, permission, requestingOrigin, details) => {
+    const media = details as { mediaType?: string }
+    return permission === 'media' && media.mediaType === 'video' && trustedOrigin(requestingOrigin)
+  })
 }
 
 export function lockDownWebContents(wc: WebContents): void {

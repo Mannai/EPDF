@@ -2,6 +2,7 @@ import { app, nativeTheme } from 'electron'
 import { join } from 'node:path'
 import { Controller, pdfPathsFromArgv } from './controller'
 import { openRepos } from './db'
+import { FeatureKv } from './db/repos'
 import { bindFeatureWindows } from './features/api'
 import { loadFeatures } from './features'
 import { registerIpcHandlers } from './ipc/handlers'
@@ -11,6 +12,12 @@ import { installSecurity } from './security'
 import { registerAppProtocol, registerSchemePrivileges } from './services/protocol'
 
 registerSchemePrivileges()
+
+// Test hook: a synthetic camera so webcam features can be tested without hardware or a permission prompt.
+if (process.env['EPDF_FAKE_MEDIA']) {
+  app.commandLine.appendSwitch('use-fake-device-for-media-stream')
+  app.commandLine.appendSwitch('use-fake-ui-for-media-stream')
+}
 
 // Tests (and multi-profile use) can point the app at an isolated profile directory.
 if (process.env['EPDF_USER_DATA']) app.setPath('userData', process.env['EPDF_USER_DATA'])
@@ -57,6 +64,7 @@ async function start(): Promise<void> {
     files: c.files,
     jobs,
     windows: c.windows,
+    kv: (feature) => new FeatureKv(repos.db, feature),
     pathOfDoc: (docId) => c.registry.pathOf(docId)
   })
   installMenus(c)

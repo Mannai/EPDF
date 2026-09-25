@@ -2,6 +2,7 @@ import type { IpcMainInvokeEvent } from 'electron'
 import type { z } from 'zod'
 import type { Controller } from '../controller'
 import type { Repos } from '../db'
+import type { FeatureKv } from '../db/repos'
 import type { JobManager } from '../jobs/JobManager'
 import type { FileService } from '../services/fileService'
 import type { ManagedWindow, WindowManager } from '../windows/WindowManager'
@@ -16,6 +17,8 @@ export interface MainContext {
   files: FileService
   jobs: JobManager
   windows: WindowManager
+  /** Small persistent key/value state private to one feature: `ctx.kv('ocr').get('languages', ['eng'])`. */
+  kv(feature: string): FeatureKv
   /** Absolute path of a document that is open in some window (never trust a path from the renderer). */
   pathOfDoc(docId: string): string | null
 }

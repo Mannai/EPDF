@@ -60,6 +60,15 @@ docs/features/<name>.md                      # what it does, limits, how to test
 file**. The built-in example to copy is `features/core` (commands, dialogs, panel, autosave/recovery) and
 `features/core/rotate.ts` + `src/main/features/core/index.ts` (a complete tiny edit feature with a menu item).
 
+### Reusing other features
+
+Pure, DOM-free logic in another feature may be **imported read-only** (e.g. the content-stream engine in
+`features/textedit/pdfcontent/`, the form-field model in `features/forms/`, the page-edit engine in
+`src/shared/features/pages/`, the markup annotation builders in `features/markup/pdf/`, the Office/PDF writers in
+`features/create|export`). Never edit another feature's files: if you need a change, extend through a new file
+of your own or wrap the function, and mention it in your report. Talk to other features through
+`runCommand('<id>')` (soft dependency: the command may not exist) rather than importing their UI.
+
 ### Files you may edit
 
 * Anything inside your own feature folders and test files above.
@@ -118,8 +127,15 @@ const bytes = await currentBytes(docId)                                   // wha
 * Edits to one document are **serialized**; `currentBytes`, save, undo and close wait for in-flight edits.
 * Nothing is written to disk until the user saves. Autosave, crash recovery, version history, the unsaved
   dot and the close/quit guard are automatic.
-* Encrypted documents: `editPdf` throws `EditError('… password protected …')` (removing/adding passwords is
-  the Security feature). Catch errors and `notify('error', …)`.
+* **Encrypted documents** go through hooks (`edit/hooks.ts`): `registerEditHooks({ decrypt, beforeWrite })`.
+  `editPdf` calls `decrypt(docId, bytes)` when pdf-lib says a document is encrypted; if a hook returns plaintext
+  it silently becomes the document's baseline (no undo step, not "unsaved"). **Every write out of memory** —
+  Save, Save As, Save a Copy and the autosaved recovery copy — goes through `bytesForWriting(docId)`, which runs
+  all `beforeWrite` hooks (Security re-encrypts there, so a protected document never reaches disk as plaintext).
+  If you write document bytes anywhere the user's file could end up, use `bytesForWriting`, not `currentBytes`.
+  Features that read a document with pdf-lib themselves call `await ensureEditable(docId)` first (false = the
+  user declined to unlock). Without a `decrypt` hook, `editPdf` throws `EditError('… password protected …')`.
+  Catch errors and `notify('error', …)`.
 * The viewer reloads automatically after every edit; page numbers may change, so re-read state after awaiting.
 * Never mutate bytes returned by `currentBytes`.
 
@@ -156,8 +172,10 @@ export function register(ctx: MainContext): void {
 * Push events to the renderer: `sendFeatureEvent(window | 'all', 'ocr:progress', payload)`; subscribe with
   `window.epdf.onFeature('ocr:progress', cb)` (returns an unsubscribe fn).
 * `ctx` gives `controller`, `repos` (SQLite), `files`, `jobs`, `windows`, `pathOfDoc(docId)`.
-* **SQLite:** add tables by appending a migration to `MIGRATIONS` in `src/main/db/migrations.ts`
-  (next version number; never edit existing ones; expect merge conflicts there and resolve by renumbering).
+* **Small persistent state** (settings, remembered choices, caches of small JSON): `ctx.kv('<feature>')` →
+  `get(key, fallback)` / `set(key, value)` / `delete(key)` / `keys()`. Use this instead of tables.
+* **SQLite tables** only when you truly need relational data or an index (a migration number is assigned to you
+  in your task; append it at the end of `MIGRATIONS` in `src/main/db/migrations.ts`, never edit existing ones).
   Put queries in your own repo class in your feature folder (take `ctx.repos.db`). Never store secrets in plain text —
   use Electron `safeStorage` to encrypt them.
 * **Native tools (optional only — see rule 2):** `resolveTool('soffice')` from `services/tools` returns an
@@ -221,6 +239,19 @@ npx playwright test        # the whole suite must still pass before you finish
 * Accessibility: include an `axeViolations` scan of your feature's UI in each relevant state (light + dark).
 * Include failure paths (bad input, cancelled dialog, missing tool, encrypted doc) — not just the happy path.
 * Every bug you find while testing gets a regression test.
+
+### Lessons from the first round (please follow)
+
+* Run your spec by **file path** (`npx playwright test tests/e2e/<name>.spec.ts`): a bare name also matches your
+  repository's folder name and runs everything.
+* Never kill Electron by name; several engineers test on the same machine. Kill only PIDs you started. Tests
+  must not leave windows open: end any test that can finish with unsaved edits using `quitDiscarding`.
+* Tests share the CPU with other engineers: use generous timeouts and re-run a flaky test before blaming the code.
+* `tests/unit/shortcuts.test.ts` scans all sources for keyboard-shortcut / menu-accelerator collisions and fails on
+  any. Pick a free key (bare-letter tool keys are global: check the existing ones first).
+* The **camera** is available only through `getUserMedia({ video })` on Epdf's own pages (video only; every other
+  permission is denied). For tests set env `EPDF_FAKE_MEDIA=1` to get a synthetic camera without a prompt.
+* A wrong-looking result is worse than a refusal: when input is unsupported, say so with a clear message.
 
 ## 8. Definition of done
 

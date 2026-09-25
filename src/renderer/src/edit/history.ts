@@ -85,4 +85,13 @@ export class History<T extends { byteLength: number }> {
   markSaved(): void {
     this.savedIndex = this.index
   }
+
+  /**
+   * Swaps the bytes of the current state for an equivalent representation (e.g. the decrypted form of an
+   * encrypted snapshot) without adding an undo step or changing whether the document counts as saved.
+   */
+  replaceCurrent(value: T): void {
+    if (this.index >= 0) this.stack[this.index].value = value
+    else this.original = value
+  }
 }

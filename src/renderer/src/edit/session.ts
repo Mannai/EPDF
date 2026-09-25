@@ -1,6 +1,7 @@
 import { PDFDocument } from 'pdf-lib'
 import { create } from 'zustand'
 import { useTabs } from '../state/tabs'
+import { runBeforeWrite, runDecrypt } from './hooks'
 import { History } from './history'
 
 /**
@@ -109,6 +110,46 @@ function commit(docId: string, label: string, bytes: Uint8Array): void {
 export class EditError extends Error {}
 
 /**
+ * Asks the registered `decrypt` hook for the plaintext of an encrypted document. On success the plaintext
+ * silently becomes the document's baseline (it is NOT an edit and does not mark the tab unsaved); a
+ * `beforeWrite` hook re-applies the protection whenever the document is saved.
+ */
+async function unlock(docId: string, encrypted: Uint8Array): Promise<Uint8Array | null> {
+  const plain = await runDecrypt(docId, encrypted)
+  if (!plain) return null
+  historyOf(docId).replaceCurrent(plain)
+  return plain
+}
+
+/** True if pdf-lib refuses to open these bytes because the document is encrypted. */
+export async function isEncryptedPdf(bytes: Uint8Array): Promise<boolean> {
+  try {
+    await PDFDocument.load(bytes, { updateMetadata: false })
+    return false
+  } catch (err) {
+    return err instanceof Error && /encrypt/i.test(err.message)
+  }
+}
+
+/**
+ * Makes sure the document can be read/edited with pdf-lib: a no-op for normal documents; for encrypted ones
+ * it runs the `decrypt` hook (which may prompt for a password). Resolves false if the user declined.
+ * Features that read a document themselves (annotation lists, form models, ...) call this first.
+ */
+export function ensureEditable(docId: string): Promise<boolean> {
+  return enqueue(docId, async () => {
+    const bytes = await readCurrent(docId)
+    if (!(await isEncryptedPdf(bytes))) return true
+    return (await unlock(docId, bytes)) !== null
+  })
+}
+
+/** The bytes to write to disk (or the recovery folder) for this document: current state, re-protected if needed. */
+export async function bytesForWriting(docId: string): Promise<Uint8Array> {
+  return runBeforeWrite(docId, await currentBytes(docId))
+}
+
+/**
  * Loads the current document with pdf-lib, lets `fn` modify it, and records the result as one undo step.
  * If `fn` throws, nothing changes. Rejects with an `EditError` carrying a user-presentable message.
  */
@@ -118,15 +159,21 @@ export function editPdf(
   fn: (pdf: PDFDocument) => void | Promise<void>
 ): Promise<void> {
   return enqueue(docId, async () => {
-    const bytes = await readCurrent(docId)
+    let bytes = await readCurrent(docId)
     let pdf: PDFDocument
     try {
       pdf = await PDFDocument.load(bytes, { updateMetadata: false })
     } catch (err) {
-      if (err instanceof Error && /encrypt/i.test(err.message)) {
-        throw new EditError('This document is password protected. Remove the password before editing it.')
+      if (!(err instanceof Error && /encrypt/i.test(err.message))) {
+        throw new EditError(`This document could not be edited: ${err instanceof Error ? err.message : String(err)}`)
       }
-      throw new EditError(`This document could not be edited: ${err instanceof Error ? err.message : String(err)}`)
+      // Encrypted: give the Security feature (via hooks) a chance to unlock it for editing.
+      const plain = await unlock(docId, bytes)
+      if (!plain) {
+        throw new EditError('This document is password protected. Enter its password (or remove the protection) to edit it.')
+      }
+      bytes = plain
+      pdf = await PDFDocument.load(bytes, { updateMetadata: false })
     }
     await fn(pdf)
     pdf.setProducer('Epdf')

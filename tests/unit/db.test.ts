@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { MIGRATIONS, migrate } from '../../src/main/db/migrations'
-import { RecentFilesRepo, RecoveryRepo, SessionRepo, SettingsRepo, VersionsRepo } from '../../src/main/db/repos'
+import { FeatureKv, RecentFilesRepo, RecoveryRepo, SessionRepo, SettingsRepo, VersionsRepo } from '../../src/main/db/repos'
 import { DEFAULT_SETTINGS } from '../../src/shared/types'
 
 let db: Database.Database
@@ -19,6 +19,30 @@ describe('migrations', () => {
   })
   it('has strictly increasing, gap-free versions (append-only)', () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual(MIGRATIONS.map((_, i) => i + 1))
+  })
+})
+
+describe('FeatureKv', () => {
+  it('keeps each feature’s keys separate and round-trips JSON values', () => {
+    const ocr = new FeatureKv(db, 'ocr')
+    const scan = new FeatureKv(db, 'scan')
+    ocr.set('languages', ['eng', 'deu'])
+    scan.set('languages', 'not the same key')
+    expect(ocr.get('languages', [])).toEqual(['eng', 'deu'])
+    expect(scan.get('languages', '')).toBe('not the same key')
+    ocr.set('languages', ['fra'])
+    expect(ocr.get('languages', [])).toEqual(['fra'])
+  })
+  it('returns the fallback for missing keys and corrupt values, and can delete', () => {
+    const kv = new FeatureKv(db, 'x')
+    expect(kv.get('nope', 42)).toBe(42)
+    db.prepare("INSERT INTO feature_kv VALUES ('x', 'bad', '{oops')").run()
+    expect(kv.get('bad', 'fallback')).toBe('fallback')
+    kv.set('a', 1)
+    kv.set('b', 2)
+    expect(kv.keys()).toEqual(['a', 'b', 'bad'])
+    kv.delete('a')
+    expect(kv.get('a', null)).toBeNull()
   })
 })
 
