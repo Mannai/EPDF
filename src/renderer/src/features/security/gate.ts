@@ -55,9 +55,10 @@ async function probeOpened(docId: string, loadSeq: number): Promise<void> {
   forgetAccess(docId)
   const doc = getLoaded(docId)?.doc
   if (!doc) return
-  const allowed = (await doc.getPermissions().catch(() => null)) as number[] | null
-  if (!allowed) return // not encrypted
-  if (allowed.includes(PDFJS_PRINT) && allowed.includes(PDFJS_COPY)) return // nothing to enforce here
+  const raw = (await doc.getPermissions().catch(() => null)) as Iterable<number> | null // an array or a Set, depending on the PDF.js version
+  if (!raw) return // not encrypted
+  const allowed = new Set<number>(raw)
+  if (allowed.has(PDFJS_PRINT) && allowed.has(PDFJS_COPY)) return // nothing to enforce here
   try {
     const probe = await inspectEncryption(await currentBytes(docId))
     if (!probe) return

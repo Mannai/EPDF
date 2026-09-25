@@ -203,11 +203,13 @@ function ProtectDialog(): JSX.Element | null {
         </p>
 
         {errors.length > 0 && (
-          <ul role="alert" className="mb-3 list-disc pl-5 text-sm text-red-600 dark:text-red-400">
-            {errors.map((e) => (
-              <li key={e}>{e}</li>
-            ))}
-          </ul>
+          <div role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">
+            <ul className="list-disc pl-5">
+              {errors.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          </div>
         )}
 
         <div className="flex justify-end gap-2">
