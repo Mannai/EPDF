@@ -238,15 +238,16 @@ describe('serializer', () => {
     expect(formatObj({ t: 'null' })).toBe('null')
   })
 
-  it('formats numbers without exponents and with bounded precision', () => {
+  it('formats numbers without exponents and with bounded (10 decimal) precision', () => {
     expect(fmtNum(0)).toBe('0')
     expect(fmtNum(-0)).toBe('0')
     expect(fmtNum(12)).toBe('12')
     expect(fmtNum(0.5)).toBe('0.5')
-    expect(fmtNum(1 / 3)).toBe('0.333333')
-    expect(fmtNum(-1e-9)).toBe('0')
+    expect(fmtNum(1 / 3)).toBe('0.3333333333')
+    expect(fmtNum(-1e-9)).toBe('-0.000000001')
+    expect(fmtNum(-1e-12)).toBe('0')
     expect(fmtNum(123456.789)).toBe('123456.789')
-    expect(fmtNum(1e-7)).toBe('0')
+    expect(fmtNum(1e-7)).toBe('0.0000001')
     expect(() => fmtNum(NaN)).toThrow(ContentParseError)
     expect(() => fmtNum(Infinity)).toThrow(ContentParseError)
     expect(() => fmtNum(1e21)).toThrow(ContentParseError)

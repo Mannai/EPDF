@@ -2,7 +2,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { PDFArray, PDFDocument, PDFName, PDFRawStream, PDFRef, decodePDFRawStream } from 'pdf-lib'
+import { PDFArray, PDFDocument, PDFName, PDFRawStream, decodePDFRawStream } from 'pdf-lib'
 import { analyzePage } from '../../src/renderer/src/features/textedit/pdfcontent/analyze'
 import { buildBlocks } from '../../src/renderer/src/features/textedit/pdfcontent/blocks'
 import { FIX, axeViolations, canvasHasInk, copyFixture, gotoPage, launch, quitDiscarding } from './helpers'
@@ -114,7 +114,7 @@ test.describe('edit text', () => {
       expect(stream.toLowerCase()).not.toContain(hex('Total: 1234'))
       expect((await PDFDocument.load(readFileSync(path))).getPageCount()).toBe(2)
     } finally {
-      await app.close()
+      await quitDiscarding(app, page)
     }
   })
 
@@ -185,7 +185,7 @@ test.describe('edit text', () => {
       expect((await pdfjsText(path)).filter((t) => t === 'Signed by Alice')).toHaveLength(1)
       expect(await contentText(path)).not.toContain(hex('Signed by Alice') + '>x')
     } finally {
-      await app.close()
+      await quitDiscarding(app, page)
     }
   })
 
@@ -216,7 +216,7 @@ test.describe('edit text', () => {
       expect(lines.length).toBeGreaterThanOrEqual(3)
       for (const l of lines) expect(l.lines[0].x1).toBeLessThan(72 + 270)
     } finally {
-      await app.close()
+      await quitDiscarding(app, page)
     }
   })
 
@@ -238,7 +238,7 @@ test.describe('edit text', () => {
       expect(Math.abs(b.lines[0].baseline - 700)).toBeLessThan(0.01)
       expect(Math.abs(b.lines[0].x0 - 72)).toBeLessThan(0.5)
     } finally {
-      await app.close()
+      await quitDiscarding(app, page)
     }
   })
 
@@ -255,7 +255,7 @@ test.describe('edit text', () => {
       expect(items).toContain('Another embedded line')
       expect(items).not.toContain('Embedded font sample')
     } finally {
-      await app.close()
+      await quitDiscarding(app, page)
     }
   })
 
@@ -268,7 +268,7 @@ test.describe('edit text', () => {
       await save(page)
       expect(await pdfjsText(path)).toContain('Another line embedded')
     } finally {
-      await app.close()
+      await quitDiscarding(app, page)
     }
   })
 
@@ -281,7 +281,7 @@ test.describe('edit text', () => {
       await expect(dot(page)).toHaveCount(0)
       await expect(page.getByTestId('textedit-banner')).toHaveCount(0)
     } finally {
-      await app.close()
+      await quitDiscarding(app, page)
     }
     const scan = await openDoc('ec-scan.pdf')
     try {
@@ -291,7 +291,7 @@ test.describe('edit text', () => {
       await expect(toast(scan.page, 'No editable text on this page')).toBeVisible()
       await expect(dot(scan.page)).toHaveCount(0)
     } finally {
-      await scan.app.close()
+      await quitDiscarding(scan.app, scan.page)
     }
   })
 
@@ -322,7 +322,7 @@ test.describe('edit text', () => {
       await replaceText(page, 'Total: 1234', 'Total: 777')
       await save(page)
     } finally {
-      await app.close()
+      await quitDiscarding(app, page)
     }
     const again = await launch({ files: [path] })
     try {
@@ -330,9 +330,382 @@ test.describe('edit text', () => {
       await gotoPage(again.page, 2)
       await expect(pageEl(again.page, 2).locator('.textLayer')).toContainText('Second page stays untouched')
     } finally {
-      await again.app.close()
+      await quitDiscarding(again.app, again.page)
     }
   })
 })
 
-void [join, PDFName, PDFRef]
+// ---- images ----------------------------------------------------------------------------------------------
+
+const outlines = (page: Page, n = 1): Locator => pageEl(page, n).locator('[data-image]')
+
+const mockOpenDialog = (app: ElectronApplication, path: string | null): Promise<void> =>
+  app.evaluate(({ dialog }, p) => {
+    ;(dialog as unknown as { showOpenDialog: () => Promise<unknown> }).showOpenDialog = () =>
+      Promise.resolve(p ? { canceled: false, filePaths: [p] } : { canceled: true, filePaths: [] })
+  }, path)
+
+const pageScale = async (page: Page): Promise<number> => (await pageEl(page).boundingBox())!.width / 612
+
+async function imagesOnDisk(path: string, pageIndex = 0) {
+  const { a } = await analysisOf(path, pageIndex)
+  return a.images
+}
+
+/** Number of image XObjects stored in the file at all (dangling data check). */
+async function imageObjectCount(path: string): Promise<number> {
+  const doc = await PDFDocument.load(readFileSync(path))
+  let n = 0
+  for (const [, obj] of doc.context.enumerateIndirectObjects()) {
+    const dict = (obj as { dict?: { get(k: PDFName): unknown } }).dict
+    const sub = dict?.get(PDFName.of('Subtype')) as PDFName | undefined
+    if (sub?.toString() === '/Image') n++
+  }
+  return n
+}
+
+const near = (a: number, b: number, eps = 0.6): void => expect(Math.abs(a - b), `${a} vs ${b}`).toBeLessThan(eps)
+const field = (page: Page, id: string): Locator => page.getByTestId(`imageedit-${id}`)
+
+test.describe('edit images', () => {
+  test('outlines images, shows their box, and moves one through the numeric fields (one undo step)', async () => {
+    const { path, app, page } = await openDoc('ec-images.pdf')
+    try {
+      await tool(page, 'edit-images').click()
+      await expect(outlines(page)).toHaveCount(2)
+      await outlines(page).nth(0).click()
+      await expect(field(page, 'x')).toHaveValue('72')
+      await expect(field(page, 'y')).toHaveValue('600')
+      await expect(field(page, 'w')).toHaveValue('200')
+      await expect(field(page, 'h')).toHaveValue('100')
+      await field(page, 'x').fill('150')
+      await field(page, 'y').fill('500')
+      await field(page, 'apply').click()
+      await expect(toast(page, 'Image moved')).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Undo Move image' })).toBeEnabled()
+      await save(page)
+      const imgs = await imagesOnDisk(path)
+      expect(imgs).toHaveLength(2)
+      const red = imgs.find((i) => i.width === 40)!
+      const green = imgs.find((i) => i.width === 30)!
+      near(red.bbox.x0, 150, 0.01)
+      near(red.bbox.y0, 500, 0.01)
+      near(red.bbox.x1, 350, 0.01)
+      near(red.bbox.y1, 600, 0.01)
+      near(green.bbox.x0, 320, 0.01) // the other image is untouched
+      near(green.bbox.y0, 300, 0.01)
+      expect(await pdfjsText(path)).toContain('Image page')
+      expect((await PDFDocument.load(readFileSync(path))).getPageCount()).toBe(2)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('resizes with the fields and keeps proportions; the page still renders the image', async () => {
+    const { path, app, page } = await openDoc('ec-images.pdf')
+    try {
+      await tool(page, 'edit-images').click()
+      await outlines(page).nth(0).click()
+      await field(page, 'w').fill('300') // "Keep proportions" is on: height follows
+      await expect(field(page, 'h')).toHaveValue('150')
+      await field(page, 'apply').click()
+      await expect(toast(page, 'Image resized')).toBeVisible()
+      await save(page)
+      const red = (await imagesOnDisk(path)).find((i) => i.width === 40)!
+      near(red.bbox.x0, 72, 0.01)
+      near(red.bbox.y0, 600, 0.01)
+      near(red.bbox.x1 - red.bbox.x0, 300, 0.01)
+      near(red.bbox.y1 - red.bbox.y0, 150, 0.01)
+      // the canvas shows red pixels inside the new box
+      await expect
+        .poll(async () =>
+          page.evaluate(() => {
+            const c = document.querySelector<HTMLCanvasElement>('[data-page="1"] canvas')
+            if (!c || c.width === 0) return 'no canvas'
+            const s = c.width / 612
+            const d = c.getContext('2d')!.getImageData(Math.round(200 * s), Math.round((792 - 700) * s), 1, 1).data
+            return d[0] > 180 && d[1] < 80 && d[2] < 80 ? 'red' : `rgb(${d[0]},${d[1]},${d[2]})`
+          })
+        )
+        .toBe('red')
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('drags an image with the mouse; handles resize, Shift keeps the aspect ratio', async () => {
+    const { path, app, page } = await openDoc('ec-images.pdf')
+    try {
+      await tool(page, 'edit-images').click()
+      const s = await pageScale(page)
+      const o = outlines(page).nth(0)
+      await o.scrollIntoViewIfNeeded()
+      const b = (await o.boundingBox())!
+      await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(b.x + b.width / 2 + 60, b.y + b.height / 2 + 30, { steps: 6 })
+      await page.mouse.up()
+      await expect(toast(page, 'Image moved')).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Undo Move image' })).toBeEnabled()
+      await expect.poll(async () => (await field(page, 'x').inputValue()) !== '72').toBe(true)
+
+      // Shift + southeast handle: width grows by ~100px, height must follow the aspect ratio (2:1)
+      const handle = pageEl(page).locator('[data-handle="se"]')
+      await expect(handle).toBeVisible()
+      const hb = (await handle.boundingBox())!
+      await page.keyboard.down('Shift')
+      await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(hb.x + hb.width / 2 + 100, hb.y + hb.height / 2 + 3, { steps: 6 })
+      await page.mouse.up()
+      await page.keyboard.up('Shift')
+      await expect(toast(page, 'Image resized')).toBeVisible()
+      await save(page)
+      const red = (await imagesOnDisk(path)).find((i) => i.width === 40)!
+      const w = red.bbox.x1 - red.bbox.x0
+      const h = red.bbox.y1 - red.bbox.y0
+      near(w / h, 2, 0.02)
+      near(w, 200 + 100 / s, 1.5)
+      // the move: dragged by (60, 30) px = (60/s, -30/s) points; the resize kept the top-left corner
+      near(red.bbox.x0, 72 + 60 / s, 1)
+      near(red.bbox.y1, 700 - 30 / s, 1)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('arrow keys nudge the selected image; a burst of key presses is a single undo step', async () => {
+    const { path, app, page } = await openDoc('ec-images.pdf')
+    try {
+      await tool(page, 'edit-images').click()
+      const o = outlines(page).nth(0)
+      await o.click()
+      await o.focus()
+      for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight')
+      await page.keyboard.press('Shift+ArrowUp')
+      await expect(page.getByRole('button', { name: 'Undo Move image' })).toBeEnabled()
+      await expect(toast(page, 'Image moved')).toBeVisible()
+      await save(page)
+      const red = (await imagesOnDisk(path)).find((i) => i.width === 40)!
+      near(red.bbox.x0, 77, 0.01)
+      near(red.bbox.y0, 610, 0.01)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+    const second = await openDoc('ec-images.pdf')
+    try {
+      await tool(second.page, 'edit-images').click()
+      const o = outlines(second.page).nth(0)
+      await o.click()
+      await o.focus()
+      for (let i = 0; i < 4; i++) await second.page.keyboard.press('ArrowDown')
+      await expect(second.page.getByRole('button', { name: 'Undo Move image' })).toBeEnabled()
+      await second.page.getByRole('button', { name: 'Undo Move image' }).click()
+      await expect(dot(second.page)).toHaveCount(0) // one step took it all back
+    } finally {
+      await quitDiscarding(second.app, second.page)
+    }
+  })
+
+  test('deletes images (Delete key and button), leaves no dangling image data, and undo/redo work', async () => {
+    const { path, app, page } = await openDoc('ec-images.pdf')
+    try {
+      await tool(page, 'edit-images').click()
+      expect(await imageObjectCount(path)).toBe(2)
+      const first = outlines(page).nth(0)
+      await first.click()
+      await first.focus()
+      await page.keyboard.press('Delete')
+      await expect(toast(page, 'Image deleted')).toBeVisible()
+      await expect(outlines(page)).toHaveCount(1)
+      await page.getByRole('button', { name: 'Undo Delete image' }).click()
+      await expect(outlines(page)).toHaveCount(2)
+      await page.getByRole('button', { name: 'Redo Delete image' }).click()
+      await expect(outlines(page)).toHaveCount(1)
+
+      await outlines(page).nth(0).click()
+      await page.getByTestId('imageedit-delete').click()
+      await expect(outlines(page)).toHaveCount(0)
+      await expect(pageEl(page).getByTestId('imageedit-banner')).toContainText('No images on this page')
+      await save(page)
+      expect(await imagesOnDisk(path)).toHaveLength(0)
+      expect(await imageObjectCount(path)).toBe(0)
+      expect(await pdfjsText(path)).toContain('Image page')
+      expect(await pdfjsText(path, 2)).toEqual(['Page two'])
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('replaces a picture: fit keeps the aspect ratio inside the same box, fill covers it', async () => {
+    const { path, app, page } = await openDoc('ec-images.pdf')
+    try {
+      await mockOpenDialog(app, join(FIX, 'ec-picture.png'))
+      await tool(page, 'edit-images').click()
+      // red box 200x100 (aspect 2) gets a 50x25 picture (aspect 2): exact fit
+      await outlines(page).nth(0).click()
+      await page.getByTestId('imageedit-replace').click()
+      await expect(toast(page, /Image replaced/)).toBeVisible()
+      // green box 100x100 (aspect 1) with the wide picture, "fills the box (cropped)"
+      await outlines(page).nth(1).click()
+      await page.getByTestId('imageedit-mode').selectOption('fill')
+      await page.getByTestId('imageedit-replace').click()
+      await expect(page.getByRole('button', { name: 'Undo Replace image' })).toBeEnabled()
+      await expect.poll(async () => (await imagesOnDisk(path)).length, { timeout: 1000 }).toBe(2) // nothing written yet
+      await save(page)
+      const imgs = await imagesOnDisk(path)
+      expect(imgs).toHaveLength(2)
+      expect(imgs.every((i) => i.width === 50 && i.height === 25)).toBe(true)
+      const a = imgs.find((i) => Math.abs(i.bbox.x0 - 72) < 0.01)!
+      near(a.bbox.x1, 272, 0.01)
+      near(a.bbox.y0, 600, 0.01)
+      near(a.bbox.y1, 700, 0.01)
+      const b = imgs.find((i) => Math.abs(i.bbox.y0 - 300) < 0.01)!
+      near(b.bbox.x0, 270, 0.01) // 200x100 unclipped extent centred on the 100x100 box
+      near(b.bbox.x1, 470, 0.01)
+      expect(await contentText(path)).toMatch(/0 0 1 1 re\s+W\s+n/)
+      expect(await imageObjectCount(path)).toBe(2) // the two old pictures are gone
+      await expect.poll(() => canvasHasInk(page, '[data-page="1"] canvas')).toBe(true)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('adds an image at the clicked point and at the page center', async () => {
+    const { path, app, page } = await openDoc('ec-images.pdf')
+    try {
+      await mockOpenDialog(app, join(FIX, 'ec-picture.png'))
+      await tool(page, 'edit-images').click()
+      const s = await pageScale(page)
+      await page.getByTestId('imageedit-add').click()
+      await expect(pageEl(page).getByTestId('imageedit-banner')).toContainText('Click on the page where')
+      await pageEl(page).getByTestId('imageedit-layer').click({ position: { x: 300 * s, y: 200 * s } })
+      await expect(toast(page, 'Image added')).toBeVisible()
+      await expect(outlines(page)).toHaveCount(3)
+
+      await page.getByTestId('imageedit-add').click()
+      await page.getByTestId('imageedit-center').click()
+      await expect(outlines(page)).toHaveCount(4)
+      await save(page)
+      const imgs = await imagesOnDisk(path)
+      expect(imgs).toHaveLength(4)
+      const added = imgs.filter((i) => i.width === 50 && i.height === 25)
+      expect(added).toHaveLength(2)
+      const centers = added.map((i) => [(i.bbox.x0 + i.bbox.x1) / 2, (i.bbox.y0 + i.bbox.y1) / 2]).sort((p, q) => q[1] - p[1])
+      near(centers[0][0], 300, 1)
+      near(centers[0][1], 792 - 200, 1) // clicked point, converted to PDF space (y up)
+      near(centers[1][0], 306, 1)
+      near(centers[1][1], 396, 1)
+      // natural size at 96 dpi: 50x25 px = 37.5 x 18.75 pt
+      near(added[0].bbox.x1 - added[0].bbox.x0, 37.5, 0.05)
+      expect((await PDFDocument.load(readFileSync(path))).getPageCount()).toBe(2)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('a cancelled dialog, a fake image and an unsupported file change nothing', async () => {
+    const { app, page } = await openDoc('ec-images.pdf')
+    try {
+      await tool(page, 'edit-images').click()
+      await mockOpenDialog(app, null)
+      await page.getByTestId('imageedit-add').click()
+      await expect(pageEl(page).getByTestId('imageedit-banner')).toHaveCount(0)
+      await expect(dot(page)).toHaveCount(0)
+
+      await mockOpenDialog(app, join(FIX, 'ec-not-an-image.png'))
+      await page.getByTestId('imageedit-add').click()
+      await expect(toast(page, 'not a PNG or JPEG')).toBeVisible()
+      await expect(dot(page)).toHaveCount(0)
+
+      // the renderer cannot smuggle a path into the picker: extra fields are rejected by the channel schema
+      const rejected = await page.evaluate(async () => {
+        try {
+          await window.epdf.call('imageedit:pickImage', { path: 'C:\\Windows\\win.ini' })
+          return false
+        } catch {
+          return true
+        }
+      })
+      expect(rejected).toBe(true)
+      const unknown = await page.evaluate(async () => {
+        try {
+          await window.epdf.call('imageedit:readFile', { path: 'C:\\Windows\\win.ini' })
+          return false
+        } catch {
+          return true
+        }
+      })
+      expect(unknown).toBe(true)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('a page without images says so; images can be edited on another page', async () => {
+    const { app, page } = await openDoc('ec-images.pdf')
+    try {
+      await tool(page, 'edit-images').click()
+      await gotoPage(page, 2)
+      await expect(pageEl(page, 2).getByTestId('imageedit-banner')).toContainText('No images on this page')
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('the accessibility scan is clean with an image selected (light and dark)', async () => {
+    const { app, page } = await openDoc('ec-images.pdf')
+    try {
+      await app.evaluate(({ nativeTheme }) => {
+        nativeTheme.themeSource = 'light'
+      })
+      await expect(page.locator('html')).not.toHaveClass(/dark/)
+      await tool(page, 'edit-images').click()
+      await outlines(page).nth(0).click()
+      await expect(field(page, 'w')).toHaveValue('200')
+      expect(await axeViolations(page, 'edit images selected light')).toEqual([])
+      await app.evaluate(({ nativeTheme }) => {
+        nativeTheme.themeSource = 'dark'
+      })
+      await expect(page.locator('html')).toHaveClass(/dark/)
+      expect(await axeViolations(page, 'edit images selected dark')).toEqual([])
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('the text tool accessibility scan runs in an explicit light theme too', async () => {
+    const { app, page } = await openDoc('ec-text.pdf')
+    try {
+      await app.evaluate(({ nativeTheme }) => {
+        nativeTheme.themeSource = 'light'
+      })
+      await expect(page.locator('html')).not.toHaveClass(/dark/)
+      await tool(page, 'edit-text').click()
+      await beginEdit(page, 'Total: 1234')
+      expect(await axeViolations(page, 'edit text editing (explicit light)')).toEqual([])
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('text and image edits share one history: text edit, image move, undo twice', async () => {
+    const { path, app, page } = await openDoc('ec-images.pdf')
+    try {
+      await tool(page, 'edit-text').click()
+      await replaceText(page, 'Image page', 'Pictures page')
+      await tool(page, 'edit-images').click()
+      await outlines(page).nth(0).click()
+      await field(page, 'x').fill('100')
+      await field(page, 'apply').click()
+      await expect(page.getByRole('button', { name: 'Undo Move image' })).toBeEnabled()
+      await page.getByRole('button', { name: 'Undo Move image' }).click()
+      await page.getByRole('button', { name: 'Undo Edit text' }).click()
+      await expect(dot(page)).toHaveCount(0)
+      await expect(pageEl(page).locator('.textLayer')).toContainText('Image page')
+      expect((await imagesOnDisk(path)).find((i) => i.width === 40)!.bbox.x0).toBeCloseTo(72, 1)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+})

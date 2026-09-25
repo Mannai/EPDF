@@ -448,11 +448,11 @@ class Writer {
   }
 }
 
-/** PDF number syntax (no exponents), at most 6 decimals. */
+/** PDF number syntax (no exponents), at most 10 decimals. */
 export function fmtNum(n: number): string {
   if (!Number.isFinite(n) || Math.abs(n) > 1e15) throw new ContentParseError(`Cannot write the number ${n}`)
   if (Number.isInteger(n)) return String(n)
-  const s = n.toFixed(6).replace(/0+$/, '').replace(/\.$/, '')
+  const s = n.toFixed(10).replace(/0+$/, '').replace(/\.$/, '')
   return s === '-0' || s === '' ? '0' : s
 }
 
@@ -578,11 +578,11 @@ export const numArg = (op: Op, i: number): number => {
 }
 
 /** Structural equality of two operands (used by round-trip tests). */
-export function objEquals(a: PdfObj, b: PdfObj): boolean {
+export function objEquals(a: PdfObj, b: PdfObj, eps = 0): boolean {
   if (a.t !== b.t) return false
   switch (a.t) {
     case 'num':
-      return a.v === (b as typeof a).v
+      return Math.abs(a.v - (b as typeof a).v) <= eps
     case 'bool':
       return a.v === (b as typeof a).v
     case 'name':
@@ -595,14 +595,14 @@ export function objEquals(a: PdfObj, b: PdfObj): boolean {
     }
     case 'arr': {
       const bv = (b as typeof a).v
-      return a.v.length === bv.length && a.v.every((x, i) => objEquals(x, bv[i]))
+      return a.v.length === bv.length && a.v.every((x, i) => objEquals(x, bv[i], eps))
     }
     case 'dict': {
       const bv = (b as typeof a).v
       if (a.v.size !== bv.size) return false
       for (const [k, v] of a.v) {
         const o = bv.get(k)
-        if (!o || !objEquals(v, o)) return false
+        if (!o || !objEquals(v, o, eps)) return false
       }
       return true
     }
