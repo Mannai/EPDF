@@ -2,10 +2,11 @@
 
 A desktop PDF application (Electron + TypeScript + React). Works fully offline for all local features.
 
-**Status: Phases 1 and 2 complete** — the secure Electron shell and PDF viewer (Phase 1), plus form filling,
-signing, creating/combining/exporting, text and image editing, markup, page organization and printing
-(Phase 2). Later phases are listed at the bottom. Epdf is **self-contained**: nothing besides Epdf itself needs to
-be installed (see "Licensing and self-containment").
+**Status: Phases 1, 2 and 3 complete** — the secure Electron shell and PDF viewer (Phase 1); form filling,
+signing, creating/combining/exporting, text and image editing, markup, page organization and printing (Phase 2);
+and OCR, file-size reduction, password protection, scanning, the form builder, true redaction, file comparison and a
+local library (Phase 3). The cloud features (Phase 4) and installers/signing/auto-update (Phase 5) are next. Epdf is
+**self-contained**: nothing besides Epdf itself needs to be installed (see "Licensing and self-containment").
 
 Each feature has its own page in `docs/features/`; how to add a feature is in `docs/FEATURES.md`.
 
@@ -168,10 +169,36 @@ Details, limits and manual test steps for each are in `docs/features/`.
 - [x] **Comments and markup** saved as standard annotations, with a comments panel, replies and resolve (`markup.md`)
 - [x] **Page organizer**, extract, insert, split (ranges / size / bookmarks) and **printing** + Print to PDF (`pages-print.md`)
 
+## Phase 3 feature checklist
+
+- [x] **OCR** — built-in `tesseract.js` (WASM, offline), English bundled, 12 more languages downloaded on demand
+      (SHA-256-pinned); adds an invisible, selectable, searchable text layer; runs in worker threads with progress and
+      Cancel (`ocr.md`)
+- [x] **Reduce File Size** — presets (High / Balanced / Smallest / Custom), image downsampling and recompression with an
+      in-house JPEG codec, de-duplication, object streams, optional font trimming, batch mode; never makes a file larger
+      (`compress.md`)
+- [x] **Password protection** — AES-256 (default), AES-128 and RC4-128; password to open and to edit; permissions;
+      protected documents can be opened, edited, and saved still-encrypted; change and remove protection. All crypto is
+      Epdf's own, checked against qpdf-made files (`security.md`)
+- [x] **Scanning** — Windows scanners (WIA), webcam, and phone photos over the local network via QR code; page-edge
+      detection, perspective correction, deskew, contrast/B&W enhancement; save to PDF (`scan.md`)
+- [x] **Form builder** — detects fields on flat PDFs, manual field tools, properties panel with validation formats, tab
+      order editor (`form-builder.md`)
+- [x] **Redaction** — marks by selection, area, search and patterns; permanently removes text, image pixels, annotations,
+      bookmarks and metadata; independently verifies the result before applying (`redact.md`)
+- [x] **Compare files** — side-by-side text comparison with a change list, F8 navigation, visual diff and exportable
+      reports (`compare.md`)
+- [x] **Local library** — watched folders (including OneDrive / Google Drive / Dropbox folders, without downloading
+      cloud-only files), name and full-text content search, favorites and virtual folders (`library.md`)
+
 ## Testing
 
-`npm test` (unit, ~950 tests), `npm run test:e2e` (~170 end-to-end tests driving the real app). The packaged app is
-covered by `npm run dist:dir` + `npm run test:packaged` (see Packaging).
+`npm test` (unit, ~2,100 tests), `npm run test:e2e` (~310 end-to-end tests driving the real app). The packaged app is
+covered by `npm run dist:dir` + the opt-in packaged specs (set `EPDF_PACKAGED_EXE` to the built `Epdf.exe`, then
+`npm run test:packaged` and the `*-packaged.spec.ts` files). Two guard tests worth knowing about:
+`tests/unit/shortcuts.test.ts` fails on any keyboard-shortcut collision, and `tests/unit/marker-leak.test.ts` proves a
+protected document's key never leaks into files derived from it. A few tests need optional local tools (qpdf,
+LibreOffice) and skip cleanly without them.
 
 ## Known limitations / not yet verified
 
@@ -185,8 +212,19 @@ covered by `npm run dist:dir` + `npm run test:packaged` (see Packaging).
 - **Real-world PDFs**: the text/image editing engine was tested on generated files that imitate Word, Chrome and
   LibreOffice output, not on real third-party files. Set `EPDF_CORPUS_DIR` to run its opt-in corpus test on your own.
 - **Physical printing** and the native print dialog were not exercised; printed pages are rasterized.
-- **Password-protected PDFs** can be opened but not yet edited, saved through Print to PDF, or combined (Phase 3 adds
-  Epdf's own encryption and decryption).
+- **Password-protected PDFs** can be opened, edited and saved (staying encrypted), but Combine and batch file-size
+  reduction skip them, and certificate-based (public-key) encryption is not supported. PDF permission flags are
+  advisory in other software (see `docs/features/security.md` for the threat model).
+- **Hardware and platforms not tested**: no real scanner, phone, or webcam was available (the Windows WIA script,
+  webcam preview, and phone upload were tested against stubs, a fake camera and real HTTP requests); the macOS scanner
+  helper (Swift) has never been compiled; cloud-folder detection was tested with fakes, not real OneDrive/Drive/Dropbox.
+- **OCR**: only English was verified end to end (Russian by hand once); no page-orientation detection; recognized text
+  can't be viewed or corrected.
+- **Form builder** and **redaction** were tested on generated documents only. Redaction's guarantee (nothing extractable
+  from the saved file) is verified by an in-app self-check and by independent tests, and it refuses when it cannot be
+  sure; `docs/features/redact.md` states exactly what is and is not removed. Copies outside Epdf's data folder (backups,
+  the original left after Save As) are not controlled.
+- **Compression** does not do linearization ("Fast Web View"); a wrong one is worse than none.
 - **HEIC** depends on the operating system's codec (Microsoft HEIF extension on Windows); everything else is built in.
 - Old binary Office formats (`.doc`, `.xls`, `.ppt`) are not converted; save them as `.docx/.xlsx/.pptx` first.
 - Drag-a-tab-out-of-the-window is not implemented; use **Document ▸ Move Tab to New Window**.
@@ -195,16 +233,16 @@ covered by `npm run dist:dir` + `npm run test:packaged` (see Packaging).
 
 Epdf may be sold, so **AGPL/GPL components are avoided**: no MuPDF, no Ghostscript, no `jszip` (GPL option).
 It is **self-contained**: an end user installs Epdf and nothing else. There is no dependency on LibreOffice,
-Tesseract, qpdf or any other installed program. Office conversion, OOXML export, content editing, and (in Phase 3)
-encryption and compression are Epdf's own code; OCR will use `tesseract.js` (WASM, Apache-2.0) bundled in the app.
-LibreOffice is only an *optional* higher-fidelity engine, used if the user already has it and chooses it.
+Tesseract, qpdf or any other installed program. Office conversion, OOXML export, content editing, redaction, password
+protection and compression are Epdf's own code; OCR uses `tesseract.js` (WASM, Apache-2.0) bundled in the app.
+LibreOffice is only an *optional* higher-fidelity engine, used if the user already has it and chooses it. (On the
+development machine LibreOffice, qpdf and Tesseract are installed only to cross-check Epdf's output in tests; those
+tests skip when the tools are absent.)
 Bundled fonts (Liberation, Carlito, Caladea, Noto Sans, and several script fonts) are SIL OFL / Apache-2.0 with
 their license texts in `resources/fonts`. PDF.js, pdf-lib, React, zod, zustand, fflate, utif2 and fontkit are MIT or
 Apache-2.0.
 
 ## Roadmap
 
-- **Phase 3** — features 12, 13, 14, 16, 18, 19, 20 and the local library (15): OCR (`tesseract.js`), compression and
-  encryption (in-house), scanning, form builder, true redaction, compare
 - **Phase 4** — cloud backend: signature requests (11), sharing (15), shared review (17)
 - **Phase 5** — headers/footers/watermarks (21), links & bookmarks (22), performance, installers, signing, auto-update
