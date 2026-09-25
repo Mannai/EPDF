@@ -208,7 +208,19 @@ export interface RedeflateReport {
   savedBytes: number
 }
 
-const LOSSLESS_CHAIN = new Set(['ASCIIHexDecode', 'ASCII85Decode', 'LZWDecode', 'RunLengthDecode', 'FlateDecode'])
+/**
+ * The Security feature keeps a stream in the in-memory copy of a password-protected document that starts with this plain-ASCII
+ * needle; on every write it finds the stream by a raw byte search and re-encrypts the file. If we compressed it the search would
+ * fail and the file would be written UNENCRYPTED, so such streams are never touched.
+ */
+const MARKER_NEEDLE = 'EPDF-SECURITY-MARKER'
+function isProtectionMarker(b: Uint8Array): boolean {
+  if (b.length < MARKER_NEEDLE.length) return false
+  for (let i = 0; i < MARKER_NEEDLE.length; i++) if (b[i] !== MARKER_NEEDLE.charCodeAt(i)) return false
+  return true
+}
+
+const LOSSLESS_CHAIN =new Set(['ASCIIHexDecode', 'ASCII85Decode', 'LZWDecode', 'RunLengthDecode', 'FlateDecode'])
 const MAX_DECODED = 256 * 1024 * 1024
 
 /**
@@ -240,6 +252,7 @@ export async function redeflateStreams(
     if (hasImageCodec(filters)) continue
     if (filters.some((f) => !LOSSLESS_CHAIN.has(f))) continue
     const enc = encodedBytes(obj)
+    if (isProtectionMarker(enc)) continue
     if (filters.length === 0) {
       if (enc.length < 64) continue
       const z = zlibSync(enc, { level: enc.length > 32 << 20 ? 6 : 9, mem: 12 })

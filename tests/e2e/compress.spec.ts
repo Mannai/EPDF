@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import fontkit from '@pdf-lib/fontkit'
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFString, StandardFonts, rgb } from 'pdf-lib'
+import { protectBytes } from '../../src/renderer/src/features/security/crypto/document'
 import { pureCodec } from '../../src/renderer/src/features/compress/pdf/codec'
 import { compressPdf } from '../../src/renderer/src/features/compress/pdf/compress'
 import { PRESETS } from '../../src/renderer/src/features/compress/pdf/options'
@@ -541,17 +542,54 @@ test.describe('Reduce File Size', () => {
     }
   })
 
-  test('a password-protected document is not touched: a clear message instead of a dialog', async () => {
-    test.setTimeout(120_000)
-    // The forms/signing fixture generator writes an RC4-40 encrypted form (empty user password: it opens without a prompt).
-    const fixtures = mkdtempSync(join(tmpdir(), 'epdf-locked-'))
-    execFileSync(process.execPath, [resolve('tests/fixtures/forms-signing.mjs'), fixtures], { stdio: 'ignore' })
-    const path = join(fixtures, 'forms-encrypted.pdf')
+  test('a password-protected document is unlocked through the Security hook, reduced, and stays protected on disk', async () => {
+    test.setTimeout(180_000)
+    // The report, protected with AES-256 by the Security feature's own writer (user password "pw123").
+    const path = join(mkdtempSync(join(tmpdir(), 'epdf-locked-')), 'locked.pdf')
+    writeFileSync(path, await protectBytes(new Uint8Array(readFileSync(REPORT)), { algorithm: 'aes256', userPassword: 'pw123', ownerPassword: 'own123', P: -4, encryptMetadata: true }))
+    const lockedSize = statSync(path).size
     const { app, page } = await launch({ files: [path] })
     try {
+      const prompt = page.getByRole('dialog', { name: 'Password required', exact: true })
+      await expect(prompt).toBeVisible()
+      await prompt.getByLabel('Document password').fill('pw123')
+      await prompt.getByRole('button', { name: 'Open' }).click()
       await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
       await menuClick(app, 'File', 'Reduce File Size…')
-      await expect(page.getByText(/password protected, so its size was not reduced/)).toBeVisible()
+      await expect(dialog(page)).toBeVisible()
+      await expect(page.getByTestId('compress-run')).toBeEnabled({ timeout: 60_000 }) // analysis ran on the unlocked bytes
+      await page.getByTestId('preset-smallest').check()
+      await page.getByTestId('compress-run').click()
+      await expect(page.getByTestId('size-after')).toHaveAttribute('data-exact', 'true', { timeout: 60_000 })
+      await expect(page.getByTestId('compress-apply')).toBeVisible()
+      expect(await bytesOf(page, 'size-after')).toBeLessThan(lockedSize)
+      await page.getByTestId('compress-apply').click()
+      await page.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(page.getByTestId('unsaved-dot')).toHaveCount(0)
+      // Still encrypted on disk (pdf-lib refuses it without ignoreEncryption), no plaintext marker or text, and smaller than before.
+      const disk = readFileSync(path)
+      await expect(PDFDocument.load(disk)).rejects.toThrow(/encrypt/i)
+      expect(disk.includes(Buffer.from('EPDF-SECURITY-MARKER'))).toBe(false)
+      expect(disk.includes(Buffer.from('vector text must stay sharp'))).toBe(false)
+      expect(disk.length).toBeLessThan(lockedSize)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('a document whose password prompt was cancelled is not touched: no dialog, no change', async () => {
+    test.setTimeout(120_000)
+    // The tab is in an error state (never unlocked), so Reduce File Size does nothing.
+    const path = join(mkdtempSync(join(tmpdir(), 'epdf-locked2-')), 'locked.pdf')
+    copyFileSync(resolve('tests/fixtures/security/user-only.pdf'), path)
+    const { app, page } = await launch({ files: [path] })
+    try {
+      const prompt = page.getByRole('dialog', { name: 'Password required', exact: true })
+      await expect(prompt).toBeVisible()
+      await prompt.getByRole('button', { name: 'Cancel' }).click()
+      await expect(page.getByRole('alert')).toContainText('A password is required')
+      await menuClick(app, 'File', 'Reduce File Size…')
+      await page.waitForTimeout(800)
       await expect(dialog(page)).toHaveCount(0)
       await expect(page.getByTestId('unsaved-dot')).toHaveCount(0)
     } finally {

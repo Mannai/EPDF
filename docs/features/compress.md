@@ -24,8 +24,11 @@ A dialog for the open document with four choices and live numbers:
 * A toast summarises: `12.4 MB → 3.1 MB, saved 75%`.
 * **Never larger:** if the rewritten file is not smaller the original is kept and the dialog says so
   ("This document is already as small as it can be made with these settings"); Apply is not offered.
-* Password-protected documents: `ensureEditable(docId)` runs first; if the document stays locked a toast explains why nothing
-  happened. Signed documents get a warning (rewriting the file invalidates the signature). Files over 1 GB are refused with a message.
+* Password-protected documents: `ensureEditable(docId)` runs first (the Security feature unlocks the document in memory, asking
+  for the password if needed); if it stays locked a toast explains why nothing happened. The reduced copy is re-encrypted by
+  Security's `beforeWrite` hook on Save, which finds its protection marker stream by a raw byte search: the reducer therefore never
+  compresses or packs that stream (regression test `compressSecurity.test.ts`; the e2e checks the saved file is still encrypted).
+  Batch mode has no way to unlock, so protected files there are skipped with a message. Signed documents get a warning (rewriting the file invalidates the signature). Files over 1 GB are refused with a message.
 * **Reduce Several Files…**: choose PDFs in a native dialog, pick a preset, and each result is written **next to its original** as
   `name (reduced).pdf` (`(reduced 2)`, … — an existing file is never overwritten, the original is never modified). Per-file
   status: reduced / already small / skipped (password protected) / failed; overall progress with Cancel; a summary toast.
