@@ -63,6 +63,13 @@ function CustomControls({ o, disabled }: { o: CompressOptions; disabled: boolean
         <Check label="Merge identical fonts, images and profiles" checked={o.dedupe} onChange={(v) => editOptions({ dedupe: v })} />
         <Check label="Compress data streams at the highest level" checked={o.recompressStreams} onChange={(v) => editOptions({ recompressStreams: v })} />
         <Check label="Pack objects into compressed object streams" checked={o.objectStreams} onChange={(v) => editOptions({ objectStreams: v })} />
+        <Check
+          label="Trim embedded fonts to the characters used"
+          hint="Text looks and copies the same, but those fonts can no longer supply other characters when the text is edited."
+          checked={o.subsetFonts}
+          onChange={(v) => editOptions({ subsetFonts: v })}
+          testId="opt-fonts"
+        />
       </fieldset>
       <fieldset className="space-y-0.5" disabled={disabled}>
         <legend className="mb-1 text-sm font-medium">Remove</legend>

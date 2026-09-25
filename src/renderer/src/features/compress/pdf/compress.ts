@@ -2,6 +2,7 @@ import { PDFDocument, PDFRef, PDFStream, type PDFContext } from 'pdf-lib'
 import type { ImageCodec } from './codec'
 import { reachable, trailerRoots } from './graph'
 import { describeImage, optimizeImage, type ImageRole } from './images'
+import { subsetFonts } from './fonts'
 import { convertInlineImages } from './inline'
 import { sanitizeOptions, type CompressOptions } from './options'
 import { scanImageUsage } from './scan'
@@ -28,6 +29,8 @@ export interface CompressStats {
     skipped: Record<string, number>
   }
   streams: { redeflated: number; savedBytes: number }
+  /** Fully embedded TrueType fonts found, and how many were trimmed to the glyphs in use. */
+  fonts: { candidates: number; subsetted: number; savedBytes: number }
   dedupe: { merged: number; savedBytes: number }
   unreachable: { objects: number; bytes: number }
   strips: StripReport
@@ -60,6 +63,7 @@ const emptyStats = (size: number): CompressStats => ({
   objectsAfter: 0,
   images: { total: 0, replaced: 0, downsampled: 0, jpeg: 0, flate: 0, bytesBefore: 0, bytesAfter: 0, inlineConverted: 0, skipped: {} },
   streams: { redeflated: 0, savedBytes: 0 },
+  fonts: { candidates: 0, subsetted: 0, savedBytes: 0 },
   dedupe: { merged: 0, savedBytes: 0 },
   unreachable: { objects: 0, bytes: 0 },
   strips: { metadata: 0, thumbnails: 0, pieceInfo: 0, javascript: 0, destinations: 0, extras: 0, infoRemoved: false }
@@ -148,6 +152,15 @@ export async function compressPdf(input: Uint8Array, optionsIn: Partial<Compress
       stats.images.bytesAfter += out.after
       await deps.yieldNow?.()
     }
+  }
+
+  // ---- fonts ----
+  if (opts.subsetFonts) {
+    progress(0.74, 'Trimming fonts')
+    const f = subsetFonts(pdf)
+    stats.fonts = { candidates: f.candidates, subsetted: f.subsetted, savedBytes: f.savedBytes }
+    for (const k of f.replaced) doneImages.add(k) // already stored at maximum compression
+    await deps.yieldNow?.()
   }
 
   // ---- streams ----

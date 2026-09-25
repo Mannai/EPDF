@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import fontkit from '@pdf-lib/fontkit'
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFString, StandardFonts, rgb } from 'pdf-lib'
 import { pureCodec } from '../../src/renderer/src/features/compress/pdf/codec'
 import { compressPdf } from '../../src/renderer/src/features/compress/pdf/compress'
@@ -21,6 +22,7 @@ const N = (s: string): PDFName => PDFName.of(s)
 const dir = mkdtempSync(join(tmpdir(), 'epdf-compress-'))
 const REPORT = join(dir, 'report.pdf')
 const STRESS = join(dir, 'stress.pdf')
+const MIXED = join(dir, 'mixed-images.pdf')
 
 /** A 3-page report: two photos (Flate + JPEG), a duplicate, a graphic, bookmarks, a link, a note, a form field, metadata. */
 async function buildReport(): Promise<Uint8Array> {
@@ -79,6 +81,7 @@ test.beforeAll(async () => {
   const bytes = await buildReport()
   writeFileSync(REPORT, bytes)
   reportSize = bytes.length
+  writeFileSync(MIXED, await buildMixedImages())
 })
 
 const dialog = (page: Page) => page.getByRole('dialog', { name: 'Reduce file size' })
@@ -362,11 +365,9 @@ test.describe('Reduce File Size', () => {
 
   test('every image flavour (gray/CMYK JPEG, soft mask, Indexed, stencil) keeps its colour space and looks the same', async () => {
     test.setTimeout(240_000)
-    const mixed = join(dir, 'mixed-images.pdf')
-    writeFileSync(mixed, await buildMixedImages())
     const path = join(mkdtempSync(join(tmpdir(), 'epdf-mixed-')), 'mixed-images.pdf')
-    copyFileSync(mixed, path)
-    const original = (await renderPages(mixed, [1]))[0]
+    copyFileSync(MIXED, path)
+    const original = (await renderPages(MIXED, [1]))[0]
     const { app, page } = await launch({ files: [path] })
     try {
       await openDialog(app, page)
@@ -397,6 +398,137 @@ test.describe('Reduce File Size', () => {
     const d = meanDiff(original, rendered)
     console.log(`[visual] mixed image types: mean abs diff ${d.toFixed(2)} / 255`)
     expect(d).toBeLessThan(3)
+  })
+
+  test('Smallest trims a fully embedded font: the rendered text is pixel-identical and still selectable', async () => {
+    test.setTimeout(240_000)
+    const doc = await PDFDocument.create()
+    doc.registerFontkit(fontkit)
+    const noto = await doc.embedFont(new Uint8Array(readFileSync(resolve('src/renderer/src/features/textedit/fonts/NotoSans-Regular.ttf'))), { subset: false })
+    const lines = ['Fonts are trimmed to what is used', 'Café crème brûlée, Über-quality 0123456789']
+    const first = doc.addPage([612, 300])
+    lines.forEach((t, i) => first.drawText(t, { x: 40, y: 240 - i * 40, size: 22, font: noto }))
+    const src = join(mkdtempSync(join(tmpdir(), 'epdf-font-')), 'fonts.pdf')
+    writeFileSync(src, await doc.save())
+    const original = (await renderPages(src, [1]))[0]
+    const path = join(mkdtempSync(join(tmpdir(), 'epdf-font2-')), 'fonts.pdf')
+    copyFileSync(src, path)
+    const { app, page } = await launch({ files: [path] })
+    let before = 0
+    let after = 0
+    try {
+      await openDialog(app, page)
+      before = await bytesOf(page, 'size-before')
+      after = await runPreset(page, 'smallest')
+      await expect(page.getByTestId('compress-details')).toBeVisible()
+      await page.getByTestId('compress-apply').click()
+      await expect(page.locator('[data-page="1"] .textLayer')).toContainText('Fonts are trimmed to what is used')
+      await expect(page.locator('[data-page="1"] .textLayer')).toContainText('Café')
+      await page.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(page.getByTestId('unsaved-dot')).toHaveCount(0)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+    expect(after).toBeLessThan(before * 0.2) // ~600 KB of font down to a few tens of KB
+    expect(statSync(path).size).toBe(after)
+    const rendered = (await renderPages(path, [1]))[0]
+    const d = meanDiff(original, rendered)
+    console.log(`[visual] trimmed font: mean abs diff ${d.toFixed(3)} / 255, ${(before / 1024).toFixed(0)} KB -> ${(after / 1024).toFixed(0)} KB`)
+    expect(d).toBeLessThan(0.05)
+  })
+
+  test('Reduce Several Files: each result is saved next to its original (never overwriting), problems are reported per file', async () => {
+    test.setTimeout(240_000)
+    const folder = mkdtempSync(join(tmpdir(), 'epdf-batch-'))
+    copyFileSync(REPORT, join(folder, 'report.pdf'))
+    copyFileSync(MIXED, join(folder, 'images.pdf'))
+    const small = await compressPdf(new Uint8Array(readFileSync(REPORT)), PRESETS.smallest, { codec: pureCodec })
+    writeFileSync(join(folder, 'already-small.pdf'), small.bytes)
+    writeFileSync(join(folder, 'broken.pdf'), 'this is not a pdf at all')
+    execFileSync(process.execPath, [resolve('tests/fixtures/forms-signing.mjs'), folder], { stdio: 'ignore' })
+    copyFileSync(join(folder, 'forms-encrypted.pdf'), join(folder, 'locked.pdf'))
+    writeFileSync(join(folder, 'report (reduced).pdf'), 'EXISTING FILE MUST SURVIVE')
+    const names = ['report.pdf', 'images.pdf', 'already-small.pdf', 'broken.pdf', 'locked.pdf']
+    const originals = new Map(names.map((n) => [n, readFileSync(join(folder, n))]))
+
+    const { app, page } = await launch()
+    try {
+      await expect(page.getByRole('button', { name: 'Open PDF' }).first()).toBeVisible() // the renderer (and its command handlers) is up
+      await app.evaluate(({ dialog }, paths) => {
+        ;(dialog as unknown as { showOpenDialog: () => Promise<unknown> }).showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: paths })
+      }, names.map((n) => join(folder, n)))
+      await menuClick(app, 'File', 'Reduce Several Files…')
+      const dlg = page.getByRole('dialog', { name: 'Reduce several files' })
+      await expect(dlg).toBeVisible()
+      await expect(page.getByTestId('batch-count')).toContainText('5 files')
+      await page.getByTestId('batch-preset-smallest').check()
+      const bad = await axeViolations(page, 'batch dialog')
+      expect(bad).toEqual([])
+      await page.getByTestId('batch-run').click()
+      await expect(page.getByTestId('batch-close')).toHaveText('Close', { timeout: 180_000 })
+
+      const status = (n: string) => page.getByTestId(`batch-status-${n}`)
+      await expect(status('report.pdf')).toHaveAttribute('data-status', 'done')
+      await expect(status('report.pdf')).toContainText('report (reduced 2).pdf') // "(reduced).pdf" already existed
+      await expect(status('images.pdf')).toHaveAttribute('data-status', 'done')
+      await expect(status('already-small.pdf')).toHaveAttribute('data-status', 'kept')
+      await expect(status('broken.pdf')).toHaveAttribute('data-status', 'error')
+      await expect(status('locked.pdf')).toHaveAttribute('data-status', 'skipped')
+      await expect(status('locked.pdf')).toContainText('Password protected')
+      await expect(page.getByRole('status').filter({ hasText: /2 files/ }).first()).toContainText('saved')
+
+      // On disk: reduced copies exist and are valid and smaller; every original and the pre-existing file are untouched.
+      for (const n of names) expect(readFileSync(join(folder, n)).equals(originals.get(n)!), `${n} unchanged`).toBe(true)
+      expect(readFileSync(join(folder, 'report (reduced).pdf'), 'utf8')).toBe('EXISTING FILE MUST SURVIVE')
+      const r2 = readFileSync(join(folder, 'report (reduced 2).pdf'))
+      expect(r2.length).toBeLessThan(originals.get('report.pdf')!.length)
+      expect((await PDFDocument.load(r2)).getPageCount()).toBe(3)
+      const i1 = readFileSync(join(folder, 'images (reduced).pdf'))
+      expect(i1.length).toBeLessThan(originals.get('images.pdf')!.length)
+      expect((await PDFDocument.load(i1)).getPageCount()).toBe(1)
+      expect(() => readFileSync(join(folder, 'already-small (reduced).pdf'))).toThrow()
+      expect(() => readFileSync(join(folder, 'broken (reduced).pdf'))).toThrow()
+      expect(() => readFileSync(join(folder, 'locked (reduced).pdf'))).toThrow()
+    } finally {
+      await app.close()
+    }
+  })
+
+  test('Reduce Several Files: cancelling the file picker does nothing; Cancel stops a running batch', async () => {
+    test.setTimeout(240_000)
+    const { app, page } = await launch()
+    try {
+      await expect(page.getByRole('button', { name: 'Open PDF' }).first()).toBeVisible()
+      await app.evaluate(({ dialog }) => {
+        ;(dialog as unknown as { showOpenDialog: () => Promise<unknown> }).showOpenDialog = () => Promise.resolve({ canceled: true, filePaths: [] })
+      })
+      await menuClick(app, 'File', 'Reduce Several Files…')
+      await page.waitForTimeout(500)
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+
+      const folder = mkdtempSync(join(tmpdir(), 'epdf-batch2-'))
+      const paths: string[] = []
+      const heavy = await buildStress(5, 1800, 1200) // ~35 MB each: several seconds of work in total
+      for (let i = 0; i < 6; i++) {
+        const p = join(folder, `s${i}.pdf`)
+        writeFileSync(p, heavy)
+        paths.push(p)
+      }
+      await app.evaluate(({ dialog }, ps) => {
+        ;(dialog as unknown as { showOpenDialog: () => Promise<unknown> }).showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: ps })
+      }, paths)
+      await menuClick(app, 'File', 'Reduce Several Files…')
+      await expect(page.getByTestId('batch-run')).toBeEnabled()
+      await page.getByTestId('batch-run').click()
+      await expect(page.getByRole('progressbar')).toBeVisible()
+      await page.getByTestId('batch-cancel-run').click()
+      await expect(page.getByRole('progressbar')).toHaveCount(0)
+      await expect(page.getByTestId('batch-run')).toBeEnabled() // can be restarted
+      await page.getByTestId('batch-close').click()
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+    } finally {
+      await app.close()
+    }
   })
 
   test('a password-protected document is not touched: a clear message instead of a dialog', async () => {

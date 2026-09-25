@@ -24,6 +24,11 @@ export interface CompressOptions {
   recompressStreams: boolean
   /** Pack objects into compressed object streams with a compressed cross-reference stream. */
   objectStreams: boolean
+  /**
+   * Shrink fully embedded TrueType fonts to the glyphs the document actually uses. Text looks and copies the same, but the
+   * font can no longer supply other characters (e.g. when editing that text later).
+   */
+  subsetFonts: boolean
 
   // --- removals (each optional) ---
   stripMetadata: boolean
@@ -47,6 +52,7 @@ const BASE: CompressOptions = {
   dedupe: true,
   recompressStreams: true,
   objectStreams: true,
+  subsetFonts: false,
   stripMetadata: false,
   stripThumbnails: true,
   stripPieceInfo: true,
@@ -58,13 +64,13 @@ const BASE: CompressOptions = {
 export const PRESETS: Record<Exclude<PresetId, 'custom'>, CompressOptions> = {
   high: { ...BASE, colorDpi: 300, monoDpi: 600, jpegQuality: 85, stripThumbnails: false, stripPieceInfo: false },
   balanced: { ...BASE },
-  smallest: { ...BASE, colorDpi: 96, monoDpi: 200, jpegQuality: 50, stripMetadata: true, stripExtras: true }
+  smallest: { ...BASE, colorDpi: 96, monoDpi: 200, jpegQuality: 50, subsetFonts: true, stripMetadata: true, stripExtras: true }
 }
 
 export const PRESET_LABELS: Record<PresetId, { label: string; blurb: string }> = {
   high: { label: 'High quality', blurb: 'Images above 300 dpi are reduced, JPEG quality 85. Best for printing.' },
   balanced: { label: 'Balanced', blurb: 'Images above 150 dpi are reduced, JPEG quality 70. Good for screens and email.' },
-  smallest: { label: 'Smallest file', blurb: 'Images reduced to 96 dpi, JPEG quality 50, document properties removed. Text stays sharp.' },
+  smallest: { label: 'Smallest file', blurb: 'Images reduced to 96 dpi, JPEG quality 50, fonts trimmed to the characters used, document properties removed. Text stays sharp.' },
   custom: { label: 'Custom', blurb: 'Choose the resolution, quality and what to remove yourself.' }
 }
 
@@ -86,6 +92,7 @@ export function sanitizeOptions(o: Partial<CompressOptions> | undefined): Compre
     dedupe: b(x.dedupe, BASE.dedupe),
     recompressStreams: b(x.recompressStreams, BASE.recompressStreams),
     objectStreams: b(x.objectStreams, BASE.objectStreams),
+    subsetFonts: b(x.subsetFonts, BASE.subsetFonts),
     stripMetadata: b(x.stripMetadata, BASE.stripMetadata),
     stripThumbnails: b(x.stripThumbnails, BASE.stripThumbnails),
     stripPieceInfo: b(x.stripPieceInfo, BASE.stripPieceInfo),

@@ -2,6 +2,7 @@ import { PDFArray, PDFDict, PDFRef, PDFStream, type PDFContext, type PDFDocument
 import { loadForCompression } from './compress'
 import { reachable, trailerRoots } from './graph'
 import { describeImage, downsampleTarget } from './images'
+import { subsettableFontBytes } from './fonts'
 import { convertInlineImages } from './inline'
 import { sanitizeOptions, type CompressOptions } from './options'
 import { scanImageUsage } from './scan'
@@ -48,6 +49,8 @@ export interface Analysis {
   signed: boolean
   hasJavaScript: boolean
   inlineImages: number
+  /** Embedded TrueType font programs large enough to be worth trimming. */
+  fontBytes: number
 }
 
 export function analyzeDocument(pdf: PDFDocument, fileBytes: number): Analysis {
@@ -151,7 +154,8 @@ export function analyzeDocument(pdf: PDFDocument, fileBytes: number): Analysis {
     looseObjects: loose,
     signed,
     hasJavaScript: js,
-    inlineImages: scan.inlineImages
+    inlineImages: scan.inlineImages,
+    fontBytes: subsettableFontBytes(pdf)
   }
 }
 
@@ -255,6 +259,7 @@ export function estimateSize(a: Analysis, optsIn: Partial<CompressOptions>): Est
     other -= a.duplicates.bytes - a.duplicates.imageBytes
   }
   other -= a.unreachable.bytes
+  if (o.subsetFonts) other -= a.fontBytes * 0.8 // a full font program shrinks to a fraction once only the used glyphs remain
   if (o.stripMetadata) other -= a.xmpBytes
   if (o.stripThumbnails) other -= a.thumbnailBytes
   if (o.stripPieceInfo) other -= a.pieceInfoBytes
