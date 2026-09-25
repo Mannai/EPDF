@@ -78,13 +78,17 @@ async function pdfPoint(page: Page, n: number, x: number, y: number): Promise<{ 
 async function textBox(page: Page, n: number, text: string): Promise<{ x: number; y: number; width: number; height: number }> {
   const span = page.locator(`[data-page="${n}"] .textLayer span`, { hasText: text }).first()
   await expect(span).toBeVisible()
-  // Wait until the text has stopped moving (the page may still be settling after a zoom or reload).
+  // Wait until the text has stopped moving and the page has stopped re-rendering (a new tool's options can
+  // change the viewport height, which re-renders the page at a new zoom and replaces the text layer).
   let prev = (await span.boundingBox())!
-  for (let i = 0, same = 0; i < 40 && same < 3; i++) {
+  let prevRender = await renderVersion(page, n)
+  for (let i = 0, same = 0; i < 60 && same < 4; i++) {
     await page.waitForTimeout(100)
     const cur = (await span.boundingBox())!
-    same = cur.x === prev.x && cur.y === prev.y && cur.width === prev.width && cur.height === prev.height ? same + 1 : 0
+    const render = await renderVersion(page, n)
+    same = cur.x === prev.x && cur.y === prev.y && cur.width === prev.width && cur.height === prev.height && render === prevRender ? same + 1 : 0
     prev = cur
+    prevRender = render
   }
   return prev
 }
@@ -150,6 +154,30 @@ async function regionAvg(page: Page, n: number, f: [number, number, number, numb
 
 /** Region of an unrotated 612x792 page in PDF points → fractions of the canvas. */
 const ptsRegion = (x0: number, y0: number, x1: number, y1: number): [number, number, number, number] => [x0 / PW, (PH - y1) / PH, x1 / PW, (PH - y0) / PH]
+
+/** Raw RGBA pixels of a region (fractions of the page canvas), for counting how many pixels a mark changed. */
+async function regionPixels(page: Page, n: number, f: [number, number, number, number]): Promise<number[]> {
+  return page.evaluate(
+    ({ n, f }) => {
+      const c = document.querySelector<HTMLCanvasElement>(`[data-page="${n}"] canvas`)!
+      const x = Math.max(0, Math.floor(f[0] * c.width))
+      const y = Math.max(0, Math.floor(f[1] * c.height))
+      const w = Math.max(1, Math.floor((f[2] - f[0]) * c.width))
+      const h = Math.max(1, Math.floor((f[3] - f[1]) * c.height))
+      return Array.from(c.getContext('2d')!.getImageData(x, y, w, h).data)
+    },
+    { n, f }
+  )
+}
+
+/** Number of pixels that differ clearly between two renderings of the same region. */
+const changedPixels = (a: number[], b: number[]): number => {
+  let n = 0
+  for (let i = 0; i + 3 < Math.min(a.length, b.length); i += 4) {
+    if (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]) > 60) n++
+  }
+  return n
+}
 
 const distance = (a: number[], b: number[]): number => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
 
@@ -257,13 +285,12 @@ test.describe('markup: text markup', () => {
         await expect(l.page.locator('[data-page="1"] canvas')).toBeVisible()
         await l.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1500, 1000))
         await l.page.getByLabel('Zoom level').selectOption('fit-page')
-        await l.page.waitForTimeout(800)
+        await pageBox(l.page) // wait for the layout to settle
       }
       for (const y of [700, 660, 620, 580]) {
         const region = ptsRegion(72, y - 6, 330, y + 18)
-        const withMark = await regionAvg(again.page, 1, region)
-        const without = await regionAvg(base.page, 1, region)
-        expect(distance(withMark, without), `mark at y=${y} changes the rendering`).toBeGreaterThan(6)
+        const changed = changedPixels(await regionPixels(again.page, 1, region), await regionPixels(base.page, 1, region))
+        expect(changed, `mark at y=${y} changes the rendering`).toBeGreaterThan(40) // a thin line still changes dozens of pixels
       }
     } finally {
       await quitDiscarding(again.app, again.page)
@@ -441,7 +468,7 @@ test.describe('markup: notes, text boxes, drawings, shapes and stamps', () => {
         await expect(l.page.locator('[data-page="1"] canvas')).toBeVisible()
         await l.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1500, 1000))
         await l.page.getByLabel('Zoom level').selectOption('fit-page')
-        await l.page.waitForTimeout(800)
+        await pageBox(l.page) // wait for the layout to settle
       }
       const regions: [string, [number, number, number, number]][] = [
         ['sticky note', ptsRegion(488, 686, 512, 714)],
@@ -455,8 +482,8 @@ test.describe('markup: notes, text boxes, drawings, shapes and stamps', () => {
         ['image stamp', ptsRegion(350, 225, 450, 255)]
       ]
       for (const [name, r] of regions) {
-        const d = distance(await regionAvg(again.page, 1, r), await regionAvg(base.page, 1, r))
-        expect(d, `${name} changes the rendering`).toBeGreaterThan(1.5)
+        const changed = changedPixels(await regionPixels(again.page, 1, r), await regionPixels(base.page, 1, r))
+        expect(changed, `${name} changes the rendering`).toBeGreaterThan(20)
       }
       // The image stamp is green.
       const [R, G, B] = await regionAvg(again.page, 1, ptsRegion(360, 232, 440, 248))
@@ -757,6 +784,9 @@ test.describe('markup: select, edit, move, resize and delete existing annotation
       const ribbon = page.getByRole('group', { name: 'Select options' })
       await afterEdit(page, () => ribbon.getByLabel('Color').fill('#00ff00'))
       await expect(undoButton(page, 'Change color')).toBeEnabled()
+      // The opacity slider commits when it is released / a key press ends: one step, not one per tick.
+      await afterEdit(page, () => ribbon.getByLabel('Opacity').press('ArrowLeft'))
+      await expect(undoButton(page, 'Change opacity')).toBeEnabled()
 
       await openComments(page)
       const details = page.getByTestId('comment-details')
@@ -766,13 +796,13 @@ test.describe('markup: select, edit, move, resize and delete existing annotation
         await text.pressSequentially('Edited by me', { delay: 15 })
         // Typing alone changes nothing: no undo step per keystroke, the document is only edited on Enter/blur.
         await page.waitForTimeout(300)
-        await expect(undoButton(page, 'Change color')).toBeEnabled()
+        await expect(undoButton(page, 'Change opacity')).toBeEnabled()
         await text.press('Enter')
       })
       await expect(undoButton(page, 'Edit comment')).toBeEnabled()
       await expect(page.locator('[data-thread]', { hasText: 'Edited by me' })).toHaveCount(1)
       await undoButton(page, 'Edit comment').click() // one undo step for the whole text, not one per keystroke
-      await expect(undoButton(page, 'Change color')).toBeEnabled()
+      await expect(undoButton(page, 'Change opacity')).toBeEnabled()
       await redoButton(page, 'Edit comment').click()
       await expect(page.locator('[data-thread]', { hasText: 'Edited by me' })).toHaveCount(1)
 
@@ -808,6 +838,7 @@ test.describe('markup: select, edit, move, resize and delete existing annotation
       // The highlight: new colour in /C and in the redrawn appearance; new comment text.
       const hl = byType(saved, 'Highlight')[0]
       expect(getNumbers(hl, 'C')).toEqual([0, 1, 0])
+      expect(String(hl.lookup(PDFName.of('CA')))).toBe('0.95')
       expect(apText(hl)).toContain('0 1 0 rg')
       expect(getString(hl, 'Contents')).toBe('Edited by me')
       expect(getString(hl, 'T')).toBe('Alice')
@@ -967,9 +998,9 @@ test.describe('markup: rotated pages', () => {
       }
       // Edges of the drawn rectangle (0.4..0.6 x 0.45..0.65 of the displayed page).
       const edge: [number, number, number, number] = [0.395, 0.45, 0.415, 0.65]
-      expect(distance(await regionAvg(again.page, 2, edge), await regionAvg(base.page, 2, edge))).toBeGreaterThan(3)
+      expect(changedPixels(await regionPixels(again.page, 2, edge), await regionPixels(base.page, 2, edge))).toBeGreaterThan(50)
       const fill: [number, number, number, number] = [0.16, 0.76, 0.54, 0.89] // the text box
-      expect(distance(await regionAvg(again.page, 2, fill), await regionAvg(base.page, 2, fill))).toBeGreaterThan(3)
+      expect(changedPixels(await regionPixels(again.page, 2, fill), await regionPixels(base.page, 2, fill))).toBeGreaterThan(50)
     } finally {
       await quitDiscarding(again.app, again.page)
       await quitDiscarding(base.app, base.page)

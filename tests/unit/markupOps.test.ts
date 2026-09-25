@@ -674,6 +674,50 @@ describe('annotations from other software', () => {
   })
 })
 
+describe('rotated pages and CropBox offsets', () => {
+  it.each([
+    [0, [1, 0, 0, 1, 0, 0], [0, 0, 200, 50]],
+    [90, [0, 1, -1, 0, 50, 0], [0, 0, 200, 50]],
+    [180, [-1, 0, 0, -1, 200, 50], [0, 0, 200, 50]],
+    [270, [0, -1, 1, 0, 0, 200], [0, 0, 200, 50]]
+  ])('a text box on a /Rotate %i page is authored upright with the matching /Matrix', async (rotation, matrix, bbox) => {
+    const pdf = await makePdf({ rotation })
+    // The displayed box is 200 wide x 50 tall; in PDF space that is 200x50 (0/180) or 50x200 (90/270).
+    const rect: [number, number, number, number] = rotation % 180 === 0 ? [100, 300, 300, 350] : [100, 300, 150, 500]
+    await addFreeText(pdf, 0, { ...who, rect, text: 'Hi', fontSize: 12, color: [0, 0, 0], fill: null, borderWidth: 1 })
+    const [d] = annotsOf(await roundTrip(pdf))
+    expect(apMatrix(d)).toEqual(matrix)
+    expect(apBBox(d)).toEqual(bbox)
+    expect(getNumbers(d, 'Rect')).toEqual(rect)
+    // Regenerating after an edit keeps the authored orientation, whatever the page says now.
+    const id = readAnnotations(pdf)[0].id
+    await updateAnnotation(pdf, id, { contents: 'Changed' })
+    expect(apMatrix(annotsOf(await reload(pdf))[0])).toEqual(matrix)
+  })
+
+  it.each([90, 180, 270])('notes and stamps stay centred on the click and inside the page for /Rotate %i', async (rotation) => {
+    const pdf = await makePdf({ rotation })
+    await addNote(pdf, 0, { ...who, center: [300, 400], contents: '', color: [1, 1, 0], icon: 'Note' })
+    await addStamp(pdf, 0, { ...who, name: 'Draft', center: [300, 400] })
+    const [note, stamp] = annotsOf(await roundTrip(pdf)).map((d) => getNumbers(d, 'Rect')!)
+    expect([(note[0] + note[2]) / 2, (note[1] + note[3]) / 2]).toEqual([300, 400])
+    expect([(stamp[0] + stamp[2]) / 2, (stamp[1] + stamp[3]) / 2]).toEqual([300, 400])
+    // The stamp is wider than tall on screen, so its PDF-space rect is tall and narrow on 90/270 pages.
+    expect(stamp[2] - stamp[0] > stamp[3] - stamp[1]).toBe(rotation === 180)
+  })
+
+  it('a page with a CropBox: notes are clamped to the visible box and text markup keeps absolute coordinates', async () => {
+    const pdf = await makePdf({ cropBox: [100, 100, 400, 500] })
+    await addNote(pdf, 0, { ...who, center: [0, 0], contents: '', color: [1, 1, 0], icon: 'Note' })
+    await addNote(pdf, 0, { ...who, center: [9999, 9999], contents: '', color: [1, 1, 0], icon: 'Note' })
+    await addTextMarkup(pdf, 0, { ...who, subtype: 'Highlight', quads: [quadAt(150, 300)], color: [1, 1, 0], opacity: 1 })
+    const [a, b, c] = annotsOf(await roundTrip(pdf)).map((d) => getNumbers(d, 'Rect')!)
+    expect(a).toEqual([100, 100, 124, 124])
+    expect(b).toEqual([376, 476, 400, 500])
+    expect(c).toEqual([150, 300, 250, 314])
+  })
+})
+
 describe('robustness', () => {
   it('a broken annotation elsewhere does not stop creating new ones', async () => {
     const pdf = await makePdf()
