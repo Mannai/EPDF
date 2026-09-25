@@ -122,7 +122,7 @@ export function detectRulingTables(rulings: LineItem[], items: TextItem[]): { ta
     const nc = colEdges.length - 1
     const grid: TextItem[][][] = Array.from({ length: nr }, () => Array.from({ length: nc }, () => []))
     for (const it of inside) grid[indexIn(rowEdges, it.y - it.size * 0.3)][indexIn(colEdges, it.x + 0.5)].push(it)
-    const rows = grid.map((r, ri) => r.map((cell, ci) => cellFrom(cell, colEdges[ci], colEdges[ci + 1])))
+    const rows = grid.map((r) => r.map((cell, ci) => cellFrom(cell, colEdges[ci], colEdges[ci + 1])))
     if (!rows.some((r) => r.some((c) => c.text))) continue
     inside.forEach((i) => consumed.add(i))
     tables.push({ type: 'table', colEdges, rowEdges, rows, bordered: true, x: x0, y: y0, width: x1 - x0, height: y1 - y0, spaceBefore: 0 })

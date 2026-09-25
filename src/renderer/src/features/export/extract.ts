@@ -36,12 +36,30 @@ interface RawImage {
   bitmap?: ImageBitmap
 }
 
-function safeGet(objs: { has(id: string): boolean; get(id: string): unknown }, id: string): unknown {
+interface ObjStore {
+  has(id: string): boolean
+  get(id: string, cb?: (v: unknown) => void): unknown
+}
+
+/** Reads a resolved PDF.js object (image, font), waiting briefly for objects that are still being decoded. */
+function getObj(objs: ObjStore, id: string, timeoutMs = 4000): Promise<unknown> {
   try {
-    return objs.has(id) ? objs.get(id) : undefined
+    if (objs.has(id)) return Promise.resolve(objs.get(id))
   } catch {
-    return undefined
+    return Promise.resolve(undefined)
   }
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(undefined), timeoutMs)
+    try {
+      objs.get(id, (v) => {
+        clearTimeout(timer)
+        resolve(v)
+      })
+    } catch {
+      clearTimeout(timer)
+      resolve(undefined)
+    }
+  })
 }
 
 function rawToPng(raw: RawImage): { png: Uint8Array; w: number; h: number } | null {
@@ -60,7 +78,18 @@ function rawToPng(raw: RawImage): { png: Uint8Array; w: number; h: number } | nu
   return rgba ? { png: encodePng(rgba, w, h), w, h } : null
 }
 
-const safeUrl = (u: unknown): string | null => {
+/** Content fingerprint (length + two FNV-1a style hashes) used to recognise identical images. */
+function fingerprint(b: Uint8Array): string {
+  let h1 = 0x811c9dc5
+  let h2 = 0x01000193
+  for (let i = 0; i < b.length; i++) {
+    h1 = Math.imul(h1 ^ b[i], 0x01000193)
+    h2 = Math.imul(h2 + b[i], 0x85ebca6b) ^ (h2 >>> 13)
+  }
+  return `${b.length}:${(h1 >>> 0).toString(16)}:${(h2 >>> 0).toString(16)}`
+}
+
+const safeUrl =(u: unknown): string | null => {
   if (typeof u !== 'string') return null
   try {
     const p = new URL(u)
@@ -74,6 +103,7 @@ export async function extractPdf(doc: PDFDocumentProxy, opts: ExtractOptions): P
   const { OPS, signal } = opts
   const warnings: string[] = []
   const pages: PageModel[] = []
+  const pngPool = new Map<string, Uint8Array>()
   const n = doc.numPages
   let rotatedSkipped = 0
   let imagesSkipped = 0
@@ -103,22 +133,13 @@ export async function extractPdf(doc: PDFDocumentProxy, opts: ExtractOptions): P
       ) as { str: string; transform: number[]; width: number; fontName: string }[]
       const colors = assignTextColors(textItems, gfx.textColors)
 
+      // Real font names live in the font objects PDF.js resolves while it reads the operator list.
       const fontCache = new Map<string, ReturnType<typeof describeFont>>()
-      const fontOf = (fontName: string): ReturnType<typeof describeFont> => {
-        let f = fontCache.get(fontName)
-        if (!f) {
-          let real: string | undefined
-          try {
-            const obj = page.commonObjs.has(fontName) ? (page.commonObjs.get(fontName) as { name?: string }) : undefined
-            real = obj?.name
-          } catch {
-            /* font not resolved */
-          }
-          f = describeFont(real, (content.styles as Record<string, { fontFamily?: string }>)[fontName]?.fontFamily)
-          fontCache.set(fontName, f)
-        }
-        return f
+      for (const fontName of new Set(textItems.map((i) => i.fontName))) {
+        const obj = (await getObj(page.commonObjs as unknown as ObjStore, fontName, 1500)) as { name?: string } | undefined
+        fontCache.set(fontName, describeFont(obj?.name, (content.styles as Record<string, { fontFamily?: string }>)[fontName]?.fontFamily))
       }
+      const fontOf = (fontName: string): ReturnType<typeof describeFont> => fontCache.get(fontName) ?? describeFont(undefined, undefined)
 
       const items: TextItem[] = []
       textItems.forEach((it, i) => {
@@ -182,7 +203,9 @@ export async function extractPdf(doc: PDFDocumentProxy, opts: ExtractOptions): P
           const key = pi.name ?? ''
           let enc = pi.name ? cache.get(key) : undefined
           if (enc === undefined) {
-            const raw = pi.name ? safeGet(page.objs as never, pi.name) : pi.inline
+            // Images used several times are shared by the whole document ("g_…" ids live in commonObjs).
+            const store = (pi.name?.startsWith('g_') ? page.commonObjs : page.objs) as unknown as ObjStore
+            const raw = pi.name ? await getObj(store, pi.name) : pi.inline
             enc = raw ? rawToPng(raw as RawImage) : null
             if (pi.name) cache.set(key, enc)
           }
@@ -191,7 +214,11 @@ export async function extractPdf(doc: PDFDocumentProxy, opts: ExtractOptions): P
             continue
           }
           if (enc.w < 4 || enc.h < 4) continue
-          images.push({ x: pi.x, y: pi.y, width: pi.width, height: pi.height, png: enc.png, pxWidth: enc.w, pxHeight: enc.h })
+          // The same picture repeated on many pages (a logo) shares one byte array, so writers store it once.
+          const fp = fingerprint(enc.png)
+          const shared = pngPool.get(fp) ?? enc.png
+          pngPool.set(fp, shared)
+          images.push({ x: pi.x, y: pi.y, width: pi.width, height: pi.height, png: shared, pxWidth: enc.w, pxHeight: enc.h })
         }
         imagesSkipped += gfx.skippedImages
       }

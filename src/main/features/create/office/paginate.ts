@@ -29,7 +29,8 @@ const kindOf = (s: Section, indexInSection: number, number: number): Kind => {
 
 function pickBlocks(set: Section['header'], kind: Kind): Block[] | undefined {
   if (!set) return undefined
-  return set[kind] ?? set.default
+  // A missing first-page/even-page header means "blank", it does not fall back to the default one (as in Word).
+  return set[kind]
 }
 
 /** Lays a flow document out into pages (display lists). */

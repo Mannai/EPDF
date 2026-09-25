@@ -5,6 +5,8 @@ import { pathToFileURL } from 'node:url'
 
 export interface TextItem {
   str: string
+  /** Advance width of the item in points. */
+  w: number
   x: number
   y: number
   size: number
@@ -47,12 +49,12 @@ export async function readPdf(bytes: Uint8Array): Promise<{ pages: PdfPageText[]
     for (const fn of ol.fnArray) if (fn === pdfjs.OPS.paintImageXObject || fn === pdfjs.OPS.paintInlineImageXObject || fn === pdfjs.OPS.paintImageMaskXObject) imageCount++
     const fontNames = new Set<string>()
     const items: TextItem[] = []
-    for (const it of tc.items as { str: string; transform: number[]; fontName: string; height: number }[]) {
+    for (const it of tc.items as { str: string; transform: number[]; fontName: string; height: number; width: number }[]) {
       if (!('str' in it)) continue
       const font = (await new Promise<{ name?: string } | undefined>((res) => page.commonObjs.get(it.fontName, res)))?.name ?? it.fontName
       fontNames.add(font)
       embedded.add(font)
-      items.push({ str: it.str, x: it.transform[4], y: vp.height - it.transform[5], size: Math.hypot(it.transform[2], it.transform[3]), font })
+      items.push({ str: it.str, w: it.width, x: it.transform[4], y: vp.height - it.transform[5], size: Math.hypot(it.transform[2], it.transform[3]), font })
     }
     // group into lines
     const sorted = [...items].filter((t) => t.str.length > 0).sort((a, b) => a.y - b.y || a.x - b.x)
