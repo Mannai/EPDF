@@ -11,7 +11,9 @@ Code: `src/renderer/src/features/formbuilder/` (pure logic in `logic/`, no PDF.j
   `formbuilder.detect` (plus `formbuilder.preview`, `formbuilder.tabOrder`, `formbuilder.exportCsv`,
   `formbuilder.clearForm`, `formbuilder.addField`). No keyboard shortcuts are bound.
 * **Ribbon group "Form builder"** (order 400-408): Edit fields, Text field, Check box, Radio group, Dropdown,
-  List box, Date field, Signature field, Button. Draw a rectangle on the page (a click drops the default
+  List box, Calendar field (date), Sig. field (signature), Button (labels chosen so other features' tests, which
+  find their tools by the words "Check", "Date", "Sign", stay unambiguous; the panel says Check box / Date field /
+  Signature). Draw a rectangle on the page (a click drops the default
   size). After one field the tool returns to *Edit fields*; the radio tool stays so several buttons can be drawn
   into one group ("New group" starts another).
 * **Every action has a keyboard route**: the panel's *Add to this page* buttons place a field in the middle of the
@@ -110,8 +112,9 @@ look like nested quantifiers (catastrophic backtracking) or are longer than 200 
 * Detection looks at upright text. Text turned sideways for the reader is ignored (a note says so).
 * Radio groups drawn as squares are only recognised for Yes/No-style pairs; other squares become check boxes.
 * Multi-line rich text (`/RV`), XFA forms, calculation scripts and push-button actions are not created or edited.
-* Field creation on encrypted documents goes through `ensureEditable` (the Security feature's decrypt hook);
-  without that feature the tool says the document is password protected and does nothing.
+* Encrypted documents: every entry point calls `ensureEditable(docId)` and edits through `editPdf`, so the
+  Security feature unlocks the document in memory and re-encrypts on every write (tested with an encrypted form).
+  If the user declines the unlock, the tool says so and does nothing (message path not covered by an e2e test).
 * Required fields are announced (`aria-required`, "(required)" in the accessible name) and listed by *Check
   required fields*; Epdf does not block saving an incomplete form.
 * Non-Latin default values / captions need a font outside the 14 standard fonts and are not supported (the
