@@ -283,8 +283,20 @@ test.describe('redaction: mark, preview, apply, save, prove', () => {
       const edit = page.getByTestId('redact-edit-area-fields')
       await expect(edit).toBeVisible()
       const left = edit.getByLabel('Selected area left in points')
-      const w0 = Number(await edit.getByLabel('Selected area width in points').inputValue())
-      const l0 = Number(await left.inputValue())
+      // The fields settle a moment after the mark appears; read the starting values only once they stop changing
+      // (reading them immediately races the first render and made this test depend on machine speed).
+      const settled = async (field: Locator): Promise<number> => {
+        let prev = NaN
+        for (let i = 0; i < 40; i++) {
+          const v = Number(await field.inputValue())
+          if (v === prev) return v
+          prev = v
+          await page.waitForTimeout(150)
+        }
+        return prev
+      }
+      const w0 = await settled(edit.getByLabel('Selected area width in points'))
+      const l0 = await settled(left)
       expect(w0).toBeGreaterThan(20)
       // keyboard: arrows move by 1 pt (10 with Shift), Alt+arrows resize
       await marks(page).first().focus()

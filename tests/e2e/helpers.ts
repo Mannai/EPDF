@@ -50,7 +50,7 @@ export async function launch(opts: { files?: string[]; userData?: string; env?: 
       const page = await app.firstWindow()
       return { app, page, userData }
     } catch (err) {
-      const transient = /Lock file|ECONNRESET|process_singleton/i.test(String(err instanceof Error ? err.message : err))
+      const transient = /Lock file|ECONNRESET|process_singleton|Process failed to launch/i.test(String(err instanceof Error ? err.message : err))
       if (!transient || attempt >= 4) throw err
       await new Promise((r) => setTimeout(r, 1500 * attempt))
     }
