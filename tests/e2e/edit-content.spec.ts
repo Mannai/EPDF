@@ -1,7 +1,7 @@
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { PDFArray, PDFDocument, PDFName, PDFRawStream, decodePDFRawStream } from 'pdf-lib'
 import { analyzePage } from '../../src/renderer/src/features/textedit/pdfcontent/analyze'
 import { buildBlocks } from '../../src/renderer/src/features/textedit/pdfcontent/blocks'
@@ -112,6 +112,7 @@ test.describe('edit text', () => {
       const stream = await contentText(path)
       expect(stream).not.toContain('Total: 1234')
       expect(stream.toLowerCase()).not.toContain(hex('Total: 1234'))
+      expect(stream.toLowerCase()).toContain(hex('Total: 1299 (revised)')) // the new text is what the stream now shows
       expect((await PDFDocument.load(readFileSync(path))).getPageCount()).toBe(2)
     } finally {
       await quitDiscarding(app, page)
@@ -590,6 +591,47 @@ test.describe('edit images', () => {
       expect(await contentText(path)).toMatch(/0 0 1 1 re\s+W\s+n/)
       expect(await imageObjectCount(path)).toBe(2) // the two old pictures are gone
       await expect.poll(() => canvasHasInk(page, '[data-page="1"] canvas')).toBe(true)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('replaces with a real JPEG (baseline, encoded by Chromium): embedded as DCT and rendered', async () => {
+    const { path, app, page } = await openDoc('ec-images.pdf')
+    try {
+      const png = readFileSync(join(FIX, 'ec-picture.png')).toString('base64')
+      const jpgB64 = await app.evaluate(({ nativeImage }, s) => nativeImage.createFromBuffer(Buffer.from(s, 'base64')).toJPEG(90).toString('base64'), png)
+      const jpg = join(dirname(path), 'picture.jpg')
+      writeFileSync(jpg, Buffer.from(jpgB64, 'base64'))
+      await mockOpenDialog(app, jpg)
+      await tool(page, 'edit-images').click()
+      await outlines(page).nth(0).click()
+      await page.getByTestId('imageedit-replace').click()
+      await expect(toast(page, /Image replaced/)).toBeVisible()
+      await save(page)
+      const red = (await imagesOnDisk(path)).find((i) => i.width === 50)!
+      expect(red.height).toBe(25)
+      near(red.bbox.x0, 72, 0.01)
+      near(red.bbox.x1, 272, 0.01)
+      const doc = await PDFDocument.load(readFileSync(path))
+      let dct = 0
+      for (const [, obj] of doc.context.enumerateIndirectObjects()) {
+        const dict = (obj as { dict?: { get(k: PDFName): unknown } }).dict
+        if ((dict?.get(PDFName.of('Subtype')) as PDFName | undefined)?.toString() === '/Image' && String(dict?.get(PDFName.of('Filter'))).includes('DCTDecode')) dct++
+      }
+      expect(dct).toBe(1)
+      // Chromium (PDF.js) decodes it: bluish pixels where the red picture used to be
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const c = document.querySelector<HTMLCanvasElement>('[data-page="1"] canvas')
+            if (!c || c.width === 0) return 'no canvas'
+            const s = c.width / 612
+            const d = c.getContext('2d')!.getImageData(Math.round(170 * s), Math.round((792 - 650) * s), 1, 1).data
+            return d[2] > 150 && d[0] < 90 ? 'blue' : `rgb(${d[0]},${d[1]},${d[2]})`
+          })
+        )
+        .toBe('blue')
     } finally {
       await quitDiscarding(app, page)
     }
