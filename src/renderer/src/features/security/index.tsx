@@ -26,7 +26,8 @@ registerDialog(SecurityDialogs)
 
 const withTab = (fn: (docId: string) => Promise<void>) => (): void => {
   const t = activeTab()
-  if (t && t.status === 'ready') void fn(t.docId)
+  // A tab whose password prompt was cancelled (status 'error') is fine: these flows ask for the password themselves.
+  if (t && t.status !== 'loading') void fn(t.docId)
 }
 
 registerCommand({ id: 'security.protect', label: 'Protect with Password', run: withTab(protectFlow) })

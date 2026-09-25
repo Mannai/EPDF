@@ -305,22 +305,53 @@ test.describe('security: editing and saving protected documents', () => {
     }
   })
 
-  test('editing asks for the password when it cannot be reused, retries a wrong one, and Cancel leaves the document alone', async () => {
+  test('when PDF.js was never given the password, editing asks for it: wrong one retried, Cancel changes nothing, the right one unlocks', async () => {
     const path = copyProtected('rc4-128') // user "user128"
     const { app, page } = await launch({ files: [path] })
     try {
-      await openPrompt(page, 'user128')
-      await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
-      // Recovered-from-crash style content would need the prompt; here PDF.js gave us the password, so no prompt.
+      // Cancel the open prompt: the tab shows an error and no password is known to the app.
+      const open = dialogOf(page, 'Password required')
+      await expect(open).toBeVisible()
+      await open.getByRole('button', { name: 'Cancel' }).click()
+      await expect(page.getByRole('alert')).toContainText('A password is required')
+
+      // First attempt: our prompt; Cancel refuses and leaves the document alone.
+      await menuClick(app, 'Tools', 'Remove Password Protection…')
+      const ask = dialogOf(page, 'Password required to edit')
+      await expect(ask).toBeVisible()
+      await ask.getByRole('button', { name: 'Cancel' }).click()
+      await expect(ask).toHaveCount(0)
+      await expect(unsavedDot(page)).toHaveCount(0)
+
+      // Second attempt: a wrong password is rejected with an alert, the right one unlocks the document.
+      await menuClick(app, 'Tools', 'Remove Password Protection…')
+      await expect(ask).toBeVisible()
+      await ask.getByLabel('Password').fill('nope')
+      await ask.getByRole('button', { name: 'Unlock' }).click()
+      await expect(ask.getByRole('alert')).toContainText('incorrect')
+      expect(await axeViolations(page, 'edit prompt with error')).toEqual([])
+      await ask.getByLabel('Password').fill('user128')
+      await ask.getByRole('button', { name: 'Unlock' }).click()
+      await expect(ask).toHaveCount(0)
+      // Removing needs the owner password: cancel that, the document stays protected and unchanged.
+      const owner = dialogOf(page, 'Owner password required')
+      await expect(owner).toBeVisible()
+      await owner.getByRole('button', { name: 'Cancel' }).click()
+      await expect(unsavedDot(page)).toHaveCount(0)
+
+      // The document is unlocked now: editing works without another prompt, and the save is still protected.
       await menuClick(app, 'Document', 'Rotate Page Clockwise')
       await expect(unsavedDot(page)).toBeVisible()
-      await expect(dialogOf(page, 'Password required to edit')).toHaveCount(0)
-    } finally {
+      await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
+      await saveButton(page).click()
+      await expect(unsavedDot(page)).toHaveCount(0)    } finally {
       await quitDiscarding(app, page)
     }
+    expect(await pdfLibRefuses(path)).toBe(true)
+    expect(await rotationOnDisk(path, 'user128')).toBe(90)
+    expect(latin(bytesOf(path))).toMatch(/\/Length\s+128/)
   })
 })
-
 test.describe('security: removing and changing protection', () => {
   test('Remove Password Protection is one undo step; after saving the file is plain', async () => {
     const path = copyProtected('aes-256-r6')

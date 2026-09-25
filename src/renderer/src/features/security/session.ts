@@ -93,7 +93,10 @@ export async function unlockForEditing(docId: string, bytes: Uint8Array): Promis
     return null
   }
   try {
-    return await decryptDocument(bytes, probe, access, { info: probe.info, key: access.key })
+    const plain = await decryptDocument(bytes, probe, access, { info: probe.info, key: access.key })
+    // A tab whose open-password prompt was cancelled shows an error; now that the document is unlocked, let it load.
+    if (useTabs.getState().tabs.find((t) => t.docId === docId)?.status === 'error') useTabs.getState().contentChanged(docId)
+    return plain
   } catch (err) {
     notify('error', `Couldn’t unlock “${tabName(docId)}”: ${errorMessage(err)}`)
     return null
