@@ -147,7 +147,10 @@ function LoadedViewer({ tab, loaded }: { tab: Tab; loaded: LoadedDoc }): JSX.Ele
 
   // Re-layout as page sizes are discovered.
   useEffect(() => {
-    const cb = (): void => setSizesVersion(loaded.sizesVersion)
+    // A local counter, not `loaded.sizesVersion`: after an edit the new document restarts its own counter
+    // at 1, so copying it could equal the previous value and skip the re-layout (pages that differ from
+    // page 1, e.g. rotated ones, then stayed squashed to page 1's size).
+    const cb = (): void => setSizesVersion((v) => v + 1)
     loaded.listeners.add(cb)
     return () => {
       loaded.listeners.delete(cb)
