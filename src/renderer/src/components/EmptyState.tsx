@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { RecentFile } from '@shared/types'
+import { runCommand } from '../features/api'
 import { openFiles } from '../state/actions'
 import { useTabs } from '../state/tabs'
 
@@ -30,6 +31,9 @@ export function EmptyState(): JSX.Element {
       <div className="mt-6 flex gap-2">
         <button className="btn-primary h-10 px-5" onClick={() => void openFiles()}>
           Open PDF…
+        </button>
+        <button className="btn h-10 px-5" onClick={() => void runCommand('library.open')}>
+          Open Library
         </button>
       </div>
 

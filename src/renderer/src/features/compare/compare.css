@@ -1,0 +1,158 @@
+/*
+ * Compare Files. Highlights are drawn on white paper (pages are white in dark mode too), so their colours are fixed;
+ * everything else uses the app's theme tokens. Colour is never the only cue: removed text is struck through, added
+ * text is underlined, modified text has a double underline, moved text a dashed frame, and every highlight carries
+ * a symbol badge.
+ */
+
+.cmp-root {
+  --cmp-removed: 185 28 28;
+  --cmp-added: 21 128 61;
+  --cmp-modified: 161 98 7;
+  --cmp-moved: 29 78 216;
+}
+.dark .cmp-root {
+  --cmp-removed: 252 165 165;
+  --cmp-added: 134 239 172;
+  --cmp-modified: 253 224 71;
+  --cmp-moved: 147 197 253;
+}
+
+.cmp-hl {
+  position: absolute;
+  box-sizing: border-box;
+  border-radius: 2px;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.cmp-hl[data-kind='removed'] {
+  background: rgb(220 38 38 / 0.28);
+}
+.cmp-hl[data-kind='removed']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  margin-top: -1px;
+  background: rgb(153 27 27);
+}
+.cmp-hl[data-kind='added'] {
+  background: rgb(22 163 74 / 0.28);
+  border-bottom: 2px solid rgb(21 128 61);
+}
+.cmp-hl[data-kind='modified'] {
+  background: rgb(234 179 8 / 0.38);
+  border-bottom: 3px double rgb(133 77 14);
+}
+.cmp-hl[data-kind='moved'] {
+  background: rgb(37 99 235 / 0.2);
+  border: 2px dashed rgb(29 78 216);
+}
+/* The changed characters inside a modified word. */
+.cmp-hl-inner {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+  background: rgb(0 0 0 / 0.22);
+  box-shadow: inset 0 -2px 0 rgb(0 0 0 / 0.75);
+}
+.cmp-hl[data-current='true'] {
+  outline: 2px solid #111;
+  outline-offset: 1px;
+  box-shadow: 0 0 0 4px rgb(255 255 255 / 0.9);
+  z-index: 3;
+}
+.cmp-hl[data-flash='true'] {
+  animation: cmp-flash 0.8s ease-out 2;
+}
+@keyframes cmp-flash {
+  0% {
+    box-shadow: 0 0 0 0 rgb(255 255 255 / 0.95), 0 0 0 0 rgb(17 17 17 / 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 4px rgb(255 255 255 / 0.95), 0 0 0 14px rgb(17 17 17 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 4px rgb(255 255 255 / 0.9), 0 0 0 14px rgb(17 17 17 / 0);
+  }
+}
+.cmp-badge {
+  position: absolute;
+  left: -8px;
+  top: -10px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: #111;
+  color: #fff;
+  font: 700 10px/15px system-ui, sans-serif;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* Page placeholder for a page that exists on one side only. */
+.cmp-absent {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed rgb(var(--c-line));
+  border-radius: 6px;
+  color: rgb(var(--c-ink-muted));
+  text-align: center;
+  padding: 1rem;
+}
+
+/* List entries and badges. */
+.cmp-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-left: 4px solid rgb(var(--k, var(--c-line)));
+  padding: 0 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  background: rgb(var(--c-surface-alt));
+  border-radius: 3px;
+}
+.cmp-kind[data-kind='removed'] {
+  --k: var(--cmp-removed);
+}
+.cmp-kind[data-kind='added'] {
+  --k: var(--cmp-added);
+}
+.cmp-kind[data-kind='modified'] {
+  --k: var(--cmp-modified);
+}
+.cmp-kind[data-kind='moved'] {
+  --k: var(--cmp-moved);
+}
+.cmp-del {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+  text-decoration-color: rgb(var(--cmp-removed));
+}
+.cmp-ins {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+  text-decoration-color: rgb(var(--cmp-added));
+}
+.cmp-del-mark {
+  background: rgb(var(--cmp-removed) / 0.28);
+  color: inherit;
+  font-weight: 700;
+}
+.cmp-ins-mark {
+  background: rgb(var(--cmp-added) / 0.28);
+  color: inherit;
+  font-weight: 700;
+}
+
+.cmp-option {
+  scroll-margin: 4px;
+}
