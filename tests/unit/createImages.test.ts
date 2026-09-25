@@ -118,7 +118,7 @@ describe('imagesToPdf', () => {
     const { bytes } = await imagesToPdf([{ name: 't.png', bytes: makePng(4, 4, (x) => [10, 20, 30, x < 2 ? 0 : 255]) }], { pageSize: 'image' })
     const doc = await PDFDocument.load(bytes)
     const xobjs = doc.getPage(0).node.Resources()!.lookup(PDFName.of('XObject'), PDFDict)
-    const img = xobjs.lookup(xobjs.keys()[0], PDFRawStream as never) as PDFRawStream
+    const img = xobjs.lookup(xobjs.keys()[0]) as unknown as PDFRawStream
     expect(img.dict.get(PDFName.of('SMask'))).toBeInstanceOf(PDFRef)
   })
 
@@ -137,7 +137,7 @@ describe('imagesToPdf', () => {
     expect(doc.getPage(2).getSize()).toEqual({ width: 20, height: 20 })
     // the third frame had partly transparent pixels
     const x3 = doc.getPage(2).node.Resources()!.lookup(PDFName.of('XObject'), PDFDict)
-    const img = x3.lookup(x3.keys()[0], PDFRawStream as never) as PDFRawStream
+    const img = x3.lookup(x3.keys()[0]) as unknown as PDFRawStream
     expect(img.dict.get(PDFName.of('SMask'))).toBeInstanceOf(PDFRef)
   })
 

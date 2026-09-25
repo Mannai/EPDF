@@ -1,5 +1,5 @@
 import { zlibSync } from 'fflate'
-import { PDFDocument, PDFName, PDFRawStream, PDFRef, concatTransformationMatrix, drawObject, popGraphicsState, pushGraphicsState, type PDFPage } from 'pdf-lib'
+import { PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef, concatTransformationMatrix, drawObject, popGraphicsState, pushGraphicsState, type PDFPage } from 'pdf-lib'
 import * as UTIF from 'utif2'
 
 /**
@@ -306,8 +306,8 @@ export function embedRgba(pdf: PDFDocument, rgba: Uint8Array, w: number, h: numb
     if (a !== 255) translucent = true
   }
   const ctx = pdf.context
-  const dict = (cs: string, extra: Record<string, unknown> = {}): ReturnType<typeof ctx.obj> =>
-    ctx.obj({ Type: 'XObject', Subtype: 'Image', Width: w, Height: h, ColorSpace: cs, BitsPerComponent: 8, Filter: 'FlateDecode', ...extra })
+  const dict = (cs: string): PDFDict =>
+    ctx.obj({ Type: 'XObject', Subtype: 'Image', Width: w, Height: h, ColorSpace: cs, BitsPerComponent: 8, Filter: 'FlateDecode' }) as unknown as PDFDict
   let smask: PDFRef | undefined
   if (translucent) {
     smask = ctx.register(PDFRawStream.of(dict('DeviceGray'), zlibSync(alpha)))
