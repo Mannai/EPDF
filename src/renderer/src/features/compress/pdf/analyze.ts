@@ -8,6 +8,7 @@ import { computeAliases, pageContentRefs, unreachableBytes } from './structure'
 import { N, encodedBytes, filterNames, nameOf, refKey, resolve } from './streams'
 import { estimateJpegQuality, parseJpegInfo } from './jpegInfo'
 
+
 /** A quick, read-only look at a document: where its bytes are, so the dialog can estimate savings before running anything. */
 
 export interface ImageFact {
@@ -40,7 +41,8 @@ export interface Analysis {
   thumbnailBytes: number
   pieceInfoBytes: number
   unreachable: { objects: number; bytes: number }
-  duplicates: { objects: number; bytes: number }
+  /** Objects that are exact copies of another one (`imageBytes` = the part of `bytes` that is image data). */
+  duplicates: { objects: number; bytes: number; imageBytes: number }
   looseObjects: number
   signed: boolean
   hasJavaScript: boolean
@@ -131,6 +133,12 @@ export function analyzeDocument(pdf: PDFDocument, fileBytes: number): Analysis {
     if (d.has(N('PieceInfo'))) piece += approxSize(ctx, d.get(N('PieceInfo')))
   }
   const dedupe = computeAliases(ctx, list, pageContentRefs(ctx, pdf))
+  let dupImages = 0
+  for (const [k] of dedupe.alias) {
+    const [n, g] = k.split(' ').map(Number)
+    const o = ctx.lookup(PDFRef.of(n, g))
+    if (o instanceof PDFStream && nameOf(ctx, o.dict.get(N('Subtype'))) === 'Image') dupImages += encodedBytes(o).length
+  }
   const un = unreachableBytes(ctx, [root, info])
   return {
     fileBytes,
@@ -144,7 +152,7 @@ export function analyzeDocument(pdf: PDFDocument, fileBytes: number): Analysis {
     thumbnailBytes: thumbs,
     pieceInfoBytes: piece,
     unreachable: { objects: un.count, bytes: un.bytes },
-    duplicates: { objects: dedupe.report.merged, bytes: dedupe.report.savedBytes },
+    duplicates: { objects: dedupe.report.merged, bytes: dedupe.report.savedBytes, imageBytes: dupImages },
     looseObjects: loose,
     signed,
     hasJavaScript: js,
@@ -228,8 +236,10 @@ export function estimateSize(a: Analysis, optsIn: Partial<CompressOptions>): Est
       } else if (im.coding === 'jpeg') {
         const wantRequant = im.lossy && o.recompressJpeg && im.quality >= o.jpegQuality + 8
         if (im.lossy && (target || wantRequant)) {
-          const bpp = jpegBitsPerPixel(o.jpegQuality, im.ncomp)
-          est = Math.min(im.bytes, (newPixels * bpp) / 8)
+          // Scale the image's own bit rate by how much a lower quality saves; a reduced image is denser (x1.1).
+          const srcBpp = (im.bytes * 8) / pixels
+          const q = jpegBitsPerPixel(o.jpegQuality, im.ncomp) / jpegBitsPerPixel(Math.max(im.quality, o.jpegQuality), im.ncomp)
+          est = Math.min(im.bytes, (newPixels * srcBpp * q * (target ? 1.1 : 1)) / 8)
         }
       } else if (im.coding === 'flate') {
         // Flate data that barely compresses is a photograph: it becomes a JPEG. Graphics stay Flate.
@@ -244,7 +254,11 @@ export function estimateSize(a: Analysis, optsIn: Partial<CompressOptions>): Est
   let other = a.fileBytes - a.imageBytes
   if (o.recompressStreams) other -= a.rawStreamBytes * 0.6 + a.flateStreamBytes * 0.03
   if (o.objectStreams) other -= a.looseObjects * 12
-  if (o.dedupe) other -= a.duplicates.bytes
+  if (o.dedupe) {
+    // Duplicate images vanish after being reduced like their original, so scale their saving the same way.
+    imgAfter -= a.duplicates.imageBytes * (a.imageBytes > 0 ? imgAfter / a.imageBytes : 1)
+    other -= a.duplicates.bytes - a.duplicates.imageBytes
+  }
   other -= a.unreachable.bytes
   if (o.stripMetadata) other -= a.xmpBytes
   if (o.stripThumbnails) other -= a.thumbnailBytes
