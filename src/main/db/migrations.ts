@@ -86,6 +86,72 @@ export const MIGRATIONS: { version: number; sql: string }[] = [
         PRIMARY KEY (feature, key)
       );
     `
+  },
+  {
+    version: 5,
+    sql: `
+      -- Local file library (src/main/features/library). Watched folders, the files found in them, virtual
+      -- folders ("collections") and a full-text index with one row per page.
+      CREATE TABLE library_roots (
+        id           INTEGER PRIMARY KEY,
+        path         TEXT NOT NULL UNIQUE,
+        label        TEXT NOT NULL,
+        kind         TEXT NOT NULL DEFAULT 'folder',
+        added_at     INTEGER NOT NULL,
+        last_scan_at INTEGER,
+        status       TEXT NOT NULL DEFAULT 'ok',
+        note         TEXT NOT NULL DEFAULT ''
+      );
+
+      CREATE TABLE library_files (
+        id            INTEGER PRIMARY KEY,
+        root_id       INTEGER REFERENCES library_roots(id) ON DELETE CASCADE,
+        path          TEXT NOT NULL UNIQUE,
+        rel_dir       TEXT NOT NULL DEFAULT '',
+        name          TEXT NOT NULL,
+        name_key      TEXT NOT NULL,
+        size          INTEGER NOT NULL,
+        mtime         INTEGER NOT NULL,
+        pages         INTEGER,
+        hash          TEXT,
+        state         TEXT NOT NULL DEFAULT 'pending',
+        cloud         INTEGER NOT NULL DEFAULT 0,
+        note          TEXT NOT NULL DEFAULT '',
+        index_version INTEGER NOT NULL DEFAULT 0,
+        indexed_at    INTEGER,
+        words         INTEGER NOT NULL DEFAULT 0,
+        thumb_key     TEXT,
+        favorite      INTEGER NOT NULL DEFAULT 0,
+        hidden        INTEGER NOT NULL DEFAULT 0,
+        added_at      INTEGER NOT NULL
+      );
+      CREATE INDEX idx_library_files_root ON library_files(root_id, rel_dir);
+      CREATE INDEX idx_library_files_size_hash ON library_files(size, hash);
+      CREATE INDEX idx_library_files_mtime ON library_files(mtime DESC);
+      CREATE INDEX idx_library_files_favorite ON library_files(favorite) WHERE favorite = 1;
+
+      CREATE TABLE library_collections (
+        id         INTEGER PRIMARY KEY,
+        parent_id  INTEGER REFERENCES library_collections(id) ON DELETE CASCADE,
+        name       TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      -- Sibling names are unique ignoring case (NULL parents would otherwise never collide).
+      CREATE UNIQUE INDEX idx_library_collections_name ON library_collections(COALESCE(parent_id, 0), name COLLATE NOCASE);
+
+      CREATE TABLE library_collection_files (
+        collection_id INTEGER NOT NULL REFERENCES library_collections(id) ON DELETE CASCADE,
+        file_id       INTEGER NOT NULL REFERENCES library_files(id) ON DELETE CASCADE,
+        added_at      INTEGER NOT NULL,
+        PRIMARY KEY (collection_id, file_id)
+      );
+      CREATE INDEX idx_library_collection_files_file ON library_collection_files(file_id);
+
+      -- One row per page. rowid = file_id * 1048576 + page, so a file's pages are one contiguous rowid range
+      -- (cheap to replace) and the file/page of a hit is recovered arithmetically. The tokenizer folds case and
+      -- diacritics; the application spaces out CJK characters before indexing.
+      CREATE VIRTUAL TABLE library_text USING fts5(text, tokenize = 'unicode61 remove_diacritics 2');
+    `
   }
 ]
 

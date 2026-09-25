@@ -465,7 +465,10 @@ test.describe('Office documents with the optional LibreOffice engine', () => {
   test('converts through the stub tool when LibreOffice is chosen', async () => {
     const docx = file('office/report.docx', 'Quarterly numbers go here')
     const target = join(outDir('lo1'), 'report.pdf')
-    const { app, page } = await launch({ env: { ...noDiscovery, EPDF_TOOL_SOFFICE: STUB_SOFFICE } })
+    // A private temp dir for the app under test: the shared system temp also holds `epdf-lo-*` folders made by
+    // other tests running at the same time, so "nothing left behind" can only be asserted in a dir we own.
+    const privateTmp = mkdtempSync(join(tmpdir(), 'epdf-e2e-tmp-'))
+    const { app, page } = await launch({ env: { ...noDiscovery, EPDF_TOOL_SOFFICE: STUB_SOFFICE, TEMP: privateTmp, TMP: privateTmp, TMPDIR: privateTmp } })
     try {
       await stubDialogs(app, { files: [docx], save: target })
       await menuClick(app, 'File', 'Create PDF from File…')
@@ -476,7 +479,7 @@ test.describe('Office documents with the optional LibreOffice engine', () => {
       await dlg.getByRole('button', { name: 'Create PDF…' }).click()
       await expect(tabNamed(page, /report\.pdf/)).toBeVisible({ timeout: 60_000 })
       expect((await readPdfFile(target)).pages[0].text).toContain('STUB:Quarterly numbers go here')
-      expect(readdirSync(tmpdir()).filter((n) => n.startsWith('epdf-lo-'))).toEqual([])
+      expect(readdirSync(privateTmp).filter((n) => n.startsWith('epdf-lo-'))).toEqual([])
       // the choice is remembered for next time
       await page.getByRole('tab', { name: /report\.pdf/ }).click()
       await pushSave(app, join(outDir('lo1'), 'again.pdf'))
