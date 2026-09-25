@@ -1,0 +1,124 @@
+import Database from 'better-sqlite3'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { MIGRATIONS, migrate } from '../../src/main/db/migrations'
+import { RecentFilesRepo, RecoveryRepo, SessionRepo, SettingsRepo, VersionsRepo } from '../../src/main/db/repos'
+import { DEFAULT_SETTINGS } from '../../src/shared/types'
+
+let db: Database.Database
+beforeEach(() => {
+  db = new Database(':memory:')
+  migrate(db)
+})
+
+describe('migrations', () => {
+  it('is idempotent and applies every migration exactly once', () => {
+    migrate(db)
+    migrate(db)
+    const rows = db.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get() as { n: number }
+    expect(rows.n).toBe(MIGRATIONS.length)
+  })
+  it('has strictly increasing, gap-free versions (append-only)', () => {
+    expect(MIGRATIONS.map((m) => m.version)).toEqual(MIGRATIONS.map((_, i) => i + 1))
+  })
+})
+
+describe('RecoveryRepo', () => {
+  it('stores one recovery file per document and removes it', () => {
+    const r = new RecoveryRepo(db)
+    expect(r.get('/a.pdf')).toBeNull()
+    r.set('/a.pdf', '/rec/1.pdf', 100)
+    r.set('/a.pdf', '/rec/2.pdf', 200)
+    expect(r.get('/a.pdf')).toEqual({ recoveryPath: '/rec/2.pdf', savedAt: 200 })
+    expect(r.remove('/a.pdf')).toBe('/rec/2.pdf')
+    expect(r.get('/a.pdf')).toBeNull()
+    expect(r.remove('/a.pdf')).toBeNull()
+  })
+})
+
+describe('VersionsRepo', () => {
+  it('lists newest first and only for the requested document', () => {
+    const v = new VersionsRepo(db)
+    v.add('/a.pdf', '/v/1', 10, '', 100)
+    v.add('/a.pdf', '/v/2', 20, '', 200)
+    v.add('/b.pdf', '/v/3', 30, '', 300)
+    expect(v.list('/a.pdf').map((x) => x.snapshotPath)).toEqual(['/v/2', '/v/1'])
+    expect(v.list('/b.pdf')).toHaveLength(1)
+  })
+  it('prunes to the newest N and returns the files to delete', () => {
+    const v = new VersionsRepo(db)
+    for (let i = 1; i <= 5; i++) v.add('/a.pdf', `/v/${i}`, i, '', i)
+    v.add('/other.pdf', '/v/other', 1, '', 1)
+    expect(v.prune('/a.pdf', 2).sort()).toEqual(['/v/1', '/v/2', '/v/3'])
+    expect(v.list('/a.pdf').map((x) => x.snapshotPath)).toEqual(['/v/5', '/v/4'])
+    expect(v.list('/other.pdf')).toHaveLength(1)
+  })
+})
+
+describe('RecentFilesRepo', () => {
+  it('orders by most recent and counts re-opens', () => {
+    const r = new RecentFilesRepo(db)
+    r.touch('/a.pdf', 'a.pdf', 1, 100)
+    r.touch('/b.pdf', 'b.pdf', 2, 200)
+    r.touch('/a.pdf', 'a.pdf', 1, 300)
+    const list = r.list()
+    expect(list.map((x) => x.path)).toEqual(['/a.pdf', '/b.pdf'])
+    expect(list[0].openCount).toBe(2)
+  })
+  it('remembers the last page and removes entries', () => {
+    const r = new RecentFilesRepo(db)
+    r.touch('/a.pdf', 'a.pdf', 1)
+    expect(r.getLastPage('/a.pdf')).toBe(1)
+    r.setLastPage('/a.pdf', 42)
+    expect(r.getLastPage('/a.pdf')).toBe(42)
+    expect(r.getLastPage('/missing.pdf')).toBeNull()
+    r.remove('/a.pdf')
+    expect(r.list()).toHaveLength(0)
+  })
+  it('bounds history to 100 entries', () => {
+    const r = new RecentFilesRepo(db)
+    for (let i = 0; i < 130; i++) r.touch(`/f${i}.pdf`, `f${i}.pdf`, 1, i)
+    expect(r.list(1000)).toHaveLength(100)
+    expect(r.list(1)[0].path).toBe('/f129.pdf')
+  })
+})
+
+describe('SessionRepo', () => {
+  const view = { page: 3, zoom: 1.5, zoomMode: 'custom', viewMode: 'two' } as const
+  it('round-trips windows, tab order and the active tab', () => {
+    const s = new SessionRepo(db)
+    s.save([
+      { tabs: [{ path: '/a.pdf', view, active: false }, { path: '/b.pdf', view, active: true }] },
+      { tabs: [{ path: '/c.pdf', view, active: true }] }
+    ])
+    const loaded = s.load()
+    expect(loaded).toHaveLength(2)
+    expect(loaded[0].tabs.map((t) => t.path)).toEqual(['/a.pdf', '/b.pdf'])
+    expect(loaded[0].tabs[1].active).toBe(true)
+    expect(loaded[0].tabs[0].view).toEqual(view)
+  })
+  it('replaces the previous snapshot', () => {
+    const s = new SessionRepo(db)
+    s.save([{ tabs: [{ path: '/a.pdf', view, active: true }] }])
+    s.save([])
+    expect(s.load()).toEqual([])
+  })
+})
+
+describe('SettingsRepo', () => {
+  it('returns defaults, persists changes and ignores corrupt values', () => {
+    const s = new SettingsRepo(db)
+    expect(s.getAll()).toEqual(DEFAULT_SETTINGS)
+    s.set('theme', 'dark')
+    s.set('sidebarOpen', false)
+    expect(s.get('theme')).toBe('dark')
+    expect(s.get('sidebarOpen')).toBe(false)
+    db.prepare("UPDATE settings SET value_json = '{oops' WHERE key = 'theme'").run()
+    expect(s.get('theme')).toBe('system')
+  })
+  it('keeps internal flags out of the public settings object', () => {
+    const s = new SettingsRepo(db)
+    s.setFlag('cleanExit', '0')
+    expect(s.getFlag('cleanExit')).toBe('0')
+    expect(s.getAll()).toEqual(DEFAULT_SETTINGS)
+  })
+})

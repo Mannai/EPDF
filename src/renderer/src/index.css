@@ -1,0 +1,118 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --c-surface: 255 255 255;
+  --c-surface-alt: 244 245 247;
+  --c-raised: 255 255 255;
+  --c-ink: 31 35 40;
+  --c-ink-muted: 89 99 110;
+  --c-line: 208 213 219;
+  --c-accent: 36 87 214;
+  --c-accent-ink: 255 255 255;
+  --c-canvas: 223 226 230;
+  color-scheme: light;
+}
+
+.dark {
+  --c-surface: 27 28 31;
+  --c-surface-alt: 35 37 41;
+  --c-raised: 43 45 49;
+  --c-ink: 230 232 235;
+  --c-ink-muted: 154 161 171;
+  --c-line: 64 68 75;
+  --c-accent: 107 155 255;
+  --c-accent-ink: 11 18 32;
+  --c-canvas: 20 21 23;
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  @apply bg-surface text-ink antialiased;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  overflow: hidden;
+  user-select: none;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-raised px-3 text-ink
+      outline-none hover:bg-surface-alt focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40 disabled:pointer-events-none;
+  }
+  .btn-primary {
+    @apply inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-transparent bg-accent px-3 font-medium text-accent-ink
+      outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface;
+  }
+  .btn-icon {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-md text-ink outline-none hover:bg-surface-alt
+      focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40 disabled:pointer-events-none aria-pressed:bg-accent/15 aria-pressed:text-accent;
+  }
+  .field {
+    @apply h-8 rounded-md border border-line bg-surface px-2 text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent;
+  }
+}
+
+/* Pages are always white paper, in dark mode too. */
+.epdf-page {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+  user-select: text;
+}
+.epdf-hit {
+  position: absolute;
+  background: rgb(255 214 0 / 0.45);
+  border-radius: 2px;
+  mix-blend-mode: multiply;
+}
+.epdf-hit-active {
+  background: rgb(255 128 0 / 0.6);
+  outline: 2px solid rgb(255 128 0);
+}
+.epdf-link {
+  position: absolute;
+  display: block;
+  outline-offset: 0;
+}
+.epdf-link:hover {
+  background: rgb(36 87 214 / 0.12);
+}
+.epdf-link:focus-visible {
+  outline: 2px solid rgb(36 87 214);
+}
+.textLayer {
+  z-index: 1;
+}
+.epdf-link {
+  z-index: 2;
+}
+.epdf-overlays {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+.epdf-overlays > * {
+  pointer-events: none;
+}
+.epdf-overlays .pointer-events-auto {
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

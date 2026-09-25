@@ -1,0 +1,77 @@
+appId: com.epdf.app
+productName: Epdf
+copyright: Copyright © Epdf
+directories:
+  buildResources: build
+  output: dist
+
+files:
+  - out/**/*
+  - package.json
+  - '!**/*.map'
+
+# better-sqlite3 v13 ships N-API prebuilds for win/mac/linux (x64 + arm64), so no compiler toolchain
+# (Visual Studio / Xcode) is needed and there is nothing to rebuild against Electron's ABI.
+npmRebuild: false
+
+# Native helper tools (qpdf, tesseract, ...) live in resources/bin/<platform>-<arch>/ and ship next to the
+# app as <resources>/bin (see src/main/services/tools.ts). Nothing is committed there; see README.
+extraResources:
+  - from: resources/bin/${os}-${arch}
+    to: bin
+    filter: ['**/*']
+
+# Native modules cannot be loaded from inside an asar archive.
+asarUnpack:
+  - '**/node_modules/better-sqlite3/**'
+
+# Register as a handler for .pdf ("Open with", double-click, drag onto the app icon).
+fileAssociations:
+  - ext: pdf
+    name: PDF Document
+    description: PDF Document
+    mimeType: application/pdf
+    role: Editor
+    icon: icon
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch: universal # one build for Apple Silicon + Intel
+    - target: zip # required by electron-updater on macOS (Phase 5)
+      arch: universal
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # Signing + notarization are driven by the environment; see README ("Code signing").
+  #   CSC_LINK / CSC_KEY_PASSWORD        Developer ID Application certificate (.p12)
+  #   APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID   notarization
+  notarize: false # flipped on in CI once the Apple credentials exist (see README)
+  # The universal build merges two arch-specific bundles; the native addon ships prebuilds for both,
+  # so the merge only needs to tolerate identical files.
+  x64ArchFiles: '**/better-sqlite3/**'
+
+dmg:
+  title: Epdf ${version}
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: msi
+      arch: [x64]
+  # Windows signing is driven by the environment (CSC_LINK / CSC_KEY_PASSWORD) or an Azure Trusted
+  # Signing config; see README ("Code signing"). Unsigned local builds work without either.
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+
+linux:
+  target: [AppImage, deb]
+  category: Office
+  mimeTypes: [application/pdf]
