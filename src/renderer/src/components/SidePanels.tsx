@@ -25,7 +25,7 @@ export function LeftSidebar({ tab }: { tab: Tab }): JSX.Element | null {
               aria-label={p.label}
               title={p.label}
               onClick={() => setLeft(p.id)}
-              className="btn-icon aria-selected:bg-accent/15 aria-selected:text-accent"
+              className="btn-icon aria-selected:bg-accent/20 aria-selected:ring-1 aria-selected:ring-accent"
             >
               {p.icon}
             </button>

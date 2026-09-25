@@ -54,7 +54,7 @@ body {
   }
   .btn-icon {
     @apply inline-flex h-8 w-8 items-center justify-center rounded-md text-ink outline-none hover:bg-surface-alt
-      focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40 disabled:pointer-events-none aria-pressed:bg-accent/15 aria-pressed:text-accent;
+      focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40 disabled:pointer-events-none aria-pressed:bg-accent/20 aria-pressed:ring-1 aria-pressed:ring-accent;
   }
   .field {
     @apply h-8 rounded-md border border-line bg-surface px-2 text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent;

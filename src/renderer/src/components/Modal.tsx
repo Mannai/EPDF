@@ -19,6 +19,15 @@ export function Modal({
   const returnFocus = useRef<Element | null>(document.activeElement)
 
   useEffect(() => {
+    // Move focus into the dialog (unless a control already grabbed it with `autoFocus`), so keyboard
+    // users, screen readers and Escape all work immediately; restore focus to the opener on close.
+    const root = ref.current
+    if (root && !root.contains(document.activeElement)) {
+      const first = root.querySelector<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+      ;(first ?? root).focus()
+    }
     const prev = returnFocus.current as HTMLElement | null
     return () => prev?.focus?.()
   }, [])
@@ -51,6 +60,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        tabIndex={-1}
         className={`${wide ? 'w-[40rem]' : 'w-96'} max-h-[80vh] max-w-[92vw] overflow-y-auto rounded-lg border border-line bg-raised p-5 shadow-2xl`}
       >
         <h2 className="mb-3 text-base font-semibold">{title}</h2>
