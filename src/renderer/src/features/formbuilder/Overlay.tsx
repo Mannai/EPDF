@@ -6,8 +6,6 @@ import { isolateViewerKeys } from '../forms/keys'
 import './builder.css'
 import { Frame, rememberKeyboardFocus, type CssRect } from './Frame'
 import {
-  addAtCenter,
-  arrange,
   copySelection,
   createKindOf,
   createManual,
@@ -17,6 +15,7 @@ import {
   moveWidgets,
   nudgeSelection,
   pasteClipboard,
+  rejectProposals,
   resizeSelection,
   selectionKeys,
   updateProposal,
@@ -344,7 +343,7 @@ function ProposalLayer({ pageIndex, scale, height }: { pageIndex: number; scale:
                 setSelected(selected ? detect.selected.filter((s) => s !== p.id) : [...detect.selected, p.id])
               } else if (e.key === 'Delete' || e.key === 'Backspace') {
                 stop()
-                void import('./actions').then((m) => m.rejectProposals([p.id]))
+                rejectProposals([p.id])
               }
             }}
           >
@@ -384,5 +383,3 @@ function TabBadges({ pageIndex, fields, keys, geom }: { pageIndex: number; field
     </>
   )
 }
-
-export { addAtCenter, arrange }
