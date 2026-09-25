@@ -37,13 +37,24 @@ export function menuClick(app: ElectronApplication, menu: string, item: string):
 
 export async function launch(opts: { files?: string[]; userData?: string; env?: Record<string, string> } = {}): Promise<Launched> {
   const userData = opts.userData ?? mkdtempSync(join(tmpdir(), 'epdf-e2e-'))
-  const app = await electron.launch({
-    args: ['.', ...(opts.files ?? [])],
-    // An empty renderer URL selects the production code path (custom protocol + strict CSP).
-    env: { ...process.env, EPDF_USER_DATA: userData, ELECTRON_RENDERER_URL: '', ...opts.env } as Record<string, string>
-  })
-  const page = await app.firstWindow()
-  return { app, page, userData }
+  // Relaunching on a profile right after a simulated crash can hit a Chromium child that is still shutting
+  // down and holds the profile lock ("Lock file can not be created"). That is the test environment, not the
+  // app, so retry those specific launch failures a few times.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const app = await electron.launch({
+        args: ['.', ...(opts.files ?? [])],
+        // An empty renderer URL selects the production code path (custom protocol + strict CSP).
+        env: { ...process.env, EPDF_USER_DATA: userData, ELECTRON_RENDERER_URL: '', ...opts.env } as Record<string, string>
+      })
+      const page = await app.firstWindow()
+      return { app, page, userData }
+    } catch (err) {
+      const transient = /Lock file|ECONNRESET|process_singleton/i.test(String(err instanceof Error ? err.message : err))
+      if (!transient || attempt >= 4) throw err
+      await new Promise((r) => setTimeout(r, 1500 * attempt))
+    }
+  }
 }
 
 /**
