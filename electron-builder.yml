@@ -20,6 +20,10 @@ extraResources:
   - from: resources/bin/${os}-${arch}
     to: bin
     filter: ['**/*']
+  # Bundled fonts (signature script fonts + the Unicode font for form text) and their licenses.
+  - from: resources/fonts
+    to: fonts
+    filter: ['**/*']
 
 # Native modules cannot be loaded from inside an asar archive.
 asarUnpack:

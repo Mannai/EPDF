@@ -56,6 +56,23 @@ export const MIGRATIONS: { version: number; sql: string }[] = [
       );
       CREATE INDEX idx_versions_doc ON versions(doc_path, saved_at DESC);
     `
+  },
+  {
+    version: 3,
+    sql: `
+      -- Saved visual signatures / initials. \`image\` is NEVER a plain PNG: it is the Electron safeStorage
+      -- ciphertext of the base64-encoded PNG (see src/main/features/sign).
+      CREATE TABLE signatures (
+        id         INTEGER PRIMARY KEY,
+        name       TEXT NOT NULL,
+        kind       TEXT NOT NULL CHECK (kind IN ('signature', 'initials')),
+        method     TEXT NOT NULL DEFAULT 'draw',
+        width      INTEGER NOT NULL,
+        height     INTEGER NOT NULL,
+        image      BLOB NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+    `
   }
 ]
 
