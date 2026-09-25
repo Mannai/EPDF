@@ -86,7 +86,7 @@ export function BatchDialog(): JSX.Element | null {
 
       <div className="flex justify-end gap-2">
         {s.running ? (
-          <button type="button" className="btn" onClick={cancelBatch} data-testid="batch-cancel-run">
+          <button type="button" className="btn" onClick={cancelBatch} autoFocus data-testid="batch-cancel-run">
             Cancel
           </button>
         ) : (

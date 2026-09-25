@@ -408,7 +408,10 @@ export function computeAliases(ctx: PDFContext, list: Reached[], pageContents: S
   return { alias, report: { merged: alias.size, savedBytes: saved } }
 }
 
-/** Refs of the streams used as page /Contents (kept unshared so later edits to one page cannot alter another). */
+/**
+ * Refs of streams that must stay unshared: page /Contents and annotation appearance streams (/AP). Sharing them is valid PDF,
+ * but a later edit that changes one page's content or one field's look in place must not change another's.
+ */
 export function pageContentRefs(ctx: PDFContext, pdf: PDFDocument): Set<string> {
   const out = new Set<string>()
   try {
@@ -419,6 +422,13 @@ export function pageContentRefs(ctx: PDFContext, pdf: PDFDocument): Set<string> 
         if (v instanceof PDFArray) forEachRef(v, (r) => out.add(refKey(r)))
         else out.add(refKey(c))
       } else if (c instanceof PDFArray) forEachRef(c, (r) => out.add(refKey(r)))
+      const annots = resolve(ctx, page.node.get(N('Annots')))
+      if (annots instanceof PDFArray) {
+        for (let i = 0; i < annots.size(); i++) {
+          const a = resolve(ctx, annots.get(i))
+          if (a instanceof PDFDict) forEachRef(a.get(N('AP')), (r) => out.add(refKey(r)))
+        }
+      }
     }
   } catch {
     /* ignore: worst case more streams are considered for merging */

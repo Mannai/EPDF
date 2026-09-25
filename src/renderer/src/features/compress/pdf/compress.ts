@@ -1,4 +1,4 @@
-import { PDFDocument, PDFRef, PDFStream, type PDFContext } from 'pdf-lib'
+import { PDFDict, PDFDocument, PDFRef, PDFStream, type PDFContext } from 'pdf-lib'
 import type { ImageCodec } from './codec'
 import { reachable, trailerRoots } from './graph'
 import { describeImage, optimizeImage, type ImageRole } from './images'
@@ -110,6 +110,8 @@ export async function compressPdf(input: Uint8Array, optionsIn: Partial<Compress
 
   progress(0.08, 'Applying removals')
   stats.strips = applyStrips(pdf, opts)
+  // A direct (not indirect) Info dictionary would be lost by a writer that follows references: give it an object number.
+  if (ctx.trailerInfo.Info instanceof PDFDict) ctx.trailerInfo.Info = ctx.register(ctx.trailerInfo.Info)
   const { root, info } = trailerRoots(ctx)
   let reach = reachable(ctx, [root, info])
 
@@ -119,10 +121,11 @@ export async function compressPdf(input: Uint8Array, optionsIn: Partial<Compress
     progress(0.1, 'Looking for inline images')
     stats.images.inlineConverted = convertInlineImages(pdf)
     reach = reachable(ctx, [root, info])
-    progress(0.12, 'Measuring image resolution')
-    const scan = scanImageUsage(pdf)
     const imgs = imageList(ctx, reach)
     stats.images.total = imgs.length
+    progress(0.12, 'Measuring image resolution')
+    // Text-only documents have nothing to measure: skip parsing every content stream.
+    const scan = imgs.length ? scanImageUsage(pdf) : { uses: new Map(), unknown: new Set<string>(), truncated: false, inlineImages: 0 }
     const smaskWithMatte = new Set<string>()
     for (const i of imgs) if (i.role === 'smask' && i.st.dict.has(N('Matte'))) smaskWithMatte.add(refKey(i.ref))
     for (let k = 0; k < imgs.length; k++) {

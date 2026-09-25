@@ -462,7 +462,15 @@ test.describe('Reduce File Size', () => {
       await expect(dlg).toBeVisible()
       await expect(page.getByTestId('batch-count')).toContainText('5 files')
       await page.getByTestId('batch-preset-smallest').check()
-      const bad = await axeViolations(page, 'batch dialog')
+      const bad = await axeViolations(page, 'batch dialog light')
+      await app.evaluate(({ nativeTheme }) => {
+        nativeTheme.themeSource = 'dark'
+      })
+      await expect(page.locator('html')).toHaveClass(/dark/)
+      bad.push(...(await axeViolations(page, 'batch dialog dark')))
+      await app.evaluate(({ nativeTheme }) => {
+        nativeTheme.themeSource = 'light'
+      })
       expect(bad).toEqual([])
       await page.getByTestId('batch-run').click()
       await expect(page.getByTestId('batch-close')).toHaveText('Close', { timeout: 180_000 })

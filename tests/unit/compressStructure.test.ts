@@ -101,6 +101,22 @@ describe('deduplication', () => {
   })
 })
 
+describe('deduplication: things that must stay separate objects', () => {
+  it('identical annotation appearance streams are not shared between annotations', async () => {
+    const doc = await makeDoc(1)
+    const ctx = doc.context
+    const mkAp = (): PDFRef => ctx.register(ctx.stream('0 0 1 rg 0 0 10 10 re f', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 10, 10] }))
+    const a = ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Stamp', Rect: [10, 10, 20, 20], AP: { N: mkAp() }, F: 4 }))
+    const b = ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Stamp', Rect: [30, 10, 40, 20], AP: { N: mkAp() }, F: 4 }))
+    doc.getPage(0).node.set(N('Annots'), ctx.obj([a, b]))
+    const r = await run(await doc.save(), {})
+    const out = await PDFDocument.load(r.bytes)
+    const annots = out.getPage(0).node.lookup(N('Annots'), PDFArray)
+    const aps = [0, 1].map((i) => String(((annots.lookup(i, PDFDict) as PDFDict).lookup(N('AP'), PDFDict) as PDFDict).get(N('N'))))
+    expect(new Set(aps).size).toBe(2)
+  })
+})
+
 describe('unused objects', () => {
   it('orphans are dropped and every remaining object is reachable from the trailer', async () => {
     const { doc, page } = await baseDoc()

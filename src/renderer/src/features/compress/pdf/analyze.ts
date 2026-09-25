@@ -58,15 +58,18 @@ export function analyzeDocument(pdf: PDFDocument, fileBytes: number): Analysis {
   convertInlineImages(pdf) // the loaded copy is thrown away; large inline images then count as images, as they will when reducing
   const { root, info } = trailerRoots(ctx)
   const list = reachable(ctx, [root, info])
-  const scan = scanImageUsage(pdf)
   const images: ImageFact[] = []
   const smasks = new Set<string>()
+  let hasImages = false
   for (const { obj } of list) {
     if (obj instanceof PDFStream && nameOf(ctx, obj.dict.get(N('Subtype'))) === 'Image') {
+      hasImages = true
       const sm = obj.dict.get(N('SMask'))
       if (sm instanceof PDFRef) smasks.add(refKey(sm))
     }
   }
+  // Text-only documents have nothing to measure: skip parsing every content stream.
+  const scan = hasImages ? scanImageUsage(pdf) : { uses: new Map(), unknown: new Set<string>(), truncated: false, inlineImages: 0 }
   let imageBytes = 0
   let raw = 0
   let flate = 0

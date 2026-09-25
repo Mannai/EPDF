@@ -180,7 +180,7 @@ export function CompressDialog(): JSX.Element | null {
 
       <div className="flex justify-end gap-2">
         {s.phase === 'running' ? (
-          <button type="button" className="btn" onClick={cancelRun} data-testid="compress-cancel-run">
+          <button type="button" className="btn" onClick={cancelRun} autoFocus data-testid="compress-cancel-run">
             Cancel
           </button>
         ) : (

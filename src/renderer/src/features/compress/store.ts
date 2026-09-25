@@ -48,6 +48,9 @@ const initial: CompressUi = {
 
 export const useCompressUi = create<CompressUi>(() => initial)
 
+/** Parsing plus rewriting needs several times the file size in memory; refuse before the worker runs out. */
+const MAX_BYTES = 1024 * 1024 * 1024
+
 // Heavy things stay out of reactive state.
 let job: Job<unknown> | null = null
 let source: Uint8Array | null = null
@@ -79,6 +82,10 @@ export async function openCompress(): Promise<void> {
     source = await currentBytes(docId)
     if (mine !== session) return
     patch({ originalSize: source.length })
+    if (source.length > MAX_BYTES) {
+      patch({ phase: 'error', error: 'This document is too large to reduce in memory (limit 1 GB). Split it first, or use Reduce Several Files on smaller parts.' })
+      return
+    }
     const j = analyzeInWorker(source)
     job = j
     const analysis = await j.promise
