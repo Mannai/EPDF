@@ -12,6 +12,7 @@ import {
   type PDFPage
 } from 'pdf-lib'
 import { EMPTY_LABEL, readPageLabels, writePageLabels, type PageLabel } from './labels'
+import { stripProtectionMarker } from '../protectionMarker'
 import { dropDanglingLinks, dropDanglingOutline } from './outline'
 import type { PageSpec } from './order'
 
@@ -329,5 +330,7 @@ export async function applyPageSpecs(pdf: PDFDocument, specs: PageSpec[], opts: 
 export async function extractPages(srcBytes: Uint8Array, indices: number[]): Promise<Uint8Array> {
   const pdf = await PDFDocument.load(srcBytes, { updateMetadata: false })
   await applyPageSpecs(pdf, indices.map((index) => ({ kind: 'orig', index })))
+  // A new file, not the protected document itself: it must not carry the working copy's encryption key.
+  stripProtectionMarker(pdf)
   return pdf.save()
 }

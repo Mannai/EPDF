@@ -133,6 +133,11 @@ const bytes = await currentBytes(docId)                                   // wha
   Save, Save As, Save a Copy and the autosaved recovery copy — goes through `bytesForWriting(docId)`, which runs
   all `beforeWrite` hooks (Security re-encrypts there, so a protected document never reaches disk as plaintext).
   If you write document bytes anywhere the user's file could end up, use `bytesForWriting`, not `currentBytes`.
+  **A NEW file derived from a document's working copy** (extract/split pages, Print to PDF, any export that
+  re-uses the loaded `PDFDocument`) must call `stripProtectionMarker(pdf)` from
+  `src/shared/features/protectionMarker.ts` before saving: the working copy of an unlocked, protected document
+  carries a marker holding the file's encryption key, and it must never end up in a different file. In-place
+  edits must NOT strip it (it is what makes Save re-encrypt). `tests/unit/marker-leak.test.ts` guards this.
   Features that read a document with pdf-lib themselves call `await ensureEditable(docId)` first (false = the
   user declined to unlock). Without a `decrypt` hook, `editPdf` throws `EditError('… password protected …')`.
   Catch errors and `notify('error', …)`.

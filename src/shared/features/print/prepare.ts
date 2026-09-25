@@ -1,5 +1,6 @@
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRef, type PDFObject } from 'pdf-lib'
 import { applyPageSpecs, pruneUnreachable } from '../pages/pdfOps'
+import { stripProtectionMarker } from '../protectionMarker'
 import { PAPER_SIZES, scaleFor, sheetFor, type Orientation, type Paper, type ScalingMode } from './options'
 
 /**
@@ -122,6 +123,8 @@ export async function preparePrintPdf(bytes: Uint8Array, opts: PrepareOptions): 
   if (!identity) await applyPageSpecs(pdf, opts.pages.map((index) => ({ kind: 'orig', index })))
   if (!opts.annotations) stripAnnotations(pdf)
   if (opts.scale) scalePages(pdf, opts.scale)
+  // Print to PDF makes a new file: it must not carry the working copy's encryption key (see protectionMarker.ts).
+  stripProtectionMarker(pdf)
   return pdf.save()
 }
 
