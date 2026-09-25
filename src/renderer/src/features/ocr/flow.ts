@@ -23,8 +23,8 @@ import { openForOcr, pageHasText, renderPage } from './render'
 
 export interface OcrRunOptions {
   docId: string
-  /** 0-based pages to recognize. */
-  pages: number[]
+  /** 0-based pages to recognize, or 'all' (resolved from the document itself, so it works right after opening). */
+  pages: number[] | 'all'
   languages: string[]
   prefs: Pick<OcrPrefs, 'dpi' | 'contrast' | 'deskew' | 'force'>
   /** No success toast (callers such as Scanning show their own feedback). Errors are still reported. */
@@ -87,7 +87,8 @@ export async function runOcr(opts: OcrRunOptions): Promise<OcrOutcome> {
     // Skip pages that already carry real text, unless the user asked to force them.
     const todo: number[] = []
     let skippedWithText = 0
-    for (const i of opts.pages) {
+    const wanted = opts.pages === 'all' ? Array.from({ length: pdfDoc.numPages }, (_, i) => i) : opts.pages
+    for (const i of wanted) {
       if (i < 0 || i >= pdfDoc.numPages) continue
       if (!opts.prefs.force && (await pageHasText(await pdfDoc.getPage(i + 1)))) skippedWithText++
       else todo.push(i)

@@ -142,6 +142,13 @@ describe('runOcr', () => {
     expect(doc.getPageCount()).toBe(3)
   })
 
+  it("'all' means every page of the document itself (works right after a scan is opened, before the tab knows its size)", async () => {
+    h.state.bytes = await createScan3()
+    const out = await runOcr({ docId: 'doc1', pages: 'all', languages: ['eng'], prefs: { dpi: 300, contrast: true, deskew: true, force: false } })
+    expect(out).toMatchObject({ status: 'done', pages: 3 })
+    expect(h.state.calls.find((c) => c.channel === 'ocr:begin')!.payload).toEqual({ languages: ['eng'], total: 3 })
+  })
+
   it('asks main for the selected languages and pages only', async () => {
     h.state.bytes = await createScan3()
     await run([2], { languages: ['eng', 'fra'] })

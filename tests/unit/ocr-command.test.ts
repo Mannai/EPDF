@@ -44,9 +44,16 @@ describe('command ocr.run', () => {
     expect(h.runOcr).not.toHaveBeenCalled()
   })
 
-  it('opens the dialog for the document named by docId', async () => {
-    await run({ docId: 'b' })
+  it('{ docId, dialog: true } opens the dialog for that document', async () => {
+    await run({ docId: 'b', dialog: true })
     expect(h.show).toHaveBeenCalledWith('b', 8, 5)
+    expect(h.runOcr).not.toHaveBeenCalled()
+  })
+
+  it('{ docId } alone (what Scanning sends) recognizes ALL pages of that document now, without a dialog', async () => {
+    await run({ docId: 'b' })
+    expect(h.show).not.toHaveBeenCalled()
+    expect(h.runOcr.mock.calls[0][0]).toMatchObject({ docId: 'b', pages: 'all', languages: ['deu', 'eng'], silent: false, prefs: { dpi: 200 } })
   })
 
   it('tells the user to open a document first when there is none', async () => {
@@ -58,23 +65,23 @@ describe('command ocr.run', () => {
     expect(h.show).not.toHaveBeenCalled()
   })
 
-  it('silent: no dialog; all pages, the saved languages and options', async () => {
+  it('silent: no success toast; all pages, the saved languages and options', async () => {
     await run({ docId: 'b', silent: true })
     expect(h.show).not.toHaveBeenCalled()
     expect(h.runOcr).toHaveBeenCalledTimes(1)
     expect(h.runOcr.mock.calls[0][0]).toMatchObject({
       docId: 'b',
-      pages: [0, 1, 2, 3, 4, 5, 6, 7],
+      pages: 'all',
       languages: ['deu', 'eng'],
       silent: true,
       prefs: { dpi: 200, contrast: true, deskew: true, force: false }
     })
   })
 
-  it('silent with explicit languages uses them instead of the saved ones', async () => {
-    await run({ docId: 'a', silent: true, languages: ['fra'] })
-    expect(h.runOcr.mock.calls[0][0]).toMatchObject({ docId: 'a', languages: ['fra'], pages: [0, 1, 2] })
-    await run({ silent: true, languages: [] }) // empty list: fall back to the saved languages, on the active tab
+  it('explicit languages are used instead of the saved ones (an empty list falls back to them)', async () => {
+    await run({ docId: 'a', languages: ['fra'] })
+    expect(h.runOcr.mock.calls[0][0]).toMatchObject({ docId: 'a', languages: ['fra'], pages: 'all' })
+    await run({ docId: 'a', languages: [] })
     expect(h.runOcr.mock.calls[1][0]).toMatchObject({ docId: 'a', languages: ['deu', 'eng'] })
   })
 
@@ -87,7 +94,7 @@ describe('command ocr.run', () => {
 
   it('reports a failure to read the saved options', async () => {
     h.call.mockRejectedValueOnce(new Error("Error invoking remote method 'feature:call': Error: boom"))
-    await run({ silent: true })
+    await run({ docId: 'a' })
     expect(h.runOcr).not.toHaveBeenCalled()
     expect(h.toasts.at(-1)!.kind).toBe('error')
   })

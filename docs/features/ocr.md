@@ -22,15 +22,16 @@ access in all of Epdf is the optional download of extra language packs (see belo
 ## Using it from other features
 
 ```ts
-runCommand('ocr.run')                                       // dialog for the active document
-runCommand('ocr.run', { docId })                            // dialog for that document
-runCommand('ocr.run', { docId, silent: true })              // no dialog: all pages, saved languages/options
-runCommand('ocr.run', { docId, silent: true, languages: ['deu', 'eng'] })
+runCommand('ocr.run')                                       // menu: the dialog for the active document
+runCommand('ocr.run', { docId })                            // Scanning: ALL pages of that document now, saved languages/options
+runCommand('ocr.run', { docId, dialog: true })              // the dialog for that document
+runCommand('ocr.run', { docId, silent: true })              // like { docId } without the success toast
+runCommand('ocr.run', { docId, languages: ['deu', 'eng'] })
 ```
 
-`silent` skips the dialog and the success toast (errors and the low-confidence warning are still shown). Pages that
-already have text are skipped unless the saved "recognize pages that already contain text" option is on. The returned
-promise resolves when the run has finished.
+With a `docId` the caller has already asked the user, so there is no dialog unless `dialog: true`. Errors and the
+low-confidence warning are always shown. Pages that already have text are skipped unless the saved "recognize pages that
+already contain text" option is on. The returned promise resolves when the run has finished.
 
 ## How it works
 
