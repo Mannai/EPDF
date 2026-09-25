@@ -1,0 +1,179 @@
+import { describe, expect, it } from 'vitest'
+import { builtinFormatCode, formatNumber, formatText, generalFit, generalText, isDateFormat } from '../../src/main/features/create/office/numfmt'
+
+describe('General fitted to the column width', () => {
+  const room = (chars: number) => (t: string): boolean => t.length <= chars
+  it('shows as many significant digits as fit, up to 15', () => {
+    expect(generalFit(0.841470984807897, room(30))).toBe('0.841470984807897')
+    expect(generalFit(0.841470984807897, room(12))).toBe('0.8414709848')
+    expect(generalFit(1.17520119364, room(11))).toBe('1.175201194')
+    expect(generalFit(0.1 + 0.2, room(20))).toBe('0.3')
+    expect(generalFit(-1234.5678, room(6))).toBe('-1235')
+  })
+  it('switches to an exponent when the integer part is too wide, and gives up (####) when even that does not fit', () => {
+    expect(generalFit(123456789012, room(8))).toBe('1.23E+11')
+    expect(generalFit(123456789012, room(6))).toBe('1E+11')
+    expect(generalFit(1e-7, room(8))).toBe('1E-07')
+    expect(generalFit(123456789, room(3))).toBeNull()
+  })
+})
+
+const f = (v: number, code: string, date1904 = false): string => formatNumber(v, code, { date1904 }).text
+
+describe('General', () => {
+  it('shows integers, decimals, tiny and huge numbers like Excel', () => {
+    expect(generalText(0)).toBe('0')
+    expect(generalText(42)).toBe('42')
+    expect(generalText(-3.5)).toBe('-3.5')
+    expect(generalText(0.1 + 0.2)).toBe('0.3')
+    expect(generalText(1 / 3)).toBe('0.3333333333')
+    expect(generalText(123456789012)).toBe('1.23457E+11')
+    expect(generalText(0.00000000012)).toBe('1.2E-10')
+    expect(f(1234.5, 'General')).toBe('1234.5')
+  })
+})
+
+describe('numbers', () => {
+  it('formats fixed decimals with half-up decimal rounding', () => {
+    expect(f(3.14159, '0.00')).toBe('3.14')
+    expect(f(1.005, '0.00')).toBe('1.01')
+    expect(f(2.5, '0')).toBe('3')
+    expect(f(0.5, '0')).toBe('1')
+    expect(f(9.999, '0.00')).toBe('10.00')
+    expect(f(0, '0.00')).toBe('0.00')
+  })
+  it('handles # and ? placeholders', () => {
+    expect(f(0.5, '#.##')).toBe('.5')
+    expect(f(5, '#.##')).toBe('5.')
+    expect(f(1.5, '0.0#')).toBe('1.5')
+    expect(f(1.25, '0.0#')).toBe('1.25')
+    expect(f(1.5, '0.0?')).toBe('1.5 ')
+    expect(f(7, '000')).toBe('007')
+    expect(f(1234, '0')).toBe('1234')
+  })
+  it('groups thousands and scales with trailing commas', () => {
+    expect(f(1234567.891, '#,##0.00')).toBe('1,234,567.89')
+    expect(f(1234567, '#,##0')).toBe('1,234,567')
+    expect(f(999, '#,##0')).toBe('999')
+    expect(f(0, '#,##0')).toBe('0')
+    expect(f(1234567, '#,##0,')).toBe('1,235')
+    expect(f(1234567, '0.0,,')).toBe('1.2')
+    expect(f(12, '0,000')).toBe('0,012')
+  })
+  it('handles percent', () => {
+    expect(f(0.256, '0%')).toBe('26%')
+    expect(f(0.256, '0.0%')).toBe('25.6%')
+    expect(f(1.5, '0.00%')).toBe('150.00%')
+    expect(f(0.07, '0%')).toBe('7%')
+  })
+  it('handles scientific notation', () => {
+    expect(f(12345.6789, '0.00E+00')).toBe('1.23E+04')
+    expect(f(0.000123, '0.00E+00')).toBe('1.23E-04')
+    expect(f(12345, '##0.0E+0')).toBe('12.3E+3')
+    expect(f(9.999, '0.00E+00')).toBe('1.00E+01')
+    expect(f(0, '0.00E+00')).toBe('0.00E+00')
+  })
+  it('handles literals, currency and escapes', () => {
+    expect(f(1234.5, '"$"#,##0.00')).toBe('$1,234.50')
+    expect(f(1234.5, '[$$-409]#,##0.00')).toBe('$1,234.50')
+    expect(f(1234.5, '[$€-407] #,##0.00')).toBe('€ 1,234.50')
+    expect(f(5, '0 "units"')).toBe('5 units')
+    expect(f(5, '0\\ \\m')).toBe('5 m')
+    expect(f(5551234, '000-0000')).toBe('555-1234')
+    expect(f(1234.5, '#,##0.00 "USD"')).toBe('1,234.50 USD')
+  })
+  it('selects sections for negatives and zero, and applies colours', () => {
+    expect(f(-5, '0.00')).toBe('-5.00')
+    expect(f(-1234.5, '#,##0.00;(#,##0.00)')).toBe('(1,234.50)')
+    expect(f(1234.5, '#,##0.00;(#,##0.00)')).toBe('1,234.50')
+    expect(f(0, '0;-0;"zero"')).toBe('zero')
+    expect(f(-2, '0;-0;"zero"')).toBe('-2')
+    const neg = formatNumber(-42, '#,##0;[Red]-#,##0')
+    expect(neg.text).toBe('-42')
+    expect(neg.color).toBe('#ff0000')
+    expect(f(-42, '#,##0_);[Red](#,##0)')).toBe('(42)')
+    expect(f(5, '#,##0_);(#,##0)')).toBe('5 ')
+  })
+  it('supports conditional sections', () => {
+    expect(f(150, '[>100]"big";[<=100]"small"')).toBe('big')
+    expect(f(50, '[>100]"big";[<=100]"small"')).toBe('small')
+    expect(f(5, '[<10]0.0;0')).toBe('5.0')
+    expect(f(50, '[<10]0.0;0')).toBe('50')
+  })
+  it('handles fractions', () => {
+    expect(f(0.5, '# ?/?')).toBe(' 1/2')
+    expect(f(1.75, '# ?/?')).toBe('1 3/4')
+    expect(f(3, '# ?/?')).toBe('3    ')
+    expect(f(0.3333, '# ??/??').trim()).toBe('1/3')
+    expect(f(2.25, '# ?/8')).toBe('2 2/8')
+    expect(f(1.5, '?/?')).toBe('3/2')
+  })
+  it('returns the fill character for accounting formats', () => {
+    const r = formatNumber(1234.5, builtinFormatCode(43)!)
+    expect(r.text.trim()).toBe('1,234.50')
+    expect(r.fill?.ch).toBe(' ')
+    expect(formatNumber(0, builtinFormatCode(41)!).text.trim()).toBe('-')
+    expect(formatNumber(-5, builtinFormatCode(41)!).text.replace(/\s/g, '')).toBe('(5)')
+  })
+  it('text section', () => {
+    expect(formatText('hi', '@')).toEqual({ text: 'hi' })
+    expect(formatText('hi', '0;0;0;"Name: "@').text).toBe('Name: hi')
+    expect(formatText('hi', '0.00').text).toBe('hi')
+  })
+})
+
+describe('dates and times', () => {
+  // 45000 = 2023-03-15
+  it('formats common date codes', () => {
+    expect(f(45000, 'm/d/yyyy')).toBe('3/15/2023')
+    expect(f(45000, 'yyyy-mm-dd')).toBe('2023-03-15')
+    expect(f(45000, 'd-mmm-yy')).toBe('15-Mar-23')
+    expect(f(45000, 'mmmm d, yyyy')).toBe('March 15, 2023')
+    expect(f(45000, 'dddd')).toBe('Wednesday')
+    expect(f(45000, 'ddd, mmm d')).toBe('Wed, Mar 15')
+    expect(f(45000, 'mmm-yy')).toBe('Mar-23')
+    expect(f(1, 'yyyy-mm-dd')).toBe('1900-01-01')
+    expect(f(59, 'yyyy-mm-dd')).toBe('1900-02-28')
+    expect(f(60, 'yyyy-mm-dd')).toBe('1900-02-29') // Excel's phantom leap day
+    expect(f(61, 'yyyy-mm-dd')).toBe('1900-03-01')
+  })
+  it('formats times, AM/PM and minutes vs months', () => {
+    expect(f(45000.5, 'h:mm')).toBe('12:00')
+    expect(f(45000.75, 'h:mm AM/PM')).toBe('6:00 PM')
+    expect(f(45000.75, 'hh:mm:ss')).toBe('18:00:00')
+    expect(f(45000.0104166667, 'h:mm:ss AM/PM')).toBe('12:15:00 AM')
+    expect(f(0.25, 'h:mm')).toBe('6:00')
+    expect(f(45000.5, 'yyyy-mm-dd hh:mm')).toBe('2023-03-15 12:00')
+    expect(f(45000.5, 'mm/dd/yy hh:mm AM/PM')).toBe('03/15/23 12:00 PM')
+    expect(f(0.000694444444, 'mm:ss')).toBe('01:00')
+    expect(f(45000.999999, 'h:mm:ss')).toBe('0:00:00')
+  })
+  it('handles fractional seconds and elapsed time', () => {
+    expect(f(0.5 + 1.5 / 86400, 'hh:mm:ss.00')).toBe('12:00:01.50')
+    expect(f(1.5, '[h]:mm:ss')).toBe('36:00:00')
+    expect(f(2.25, '[h]:mm')).toBe('54:00')
+    expect(f(0.021, '[mm]:ss')).toBe('30:14')
+  })
+  it('supports the 1904 date system and rejects negative serials', () => {
+    expect(f(0, 'yyyy-mm-dd', true)).toBe('1904-01-01')
+    expect(f(1462, 'yyyy-mm-dd', false)).toBe('1904-01-01')
+    expect(f(-1, 'yyyy-mm-dd')).toMatch(/^#+$/)
+  })
+  it('maps the built-in ids', () => {
+    expect(f(45000, builtinFormatCode(14)!)).toBe('3/15/2023')
+    expect(f(45000, builtinFormatCode(15)!)).toBe('15-Mar-23')
+    expect(f(45000.5, builtinFormatCode(22)!)).toBe('3/15/2023 12:00')
+    expect(f(0.5, builtinFormatCode(9)!)).toBe('50%')
+    expect(f(1234.5, builtinFormatCode(4)!)).toBe('1,234.50')
+    expect(f(0.5, builtinFormatCode(11)!)).toBe('5.00E-01')
+    expect(builtinFormatCode(49)).toBe('@')
+    expect(builtinFormatCode(200)).toBeUndefined()
+  })
+  it('detects date formats and the system long-date locale codes', () => {
+    expect(isDateFormat('yyyy-mm-dd')).toBe(true)
+    expect(isDateFormat('0.00')).toBe(false)
+    expect(isDateFormat('[h]:mm')).toBe(true)
+    expect(f(45000, '[$-F800]dddd, mmmm dd, yyyy')).toBe('Wednesday, March 15, 2023')
+    expect(f(45000, '[$-409]d-mmm-yy')).toBe('15-Mar-23')
+  })
+})

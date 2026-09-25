@@ -20,10 +20,11 @@ extraResources:
   - from: resources/bin/${os}-${arch}
     to: bin
     filter: ['**/*']
-  # Bundled fonts (signature script fonts + the Unicode font for form text) and their licenses.
+  # Bundled fonts (SIL OFL / Apache-2.0) with their license texts: signature script fonts, the Unicode font
+  # for form text, and the fonts of the built-in Office converter (Liberation, Carlito, Caladea, Noto Sans).
   - from: resources/fonts
     to: fonts
-    filter: ['**/*']
+    filter: ['*.ttf', '*.txt']
 
 # Native modules cannot be loaded from inside an asar archive.
 asarUnpack:
