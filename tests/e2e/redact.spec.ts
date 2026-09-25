@@ -332,13 +332,20 @@ test.describe('redaction: mark, preview, apply, save, prove', () => {
       await expect(page.getByTestId('redact-search-status')).toContainText('1 match on 1 page')
       await page.getByTestId('redact-mark-all').click()
       await expect(marks(page)).toHaveCount(1)
-      const m = (await marks(page).first().boundingBox())!
-      const t = (await pageEl(page).locator('.textLayer span', { hasText: 'ROTATEDSECRET' }).first().boundingBox())!
+      const span = pageEl(page).locator('.textLayer span', { hasText: 'ROTATEDSECRET' }).first()
+      await expect(marks(page).first()).toBeVisible()
+      await expect(span).toBeVisible() // the text layer re-renders after marks appear: don't sample it mid-render
       // the text runs downwards on a page turned by 90 degrees: the mark must lie inside the text's box, on the same column
-      expect(m.x + m.width / 2).toBeGreaterThan(t.x)
-      expect(m.x + m.width / 2).toBeLessThan(t.x + t.width)
-      expect(m.y + m.height / 2).toBeGreaterThan(t.y)
-      expect(m.y + m.height / 2).toBeLessThan(t.y + t.height)
+      await expect
+        .poll(async () => {
+          const m = await marks(page).first().boundingBox()
+          const t = await span.boundingBox()
+          if (!m || !t) return false
+          const cx = m.x + m.width / 2
+          const cy = m.y + m.height / 2
+          return cx > t.x && cx < t.x + t.width && cy > t.y && cy < t.y + t.height
+        })
+        .toBe(true)
       await applyThroughDialog(page, { overlay: /REDACTED/ })
       await expect(pageEl(page).locator('.textLayer')).not.toContainText('ROTATEDSECRET')
       await expect(pageEl(page).locator('.textLayer')).toContainText('Second rotated line that stays')
