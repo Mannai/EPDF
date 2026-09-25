@@ -86,7 +86,8 @@ export class LibraryService {
       counts: this.repo.counts(),
       status: this.status,
       settings: this.settings(),
-      fts: true
+      fts: true,
+      notice: this.watchGuardNote
     }
   }
 
@@ -112,14 +113,19 @@ export class LibraryService {
     this.changed()
   }
 
-  async forget(keepFolders: boolean): Promise<void> {
+  /** `rebuildOnly`: keep folders, favorites and library folders and just read everything again. */
+  async forget(rebuildOnly: boolean): Promise<void> {
     this.cancel()
     this.pending.clear()
-    this.repo.forget(keepFolders)
-    await rm(this.ports.thumbsDir, { recursive: true, force: true }).catch(() => undefined)
-    if (!keepFolders) this.refreshWatchers()
-    this.changed()
-    if (keepFolders) this.enqueue(this.repo.listRoots().map((r) => r.id))
+    if (rebuildOnly) {
+      this.repo.rebuild()
+    } else {
+      this.repo.forget()
+      await rm(this.ports.thumbsDir, { recursive: true, force: true }).catch(() => undefined)
+      this.refreshWatchers()
+    }
+    this.changed(true)
+    if (rebuildOnly) this.enqueue(this.repo.listRoots().map((r) => r.id))
   }
 
   // ---- syncing --------------------------------------------------------------------------------------------------------

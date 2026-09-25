@@ -361,16 +361,26 @@ describe('files, moves, folders', () => {
     expect(repo.listRoots().map((r) => r.label)).toEqual(['Other'])
   })
 
-  it('forget clears the index, and optionally the folders', () => {
+  it('rebuild drops the text and marks files pending, keeping favorites, folders and library folders', () => {
+    const a = addIndexed('a.pdf', ['alpha'])
+    repo.setFavoriteFile(a, true)
+    const c = repo.ensureCollectionPath('X')
+    repo.addToCollection(c, [a])
+    repo.rebuild()
+    expect(db.prepare('SELECT COUNT(*) AS n FROM library_text').get()).toEqual({ n: 0 })
+    expect(repo.getFile(a)).toMatchObject({ state: 'pending', favorite: true, indexVersion: 0, hash: null })
+    expect(repo.listCollections()[0].files).toBe(1)
+    expect(repo.listRoots()).toHaveLength(1)
+  })
+
+  it('forget clears everything: files, text, library folders and watched folders', () => {
     addIndexed('a.pdf', ['alpha'])
     repo.ensureCollectionPath('X')
-    repo.forget(true)
+    repo.forget()
     expect(repo.counts().all).toBe(0)
-    expect(repo.listRoots()).toHaveLength(1)
+    expect(repo.listRoots()).toEqual([])
     expect(repo.listCollections()).toEqual([])
     expect(db.prepare('SELECT COUNT(*) AS n FROM library_text').get()).toEqual({ n: 0 })
-    repo.forget(false)
-    expect(repo.listRoots()).toEqual([])
   })
 
   it('tree of folders with file counts', () => {

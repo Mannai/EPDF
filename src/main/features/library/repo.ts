@@ -243,15 +243,23 @@ export class LibraryRepo {
     return ids
   }
 
-  /** Clears the whole index (files, text, collections). Optionally keeps the watched folders. */
-  forget(keepFolders: boolean): void {
+  /** "Forget everything": watched folders, files, text, library folders. Nothing on disk is touched. */
+  forget(): void {
     this.db.transaction(() => {
       this.db.prepare('DELETE FROM library_text').run()
       this.db.prepare('DELETE FROM library_collection_files').run()
       this.db.prepare('DELETE FROM library_files').run()
       this.db.prepare('DELETE FROM library_collections').run()
-      if (keepFolders) this.db.prepare("UPDATE library_roots SET last_scan_at = NULL, note = ''").run()
-      else this.db.prepare('DELETE FROM library_roots').run()
+      this.db.prepare('DELETE FROM library_roots').run()
+    })()
+  }
+
+  /** "Rebuild index": drops all indexed text and marks every file to be read again; keeps favorites, folders, thumbnails. */
+  rebuild(): void {
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM library_text').run()
+      this.db.prepare("UPDATE library_files SET state = 'pending', hash = NULL, index_version = 0, note = '', pages = NULL, words = 0").run()
+      this.db.prepare("UPDATE library_roots SET last_scan_at = NULL, note = ''").run()
     })()
   }
 

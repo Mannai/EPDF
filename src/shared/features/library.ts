@@ -128,6 +128,8 @@ export interface LibraryState {
   status: LibraryStatus
   settings: LibrarySettings
   fts: boolean
+  /** A message the user should see (e.g. folder watching was switched off after a crash). */
+  notice: string
 }
 
 export interface FolderSuggestion {
