@@ -1,4 +1,4 @@
-import { watch, type FSWatcher } from 'node:fs'
+import { realpathSync, watch, type FSWatcher } from 'node:fs'
 import { readFile, rm, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
@@ -208,6 +208,12 @@ export class LibraryService {
 
   /** Starts the first sync and the change watchers. Called once at startup. */
   start(initialDelayMs = 1500): void {
+    if (this.ports.kv.get<number>('watchGuard', 0) > 0) {
+      // The previous run died right after creating file watchers: keep watching off until the user turns it on.
+      this.ports.kv.set('watchGuard', 0)
+      this.ports.kv.set('settings', { ...this.settings(), watch: false })
+      this.watchGuardNote = 'Folder watching was switched off because the app stopped unexpectedly while starting it. Folders are still rescanned regularly; turn watching back on in the Library settings.'
+    }
     setTimeout(() => this.enqueue(), initialDelayMs).unref()
     this.refreshWatchers()
     const every = this.ports.rescanIntervalMs ?? 10 * 60_000
@@ -229,16 +235,40 @@ export class LibraryService {
     const roots = this.repo.listRoots()
     const wanted = new Set(this.settings().watch ? roots.filter((r) => r.status !== 'missing').map((r) => r.id) : [])
     for (const id of [...this.watchers.keys()]) if (!wanted.has(id)) this.unwatch(id)
+    if (this.watchGuardTripped) return
     for (const r of roots) {
       if (!wanted.has(r.id) || this.watchers.has(r.id)) continue
       try {
-        const w = watch(r.path, { recursive: true, persistent: false }, (_evt, filename) => this.onFsEvent(r.id, filename))
+        // Always watch the canonical path: libuv on Windows aborts the whole process (an assertion, not an
+        // exception) when the watched path is spelled differently from the one the OS reports (8.3 short names).
+        const canonical = realpathSync.native(r.path)
+        this.armGuard()
+        const w = watch(canonical, { recursive: true, persistent: false }, (_evt, filename) => this.onFsEvent(r.id, filename))
         w.on('error', () => this.unwatch(r.id)) // e.g. the folder was deleted; the periodic rescan takes over
         this.watchers.set(r.id, w)
       } catch {
         /* recursive watching is unavailable here (network drive, old kernel): the periodic rescan covers it */
       }
     }
+  }
+
+  /**
+   * Crash-loop breaker: a native crash inside the file watcher cannot be caught. The guard is written before
+   * watchers are created and cleared a few seconds later (and on a normal quit); finding it set at startup means
+   * the last run died right there, so watching is switched off (the periodic rescan still keeps the index fresh).
+   */
+  private watchGuardTripped = false
+  /** Shown in the Library when watching was switched off by the crash-loop breaker. */
+  watchGuardNote = ''
+  private guardTimer: NodeJS.Timeout | null = null
+  private armGuard(): void {
+    if (this.guardTimer) return
+    this.ports.kv.set('watchGuard', Date.now())
+    this.guardTimer = setTimeout(() => {
+      this.guardTimer = null
+      this.ports.kv.set('watchGuard', 0)
+    }, 5000)
+    this.guardTimer.unref()
   }
 
   private onFsEvent(rootId: number, filename: string | Buffer | null): void {
@@ -267,6 +297,15 @@ export class LibraryService {
   dispose(): void {
     this.disposed = true
     for (const id of [...this.watchers.keys()]) this.unwatch(id)
+    if (this.guardTimer) {
+      clearTimeout(this.guardTimer)
+      this.guardTimer = null
+    }
+    try {
+      if (this.ports.kv.get<number>('watchGuard', 0) > 0) this.ports.kv.set('watchGuard', 0)
+    } catch {
+      /* the database is already closed */
+    }
     if (this.timer) clearInterval(this.timer)
     clearTimeout(this.changedTimer ?? undefined)
     clearTimeout(this.statusTimer ?? undefined)
