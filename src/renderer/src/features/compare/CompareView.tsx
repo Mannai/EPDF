@@ -58,7 +58,8 @@ function Results({ tab, entry }: { tab: Tab; entry: Entry }): JSX.Element {
           ? `Change ${at + 1} of ${shown}`
           : `${shown} ${shown === 1 ? 'change' : 'changes'}${shown !== result.counts.total ? ` (of ${result.counts.total})` : ''}`
 
-  const stale = entry.newSource?.kind === 'tab' && entry.newSource.docId === docId && tab.contentSeq !== entry.contentSeq
+  const usesThisTab = [entry.oldSource, entry.newSource].some((s) => s?.kind === 'tab' && s.docId === docId)
+  const stale = usesThisTab && tab.contentSeq !== entry.contentSeq
   const { visual } = entry
   const pairs = result.pairs
   const addedPages = pairs.filter((p) => p.old === null).length

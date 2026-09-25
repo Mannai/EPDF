@@ -98,9 +98,10 @@ keys, PageUp/PageDown, Home/End). There are no bare-letter shortcuts.
 * The PDF report uses Helvetica, and Noto Sans (the font bundled for forms) for Cyrillic/Greek/Vietnamese text;
   characters neither font has (CJK, Arabic, …) print as `?` in the report (the CSV keeps them). Entries longer
   than 700 characters are shortened in the PDF report (the CSV has the full text).
-* The visual comparison renders at 72 dpi for the scan and 108 dpi for the overlay, ignores nothing (a different
-  page size counts as a difference at the page edge) and does not compare page annotations differently from the
-  page content.
+* The visual comparison renders at 72 dpi for the whole-document scan and 108 dpi for the overlay. Nothing is
+  masked out: a different page size shows as a difference at the page edge, and annotations are compared as part of
+  the rendered page. Tiny anti-aliasing shifts below the *Sensitivity* setting (and fewer than 12 differing pixels)
+  are not reported.
 * Changes are numbered and ordered by new-version page and position; a removal is placed at the point it was
   removed. The *Page* filter uses the new page number (the old number for removed text).
 

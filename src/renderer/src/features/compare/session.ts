@@ -1,5 +1,5 @@
 import { currentBytes } from '../../edit/session'
-import { PasswordCancelledError, destroyDoc, loadDoc, type LoadedDoc } from '../../pdf/docCache'
+import { destroyDoc, loadDoc, type LoadedDoc } from '../../pdf/docCache'
 import { useUi } from '../../state/ui'
 import { runCompare } from './diff/engine'
 import { changeText, type ChangeText } from './diff/enrich'
@@ -7,6 +7,7 @@ import type { CompareOptions, CompareResult, PageModel } from './diff/types'
 import type { EngineMessage } from './engine.worker'
 import EngineWorker from './engine.worker?worker'
 import { extractDocument } from './extract'
+import { CompareInputError, describeOpenError } from './openErrors'
 
 /**
  * One comparison, start to finish: open both documents (private copies, so edits or closing a tab cannot pull a
@@ -15,9 +16,6 @@ import { extractDocument } from './extract'
  */
 
 export type Source = { kind: 'tab'; docId: string; name: string } | { kind: 'file'; name: string; bytes: Uint8Array }
-
-/** A problem with one of the inputs that the user can act on; the message is shown as is. */
-export class CompareInputError extends Error {}
 
 export interface Side {
   name: string
@@ -48,20 +46,6 @@ export interface Session {
 }
 
 let counter = 0
-
-const isPasswordError = (err: unknown): boolean => err instanceof PasswordCancelledError || (err as { name?: string } | null)?.name === 'PasswordException'
-
-/** Turns whatever PDF.js threw into a sentence for the user. */
-export function describeOpenError(err: unknown, name: string): string {
-  if (isPasswordError(err)) {
-    return `“${name}” is password protected and no password was given. Open it in Epdf and enter its password, then choose it again from the open tabs.`
-  }
-  const n = (err as { name?: string } | null)?.name ?? ''
-  if (/InvalidPDF|Format|MissingPDF|UnexpectedResponse/i.test(n) || /Invalid PDF|not a PDF|XRef|Missing PDF/i.test(String((err as Error)?.message ?? ''))) {
-    return `“${name}” could not be read: it is damaged or is not a PDF file.`
-  }
-  return `“${name}” could not be opened: ${err instanceof Error ? err.message : String(err)}`
-}
 
 export async function openSide(src: Source): Promise<Side> {
   const docId = `compare-${++counter}`
