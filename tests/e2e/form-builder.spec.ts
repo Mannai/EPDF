@@ -55,6 +55,7 @@ async function snap(page: Page, err: unknown): Promise<never> {
 
 async function openDoc(files: string[], env?: Record<string, string>): Promise<{ app: ElectronApplication; page: Page }> {
   const { app, page } = await launch({ files, env })
+  page.on('console', (m) => m.text().startsWith('FBDBG') && console.log(m.text()))
   await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
   return { app, page }
 }
@@ -180,7 +181,7 @@ test.describe('automatic field detection', () => {
       expect(form.getRadioGroup('Level').getOptions()).toEqual(['Basic', 'Plus', 'Pro'])
       expect(form.getSignature('Signature')).toBeTruthy()
     } finally {
-      await app.close()
+      await quitDiscarding(app, page)
     }
 
     // Reopen: the created fields are fillable in Epdf's own form overlay (preview = the normal behaviour).
@@ -210,7 +211,7 @@ test.describe('automatic field detection', () => {
       expect(form.getCheckBox('I_agree_to_the_terms').isChecked()).toBe(true)
       expect(form.getRadioGroup('Level').getSelected()).toBe('Plus')
     } finally {
-      await again.app.close()
+      await quitDiscarding(again.app, again.page)
     }
   })
 })
@@ -371,6 +372,536 @@ test.describe('manual field tools', () => {
       expect(byName('Text1_2').height).toBeCloseTo(byName('Text2').height, 1)
       // Text1 was nudged: +10 pt right, +1 up, and 10 pt wider than the default 160.
       expect(byName('Text1').width).toBeCloseTo(170, 0)
+    } catch (err) {
+      await snap(page, err)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------
+// properties
+// ---------------------------------------------------------------------------------------------------------
+
+test.describe('field properties', () => {
+  test('name rules, required, read-only, max length and format are saved correctly and enforced when filling', async () => {
+    const path = copyFixture('flat.pdf')
+    const { app, page } = await openDoc([path])
+    try {
+      await menuClick(app, 'Tools', 'Prepare Form…')
+      const add = panel(page).getByRole('button', { name: 'Text field', exact: true })
+      await add.click()
+      await expect(fieldCount(page)).toContainText('Fields (1)', { timeout: 20_000 })
+      const props = page.getByTestId('fb-properties')
+      const nameBox = props.getByLabel('Name', { exact: true })
+
+      // Names: no periods, unique. The message says why and nothing changes.
+      await nameBox.fill('bad.name')
+      await nameBox.press('Enter')
+      await expect(props.getByRole('alert')).toContainText('period')
+      await expect(props).toHaveAttribute('data-field', 'Text1')
+      await nameBox.fill('amount')
+      await nameBox.press('Enter')
+      await expect(props).toHaveAttribute('data-field', 'amount')
+      await expect(undoBtn(page, 'Undo Rename “Text1”')).toBeEnabled()
+
+      await add.click()
+      await expect(fieldCount(page)).toContainText('Fields (2)')
+      await nameBox.fill('AMOUNT')
+      await nameBox.press('Enter')
+      await expect(props.getByRole('alert')).toContainText('already exists')
+      await nameBox.fill('code')
+      await nameBox.press('Enter')
+      await expect(props).toHaveAttribute('data-field', 'code')
+      await props.getByLabel(/^Default value/).fill('ABC')
+      await props.getByLabel(/^Default value/).press('Enter')
+      await props.getByLabel('Read-only').check()
+
+      // The first field: tooltip, required, max length, number format with a range.
+      await panel(page).getByTestId('fb-field-list').locator('[data-field-row="amount"]').click()
+      await expect(props).toHaveAttribute('data-field', 'amount')
+      await props.getByLabel(/^Tooltip/).fill('Amount due')
+      await props.getByLabel(/^Tooltip/).press('Enter')
+      await props.getByLabel('Required').check()
+      await props.getByLabel('Maximum length', { exact: true }).fill('6')
+      await props.getByLabel('Maximum length', { exact: true }).press('Enter')
+      await props.getByText('Format and validation').click()
+      await props.getByLabel('Format / validation').selectOption('number')
+      await expect(props.getByLabel('Decimal places')).toHaveValue('2')
+      await props.getByLabel('Minimum value').fill('0')
+      await props.getByLabel('Minimum value').press('Enter')
+      await props.getByLabel('Maximum value').fill('999')
+      await props.getByLabel('Maximum value').press('Enter')
+
+      await save(page)
+      const form = (await loadSaved(path)).getForm()
+      const amount = form.getTextField('amount')
+      expect(amount.isRequired()).toBe(true)
+      expect(amount.getMaxLength()).toBe(6)
+      expect(amount.acroField.dict.lookup(N('TU'))?.toString()).toContain('FEFF')
+      const aa = amount.acroField.dict.lookup(N('AA'), PDFDict)
+      const js = (k: string): string => (aa.lookup(N(k), PDFDict).lookup(N('JS')) as unknown as { decodeText(): string }).decodeText()
+      expect(js('F')).toBe('AFNumber_Format(2, 0, 0, 0, "", true);')
+      expect(js('K')).toBe('AFNumber_Keystroke(2, 0, 0, 0, "", true);')
+      expect(js('V')).toBe('AFRange_Validate(true, 0, true, 999);')
+      const code = form.getTextField('code')
+      expect(code.isReadOnly()).toBe(true)
+      expect(code.getText()).toBe('ABC')
+      expect(code.acroField.dict.lookup(N('DV'))).toBeTruthy()
+    } catch (err) {
+      await snap(page, err)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+
+    // Reopen and use the form: limits and format are honoured by Epdf's own fill experience.
+    const again = await openDoc([path])
+    try {
+      const p = again.page
+      await expect(p.getByTestId('form-banner')).toContainText('This form has 2 fields')
+      const amount = p.getByLabel('Amount due (required)', { exact: true })
+      await expect(amount).toHaveAttribute('maxlength', '6')
+      await expect(amount).toHaveAttribute('aria-required', 'true')
+      await expect(p.getByLabel('code', { exact: true })).toHaveAttribute('readonly', '')
+
+      await amount.fill('abc')
+      await amount.press('Enter')
+      await expect(p.getByText(/must be a number/)).toBeVisible()
+      await expect(undoBtn(p, /^Undo Fill/)).toHaveCount(0)
+      await amount.fill('1000')
+      await amount.press('Enter')
+      await expect(p.getByText(/at most 999/)).toBeVisible()
+      await amount.click()
+      await amount.pressSequentially('1234567') // the box itself stops at the maximum length
+      await expect(amount).toHaveValue('123456')
+      await amount.fill('12.5')
+      await amount.press('Enter')
+      await expect(undoBtn(p, 'Undo Fill “Amount due”')).toBeEnabled()
+
+      // Required fields are listed by the preview check until they are filled in.
+      await menuClick(again.app, 'Tools', 'Prepare Form…')
+      await p.getByTestId('fb-mode-preview').click()
+      await p.getByTestId('fb-check-required').click()
+      await expect(p.getByTestId('fb-required-result')).toContainText('Every required field is filled in')
+      await save(p)
+      expect((await loadSaved(path)).getForm().getTextField('amount').getText()).toBe('12.5')
+    } catch (err) {
+      await snap(again.page, err)
+    } finally {
+      await quitDiscarding(again.app, again.page)
+    }
+  })
+
+  test('drop-down options, radio export values, checkbox export value and appearance edits round-trip', async () => {
+    const path = copyFixture('flat.pdf')
+    const { app, page } = await openDoc([path])
+    try {
+      await menuClick(app, 'Tools', 'Prepare Form…')
+      await panel(page).getByRole('button', { name: 'Dropdown', exact: true }).click()
+      await expect(fieldCount(page)).toContainText('Fields (1)', { timeout: 20_000 })
+      const props = page.getByTestId('fb-properties')
+      await props.getByLabel('Options, one per line').fill('Red\nGreen\nBlue')
+      await props.getByLabel('Options, one per line').press('Control+Enter')
+      await props.getByLabel('Selected by default').selectOption('Green')
+      await props.getByLabel('Allow the user to type another value').check()
+
+      await panel(page).getByRole('button', { name: 'Radio group', exact: true }).click()
+      await expect(fieldCount(page)).toContainText('Fields (2)')
+      await props.getByLabel('Button 1 export value').fill('small')
+      await props.getByLabel('Button 1 export value').press('Enter')
+      await props.getByRole('button', { name: 'Add a button to this group' }).click()
+      await expect(props.getByLabel('Button 2 export value')).toBeVisible({ timeout: 15_000 })
+      await props.getByLabel('Button 2 export value').fill('large')
+      await props.getByLabel('Button 2 export value').press('Enter')
+      await props.getByLabel('Selected by default').selectOption('large')
+      await props.getByLabel('Button 2 export value').fill('small') // duplicates are refused
+      await props.getByLabel('Button 2 export value').press('Enter')
+      await expect(props.getByRole('alert')).toContainText('different')
+      await props.getByLabel('Button 2 export value').press('Escape')
+
+      await panel(page).getByRole('button', { name: 'Check box', exact: true }).click()
+      await expect(fieldCount(page)).toContainText('Fields (3)')
+      await props.getByLabel('Export value (when checked)').fill('Agreed')
+      await props.getByLabel('Export value (when checked)').press('Enter')
+      await props.getByLabel('Checked by default').check()
+      await props.getByText('Appearance').click()
+      await props.getByLabel('Border colour').fill('#ff0000')
+      await props.getByLabel('Border width').fill('2')
+      await props.getByLabel('Border width').press('Enter')
+      await props.getByLabel('No fill (transparent)').check()
+
+      await save(page)
+      const form = (await loadSaved(path)).getForm()
+      const dd = form.getDropdown('Dropdown1')
+      expect(dd.getOptions()).toEqual(['Red', 'Green', 'Blue'])
+      expect(dd.getSelected()).toEqual(['Green'])
+      expect(dd.isEditable()).toBe(true)
+      const rg = form.getRadioGroup('Radio_Group1')
+      expect(rg.getOptions()).toEqual(['small', 'large'])
+      expect(rg.getSelected()).toBe('large')
+      const cb = form.getCheckBox('Check_Box1')
+      expect(cb.isChecked()).toBe(true)
+      expect(cb.acroField.getWidgets()[0].getOnValue()?.decodeText()).toBe('Agreed')
+      const mk = cb.acroField.getWidgets()[0].dict.lookup(N('MK'), PDFDict)
+      expect(mk.has(N('BG'))).toBe(false)
+      expect((mk.lookup(N('BC')) as unknown as { asArray(): { asNumber(): number }[] }).asArray().map((n) => Math.round(n.asNumber()))).toEqual([1, 0, 0])
+      expect(cb.acroField.getWidgets()[0].dict.lookup(N('BS'), PDFDict).lookup(N('W'), PDFNumber).asNumber()).toBe(2)
+    } catch (err) {
+      await snap(page, err)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------
+// tab order
+// ---------------------------------------------------------------------------------------------------------
+
+const activeField = (page: Page): Promise<string | null> => page.evaluate(() => document.activeElement?.getAttribute('data-field') ?? null)
+
+/** Names of the form widgets in /Annots order, and the page's /Tabs entry. */
+async function annotOrder(path: string): Promise<{ names: string[]; tabs: string | undefined }> {
+  const pdf = await loadSaved(path)
+  const page = pdf.getPage(0)
+  const annots = page.node.Annots()!
+  const byRef = new Map<string, string>()
+  for (const f of pdf.getForm().getFields()) for (const w of f.acroField.getWidgets()) byRef.set(pdf.context.getObjectRef(w.dict)!.tag, f.getName())
+  const names: string[] = []
+  for (let i = 0; i < annots.size(); i++) names.push(byRef.get((annots.get(i) as unknown as { tag: string }).tag)!)
+  const tabs = page.node.lookup(N('Tabs'))
+  return { names, tabs: tabs ? tabs.toString() : undefined }
+}
+
+test.describe('tab order', () => {
+  test('the editor reorders the fields (buttons, keyboard, presets), the numbers on the page follow, and Tab in the filling UI follows the saved order', async () => {
+    const path = copyFixture('fb-fields.pdf')
+    const { app, page } = await openDoc([path])
+    try {
+      await menuClick(app, 'Tools', 'Prepare Form…')
+      await panel(page).getByRole('button', { name: 'Tab order…' }).click()
+      const editor = page.getByTestId('fb-taborder')
+      const list = page.getByTestId('fb-order-list')
+      await expect(list.getByRole('listitem')).toHaveCount(4)
+      await expect(page.getByTestId('fb-tabs-mode')).toContainText('not set')
+      // Numbers on the page badges: first=1 second=2 third=3 agree=4.
+      await expect(page.getByTestId('fb-order-third')).toContainText('3')
+
+      await list.getByRole('button', { name: /^Move third up/ }).click()
+      await list.getByRole('button', { name: /^Move third up/ }).click()
+      await expect(page.getByTestId('fb-order-third')).toContainText('1')
+      await expect(page.getByTestId('fb-order-first')).toContainText('2')
+      // Keyboard: Alt+Up on the last row moves it up one place.
+      await list.locator('[data-order-key="agree#0"]').focus()
+      await page.keyboard.press('Alt+ArrowUp')
+      await expect(page.getByTestId('fb-order-agree')).toContainText('3')
+      await expect(page.getByTestId('fb-order-second')).toContainText('4')
+
+      await editor.getByTestId('fb-taborder-apply').click()
+      await expect(undoBtn(page, 'Undo Set tab order of page 1')).toBeEnabled({ timeout: 15_000 })
+      await expect(editor.getByTestId('fb-taborder-apply')).toBeDisabled()
+      await expect(page.getByTestId('fb-tabs-mode')).toContainText('custom order')
+      await editor.getByTestId('fb-taborder-close').click()
+
+      // Preview: Tab walks third -> first -> agree -> second.
+      await page.getByTestId('fb-mode-preview').click()
+      await expect(page.locator('[data-field="third"]')).toBeVisible()
+      await page.locator('[data-field="third"]').focus()
+      expect(await activeField(page)).toBe('third')
+      const seq: (string | null)[] = []
+      for (let i = 0; i < 3; i++) {
+        await page.keyboard.press('Tab')
+        seq.push(await activeField(page))
+      }
+      expect(seq).toEqual(['first', 'agree', 'second'])
+      await page.keyboard.press('Shift+Tab')
+      expect(await activeField(page)).toBe('agree')
+
+      await save(page)
+      expect(await annotOrder(path)).toEqual({ names: ['third', 'first', 'agree', 'second'], tabs: '/S' })
+
+      // Undo puts the original order back (the Tab key follows at once).
+      await undoBtn(page, 'Undo Set tab order of page 1').click()
+      await page.locator('[data-field="first"]').focus()
+      await page.keyboard.press('Tab')
+      expect(await activeField(page)).toBe('second')
+      await redoBtn(page, 'Redo Set tab order of page 1').click()
+
+      // Presets: rows / columns write /Tabs R / C.
+      await page.getByTestId('fb-mode-edit').click()
+      await panel(page).getByRole('button', { name: 'Tab order…' }).click()
+      await editor.getByRole('button', { name: 'By columns' }).click()
+      await expect(undoBtn(page, 'Undo Tab order by columns, page 1')).toBeEnabled({ timeout: 15_000 })
+      await expect(page.getByTestId('fb-tabs-mode')).toContainText('columns')
+      await expect(list.getByRole('listitem').first()).toContainText('first')
+      await editor.getByRole('button', { name: 'By rows' }).click()
+      await expect(undoBtn(page, 'Undo Tab order by rows, page 1')).toBeEnabled({ timeout: 15_000 })
+      await expect(page.getByTestId('fb-tabs-mode')).toContainText('rows')
+      await save(page)
+      expect((await annotOrder(path)).tabs).toBe('/R')
+      // Escape closes the editor.
+      await page.keyboard.press('Escape')
+      await expect(editor).toHaveCount(0)
+    } catch (err) {
+      await snap(page, err)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------
+// rotated pages
+// ---------------------------------------------------------------------------------------------------------
+
+test.describe('rotated page', () => {
+  test('detect on a /Rotate 90 page, save, fill: fields sit where the reader sees them', async () => {
+    const path = copyFixture('fb-rotated.pdf')
+    const { app, page } = await openDoc([path])
+    try {
+      await menuClick(app, 'Tools', 'Detect Form Fields…')
+      await page.getByTestId('fb-detect-start').click()
+      await expect(page.getByTestId('fb-proposals').getByRole('listitem')).toHaveCount(9, { timeout: 60_000 })
+      await page.getByTestId('fb-accept-all').click()
+      await expect(fieldCount(page)).toContainText('Fields (9)', { timeout: 30_000 })
+      await save(page)
+      const pdf = await loadSaved(path)
+      expect(pdf.getPage(0).getRotation().angle).toBe(90)
+      const w = pdf.getForm().getTextField('Full_name').acroField.getWidgets()[0]
+      const r = w.getRectangle()
+      expect(r.height).toBeGreaterThan(r.width * 5) // 220 pt wide on screen = tall in unrotated user space
+      expect((w.dict.lookup(N('MK'), PDFDict).lookup(N('R')) as unknown as PDFNumber).asNumber()).toBe(90)
+    } catch (err) {
+      await snap(page, err)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+
+    const again = await openDoc([path])
+    try {
+      const p = again.page
+      await expect(p.getByTestId('form-banner')).toContainText('This form has 9 fields')
+      const input = p.getByLabel('Full name', { exact: true })
+      const box = (await input.boundingBox())!
+      const pageBox = (await p.locator('[data-page="1"]').boundingBox())!
+      expect(box.width).toBeGreaterThan(box.height * 5) // wide on screen
+      expect(box.x).toBeGreaterThan(pageBox.x)
+      expect(box.y).toBeLessThan(pageBox.y + pageBox.height * 0.3) // near the top, as drawn
+      await input.fill('Ada')
+      await input.press('Enter')
+      await p.getByLabel('I agree to the terms', { exact: true }).check()
+      await save(p)
+      const form = (await loadSaved(path)).getForm()
+      expect(form.getTextField('Full_name').getText()).toBe('Ada')
+      expect(form.getCheckBox('I_agree_to_the_terms').isChecked()).toBe(true)
+    } catch (err) {
+      await snap(again.page, err)
+    } finally {
+      await quitDiscarding(again.app, again.page)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------
+// failure and cancel paths
+// ---------------------------------------------------------------------------------------------------------
+
+test.describe('cancel and failure paths', () => {
+  test('a scanned page is reported as such (with the OCR hint) and nothing is guessed', async () => {
+    const path = copyFixture('fb-scan.pdf')
+    const { app, page } = await openDoc([path])
+    try {
+      await menuClick(app, 'Tools', 'Detect Form Fields…')
+      await page.getByTestId('fb-detect-start').click()
+      await expect(page.getByTestId('fb-detect-notes')).toContainText('looks like a scan', { timeout: 60_000 })
+      await expect(page.getByTestId('fb-detect-notes')).toContainText('OCR')
+      await expect(page.getByTestId('fb-detect-summary')).toContainText('No fields were found')
+      await expect(dot(page)).toHaveCount(0)
+      await expect(page.getByTestId('fb-accept-all')).toBeDisabled()
+      await page.keyboard.press('Escape') // nothing pending: closes at once
+      await expect(page.getByTestId('fb-detect')).toHaveCount(0)
+    } catch (err) {
+      await snap(page, err)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('Escape and Cancel leave the document alone: scope dialog, review, drawing', async () => {
+    const path = copyFixture('fb-detect.pdf')
+    const { app, page } = await openDoc([path])
+    try {
+      // The scope dialog.
+      await menuClick(app, 'Tools', 'Detect Form Fields…')
+      const dlg = page.getByRole('dialog', { name: 'Detect Form Fields' })
+      await expect(dlg).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(dlg).toHaveCount(0)
+      await menuClick(app, 'Tools', 'Detect Form Fields…')
+      await dlg.getByRole('button', { name: 'Cancel' }).click()
+      await expect(dlg).toHaveCount(0)
+      await expect(page.getByTestId('fb-detect')).toHaveCount(0)
+
+      // A bad page range is explained.
+      await menuClick(app, 'Tools', 'Detect Form Fields…')
+      await dlg.getByLabel('These pages:').check()
+      await dlg.getByLabel('Page range').fill('7-9')
+      await dlg.getByTestId('fb-detect-start').click()
+      await expect(dlg.getByRole('alert')).toContainText('between 1 and')
+      await dlg.getByLabel('Page range').fill('1')
+      await dlg.getByTestId('fb-detect-start').click()
+
+      // The review: Escape asks before throwing suggestions away.
+      const rows = page.getByTestId('fb-proposals').getByRole('listitem')
+      await expect(rows).toHaveCount(9, { timeout: 60_000 })
+      await rows.first().getByRole('button').focus()
+      await page.keyboard.press('Escape')
+      const ask = page.getByRole('dialog', { name: 'Discard suggestions?' })
+      await expect(ask).toBeVisible()
+      await ask.getByRole('button', { name: 'Keep reviewing' }).click()
+      await expect(rows).toHaveCount(9)
+      await rows.first().getByRole('button').focus()
+      await page.keyboard.press('Escape')
+      await ask.getByRole('button', { name: 'Discard' }).click()
+      await expect(page.getByTestId('fb-detect')).toHaveCount(0)
+      await expect(dot(page)).toHaveCount(0)
+      await expect(undoBtn(page)).toBeDisabled()
+
+      // Drawing: Escape while dragging cancels the field but keeps the tool.
+      await page.locator('button[data-tool="formbuilder.text"]').click()
+      const b = await pageBox(page)
+      await page.mouse.move(b.x + 100, b.y + 400)
+      await page.mouse.down()
+      await page.mouse.move(b.x + 300, b.y + 440, { steps: 5 })
+      await page.keyboard.press('Escape')
+      await page.mouse.up()
+      await expect(page.locator('button[data-tool="formbuilder.text"]')).toHaveAttribute('aria-pressed', 'true')
+      await expect(dot(page)).toHaveCount(0)
+      await expect(fieldCount(page)).toContainText('Fields (0)')
+      // A second Escape leaves the tool.
+      await page.keyboard.press('Escape')
+      await expect(page.locator('button[data-tool="formbuilder.text"]')).toHaveAttribute('aria-pressed', 'false')
+    } catch (err) {
+      await snap(page, err)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('a password-protected document cannot be edited: clear message, tool not activated', async () => {
+    const path = copyFixture('forms-encrypted.pdf')
+    const { app, page } = await openDoc([path])
+    try {
+      await menuClick(app, 'Tools', 'Prepare Form…')
+      await expect(page.getByText(/password protected and was not unlocked/).first()).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator('button[data-tool="formbuilder.select"]')).toHaveAttribute('aria-pressed', 'false')
+      await menuClick(app, 'Tools', 'Detect Form Fields…')
+      await page.getByTestId('fb-detect-start').click()
+      await expect(page.getByText(/password protected and was not unlocked, so it cannot be analysed/).first()).toBeVisible({ timeout: 20_000 })
+      await expect(dot(page)).toHaveCount(0)
+    } catch (err) {
+      await snap(page, err)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------
+// list of fields, clear form
+// ---------------------------------------------------------------------------------------------------------
+
+test.describe('form-wide actions', () => {
+  test('the list of fields is exported as CSV; Clear form empties the fillable fields in one undo step', async () => {
+    const path = copyFixture('forms.pdf')
+    const csvPath = join(mkdtempSync(join(tmpdir(), 'epdf-csv-')), 'fields.csv')
+    const { app, page } = await openDoc([path])
+    try {
+      await app.evaluate(({ dialog }, target) => {
+        ;(dialog as unknown as Record<string, unknown>).showSaveDialog = async () => ({ canceled: false, filePath: target })
+      }, csvPath)
+      await menuClick(app, 'Tools', 'Prepare Form…')
+      await expect(fieldCount(page)).toContainText('Fields (12)', { timeout: 20_000 })
+      await panel(page).getByRole('button', { name: 'Export list (CSV)' }).click()
+      await expect.poll(() => existsSync(csvPath), { timeout: 15_000 }).toBe(true)
+      const text = readFileSync(csvPath, 'utf8')
+      expect(text.charCodeAt(0)).toBe(0xfeff) // UTF-8 byte-order mark for spreadsheets
+      const lines = text.slice(1).trimEnd().split('\r\n')
+      expect(lines[0]).toBe('Name,Type,Page,Required,Read-only,Tooltip,Options,Default value,Max length,Format')
+      expect(lines).toHaveLength(13)
+      expect(lines).toContain('full_name,Text field,1,No,No,Full name,,,,')
+      expect(lines.find((l) => l.startsWith('readonly_id,'))).toMatch(/^readonly_id,Text field,1,No,Yes,/)
+      expect(lines.find((l) => l.startsWith('color,'))).toContain('red; green; blue')
+      expect(lines.find((l) => l.startsWith('page2_field,'))).toContain(',2,')
+
+      // Clear form (in preview, where a person would fill the form in).
+      await page.getByTestId('fb-mode-preview').click()
+      const name = page.getByLabel('Full name', { exact: true })
+      await name.fill('Ada')
+      await name.press('Enter')
+      await page.getByLabel('I agree to the terms', { exact: true }).check()
+      await page.getByRole('button', { name: 'Clear form' }).click()
+      await expect(undoBtn(page, 'Undo Clear form')).toBeEnabled({ timeout: 15_000 })
+      await expect(name).toHaveValue('')
+      await expect(page.getByLabel('I agree to the terms', { exact: true })).not.toBeChecked()
+      await expect(page.getByLabel('Customer id (read only)', { exact: true })).toHaveValue('ID-0001') // read-only content stays
+      await undoBtn(page, 'Undo Clear form').click()
+      await expect(name).toHaveValue('Ada')
+    } catch (err) {
+      await snap(page, err)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------
+// accessibility
+// ---------------------------------------------------------------------------------------------------------
+
+test.describe('accessibility', () => {
+  test('axe is clean in light and dark: scope dialog, review, field properties, tab order, preview', async () => {
+    const path = copyFixture('fb-detect.pdf')
+    const { app, page } = await openDoc([path])
+    const scan = async (label: string): Promise<string[]> => {
+      const out: string[] = []
+      for (const isDark of [false, true]) {
+        await dark(app, isDark)
+        await page.waitForTimeout(400)
+        out.push(...(await axeWithOverlays(page, `${label} ${isDark ? 'dark' : 'light'}`)))
+      }
+      await dark(app, false)
+      return out
+    }
+    const problems: string[] = []
+    try {
+      await menuClick(app, 'Tools', 'Detect Form Fields…')
+      await expect(page.getByRole('dialog', { name: 'Detect Form Fields' })).toBeVisible()
+      problems.push(...(await scan('scope dialog')))
+      await page.getByTestId('fb-detect-start').click()
+      await expect(page.getByTestId('fb-proposals').getByRole('listitem')).toHaveCount(9, { timeout: 60_000 })
+      await page.getByTestId('fb-proposals').getByRole('button').first().click()
+      problems.push(...(await scan('detect review')))
+      await page.getByTestId('fb-accept-all').click()
+      await expect(fieldCount(page)).toContainText('Fields (9)', { timeout: 30_000 })
+
+      const props = page.getByTestId('fb-properties')
+      await panel(page).getByTestId('fb-field-list').locator('[data-field-row="Date_of_birth"]').click()
+      await expect(props).toHaveAttribute('data-field', 'Date_of_birth')
+      for (const s of ['Appearance', 'Format and validation']) await props.locator('summary', { hasText: s }).evaluate((el) => ((el.parentElement as HTMLDetailsElement).open = true))
+      problems.push(...(await scan('field properties (text, date format)')))
+      await panel(page).getByTestId('fb-field-list').locator('[data-field-row="Level"]').click()
+      await expect(props).toHaveAttribute('data-field', 'Level')
+      problems.push(...(await scan('field properties (radio)')))
+      await panel(page).getByRole('button', { name: 'Tab order…' }).click()
+      await expect(page.getByTestId('fb-taborder')).toBeVisible()
+      problems.push(...(await scan('tab order')))
+      await page.getByTestId('fb-taborder-close').click()
+      await page.getByTestId('fb-mode-preview').click()
+      await expect(page.getByTestId('fb-preview')).toBeVisible()
+      problems.push(...(await scan('preview')))
+      expect(problems).toEqual([])
     } catch (err) {
       await snap(page, err)
     } finally {

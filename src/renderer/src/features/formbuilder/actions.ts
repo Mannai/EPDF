@@ -157,6 +157,8 @@ const labelOf = (names: string[]): string => (names.length === 1 ? `“${names[0
 /** Applies a patch to fields by name. After a rename the selection follows the field. */
 export async function patchFields(docId: string, names: string[], patch: FieldPatch, label?: string): Promise<boolean> {
   const renamed: Record<string, string> = {}
+  // The reloaded model may drop a selection whose field was renamed before this function continues: keep a copy.
+  const before = [...selectionKeys(docId)]
   const ok = await runEdit(docId, label ?? `Change properties of ${labelOf(names)}`, async (pdf) => {
     for (const n of names) renamed[n] = await applyPatch(pdf, n, patch)
   })
@@ -164,7 +166,7 @@ export async function patchFields(docId: string, names: string[], patch: FieldPa
     const st = useBuilder.getState()
     st.select(
       docId,
-      st.selection.map((k) => {
+      before.map((k) => {
         const { name, index } = splitKey(k)
         return renamed[name] ? widgetKey(renamed[name], index) : k
       })

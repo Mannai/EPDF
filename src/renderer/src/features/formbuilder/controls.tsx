@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 
 /** Small labelled controls for the properties panel. Text-like ones commit on blur / Enter, Escape reverts. */
 
@@ -142,11 +142,41 @@ export function NumberCommit({
   )
 }
 
+/**
+ * A value that follows its source (`value`, which arrives after the document reloaded) but shows a choice at once:
+ * the control keeps the user's pick until the source catches up, or falls back to it if the change never lands.
+ */
+function useEcho<T>(value: T): [T, (v: T) => void] {
+  const [local, setLocal] = useState(value)
+  const latest = useRef(value)
+  useEffect(() => {
+    latest.current = value
+    setLocal(value)
+  }, [value])
+  const pick = (v: T): void => {
+    setLocal(v)
+    setTimeout(() => setLocal(latest.current), 2500)
+  }
+  return [local, pick]
+}
+
 export function CheckRow({ label, checked, onChange, disabled, hint }: { label: string; checked: boolean; onChange(v: boolean): void; disabled?: boolean; hint?: string }): JSX.Element {
   const id = useId()
+  const [shown, pick] = useEcho(checked)
   return (
     <div className="flex items-start gap-2 text-xs">
-      <input id={id} type="checkbox" className="mt-0.5 h-4 w-4 accent-[rgb(var(--c-accent))]" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} onKeyDown={(e) => e.stopPropagation()} />
+      <input
+        id={id}
+        type="checkbox"
+        className="mt-0.5 h-4 w-4 accent-[rgb(var(--c-accent))]"
+        checked={shown}
+        disabled={disabled}
+        onChange={(e) => {
+          pick(e.target.checked)
+          onChange(e.target.checked)
+        }}
+        onKeyDown={(e) => e.stopPropagation()}
+      />
       <label htmlFor={id} className="min-w-0">
         {label}
         {hint && <span className="block text-ink-muted">{hint}</span>}
@@ -157,10 +187,21 @@ export function CheckRow({ label, checked, onChange, disabled, hint }: { label: 
 
 export function SelectRow<T extends string>({ label, value, options, onChange, disabled }: { label: string; value: T; options: { value: T; label: string }[]; onChange(v: T): void; disabled?: boolean }): JSX.Element {
   const id = useId()
+  const [shown, pick] = useEcho<string>(value)
   return (
     <div className="grid gap-1 text-xs">
       <label htmlFor={id}>{label}</label>
-      <select id={id} className="field" value={value} disabled={disabled} onChange={(e) => onChange(e.target.value as T)} onKeyDown={(e) => e.stopPropagation()}>
+      <select
+        id={id}
+        className="field"
+        value={shown}
+        disabled={disabled}
+        onChange={(e) => {
+          pick(e.target.value)
+          onChange(e.target.value as T)
+        }}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
         {options.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}

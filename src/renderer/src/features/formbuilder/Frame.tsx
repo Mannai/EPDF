@@ -77,7 +77,7 @@ export function Frame(p: FrameProps): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (keyboardFocusKey === p.dataKey && ref.current && document.activeElement !== ref.current) {
+    if (p.selected && keyboardFocusKey === p.dataKey && ref.current && document.activeElement !== ref.current) {
       const a = document.activeElement
       // Only take the focus from nothing or from another frame (never from a panel control).
       if (!a || a === document.body || a.hasAttribute('data-fb-key')) ref.current.focus({ preventScroll: true })
