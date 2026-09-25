@@ -1,8 +1,8 @@
 import { PDFArray, PDFDict, PDFHexString, PDFName, PDFRawStream, PDFRef, PDFStream, PDFString, type PDFContext, type PDFDocument, type PDFObject } from 'pdf-lib'
-import { unzlibSync, zlibSync } from 'fflate'
+import { zlibSync } from 'fflate'
 import { forEachRef, reachable, type Alias, type Reached } from './graph'
 import type { CompressOptions } from './options'
-import { N, decodeStream, deflateMax, encodedBytes, filterNames, hasImageCodec, nameOf, refKey, resolve } from './streams'
+import { N, decodeStream, deflateMax, encodedBytes, filterNames, hasImageCodec, inflateCapped, nameOf, refKey, resolve } from './streams'
 
 /** Lossless structural work: removals, re-deflating and de-duplication. */
 
@@ -250,13 +250,8 @@ export async function redeflateStreams(
       continue
     }
     if (filters.length === 1 && filters[0] === 'FlateDecode') {
-      let raw: Uint8Array
-      try {
-        raw = unzlibSync(enc)
-      } catch {
-        continue
-      }
-      if (raw.length > MAX_DECODED) continue
+      const raw = inflateCapped(enc, MAX_DECODED)
+      if (!raw) continue // damaged, or larger than we are willing to hold: leave the stream as it is
       const z = zlibSync(raw, { level: raw.length > 32 << 20 ? 6 : 9, mem: 12 })
       if (z.length >= enc.length) continue
       replace(ctx, ref, obj, z, ['FlateDecode'], true)

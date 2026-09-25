@@ -6,7 +6,7 @@ import { pureCodec } from '../../src/renderer/src/features/compress/pdf/codec'
 import { compressPdf } from '../../src/renderer/src/features/compress/pdf/compress'
 import { PRESETS, type CompressOptions } from '../../src/renderer/src/features/compress/pdf/options'
 import { reachable, trailerRoots } from '../../src/renderer/src/features/compress/pdf/graph'
-import { decodeStream, encodedBytes } from '../../src/renderer/src/features/compress/pdf/streams'
+import { decodeStream, encodedBytes, inflateCapped } from '../../src/renderer/src/features/compress/pdf/streams'
 import { addRawImage, baseDoc, imagesOf, photoRGB, placeAt } from './compressHelpers'
 import { pdfjsImages, pdfjsPageCount, pdfjsPageSize, pdfjsText } from './compressPdfjs'
 import { notoBytes } from './helpers/pdfBuilder'
@@ -98,6 +98,33 @@ describe('deduplication', () => {
       for (const x of list) if (x instanceof PDFRef) refs.add(`${x.objectNumber}`)
     }
     expect(refs.size).toBe(3)
+  })
+})
+
+describe('inflate with a size cap (decompression bombs)', () => {
+  it('inflates normal data exactly, however many slices it takes', () => {
+    const data = photoRGB(300, 300, 4)
+    const z = zlibSync(data)
+    expect(z.length).toBeGreaterThan(64 * 1024) // several input slices
+    expect(Array.from(inflateCapped(z)!)).toEqual(Array.from(data))
+    expect(inflateCapped(zlibSync(new Uint8Array(0)))!.length).toBe(0)
+  })
+
+  it('refuses a stream that would expand past the cap, without inflating all of it', () => {
+    const bomb = zlibSync(new Uint8Array(40_000_000)) // 40 MB of zeros -> ~40 KB
+    expect(bomb.length).toBeLessThan(100_000)
+    expect(inflateCapped(bomb, 5_000_000)).toBeNull()
+    expect(inflateCapped(bomb, 50_000_000)!.length).toBe(40_000_000)
+  })
+
+  it('damaged and truncated data give null, never a partial result presented as complete', () => {
+    const z = zlibSync(photoRGB(200, 200, 2))
+    expect(inflateCapped(z.subarray(0, z.length >> 1))).toBeNull()
+    expect(inflateCapped(new Uint8Array([1, 2, 3, 4, 5]))).toBeNull()
+    const flipped = z.slice()
+    flipped[10] ^= 0xff
+    const r = inflateCapped(flipped)
+    if (r) expect(r.length).toBeGreaterThan(0) // a flipped bit inside the data may still decode; it must not throw
   })
 })
 

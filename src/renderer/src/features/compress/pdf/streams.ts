@@ -1,4 +1,4 @@
-import { unzlibSync, zlibSync } from 'fflate'
+import { Unzlib, zlibSync } from 'fflate'
 import { PDFArray, PDFDict, PDFName, PDFNumber, PDFRawStream, PDFRef, PDFStream, decodePDFRawStream, type PDFContext, type PDFObject } from 'pdf-lib'
 import { undoPredictor, type PredictorParams } from './raster'
 
@@ -90,6 +90,38 @@ export function predictorOf(ctx: PDFContext, parms: PDFDict | undefined, fallbac
   }
 }
 
+/** Most a single stream may inflate to: a "decompression bomb" in a hostile PDF must not take the worker's memory with it. */
+export const MAX_INFLATED = 768 * 1024 * 1024
+
+/**
+ * zlib inflate with a cap on the output size. The input is fed in slices (a deflate stream cannot expand more than about
+ * 1000:1), so the check between slices bounds memory to `cap` plus one slice's worth. Returns null when the data is damaged or
+ * would exceed the cap.
+ */
+export function inflateCapped(data: Uint8Array, cap = MAX_INFLATED): Uint8Array | null {
+  const chunks: Uint8Array[] = []
+  let total = 0
+  const u = new Unzlib((chunk) => {
+    chunks.push(chunk)
+    total += chunk.length
+  })
+  const SLICE = 32 * 1024
+  try {
+    if (data.length === 0) return new Uint8Array(0)
+    for (let i = 0; i < data.length; i += SLICE) {
+      u.push(data.subarray(i, Math.min(data.length, i + SLICE)), i + SLICE >= data.length)
+      if (total > cap) return null
+    }
+  } catch {
+    return null
+  }
+  if (chunks.length === 1) return chunks[0]
+  const out = new Uint8Array(total)
+  let o = 0
+  for (const c of chunks) (out.set(c, o), (o += c.length))
+  return out
+}
+
 const IMAGE_CODECS = new Set(['DCTDecode', 'JPXDecode', 'CCITTFaxDecode', 'JBIG2Decode', 'Crypt'])
 
 /** True if the stream's filters include an image codec (or anything that cannot be reversed to raw bytes in-house). */
@@ -106,11 +138,17 @@ export function decodeStream(ctx: PDFContext, s: PDFStream): Uint8Array | null {
   if (hasImageCodec(filters)) return null
   try {
     if (filters.length === 1 && filters[0] === 'FlateDecode') {
-      let out: Uint8Array
-      try {
-        out = unzlibSync(raw)
-      } catch {
-        if (s instanceof PDFRawStream) return decodePDFRawStream(s).decode()
+      const out = inflateCapped(raw)
+      if (!out) {
+        // Damaged or over the cap. pdf-lib's own inflater is more forgiving about truncated data; only use it for small inputs.
+        if (s instanceof PDFRawStream && raw.length < 32 * 1024 * 1024) {
+          try {
+            const alt = decodePDFRawStream(s).decode()
+            return alt.length <= MAX_INFLATED ? alt : null
+          } catch {
+            return null
+          }
+        }
         return null
       }
       const parms = decodeParms(ctx, s.dict)[0]
