@@ -1,10 +1,22 @@
 import type { PDFDocument, PDFFont, PDFRef } from 'pdf-lib'
+import { renameContentResources } from '@shared/text'
 import { loadPageSource } from '../../textedit/pdfcontent/analyze'
 import { ContentParseError, serializeContent } from '../../textedit/pdfcontent/content'
 import { N } from '../../textedit/pdfcontent/pdfutil'
 import { disjointRects, rectQuad, type Quad, type Rect } from './geom'
 import { pruneReplaced } from './prune'
 import { ResEdit, RedactRefused, Walker, initialState, newStats, type RemovedRec, type Rgb, type Stats } from './interp'
+
+/**
+ * Overlay text laid out by the text engine (for text Helvetica cannot encode: Arabic "محجوب", Hebrew, CJK ...), at
+ * size 1 with its baseline start at the origin; each mark scales it with `cm`. See `prepareOverlayText` in redact.ts.
+ */
+export interface EngineOverlayText {
+  content: string
+  fonts: { name: string; ref: PDFRef }[]
+  /** Width at size 1. */
+  width: number
+}
 
 /** What the redaction paints where the content was removed. */
 export interface OverlayOptions {
@@ -13,6 +25,8 @@ export interface OverlayOptions {
   text: string
   /** Helvetica embedded once per document (see redact.ts). */
   font: PDFFont
+  /** The text drawn by the engine instead of Helvetica (when the text needs it and it was prepared). */
+  engineText?: EngineOverlayText
 }
 
 export interface PageResult {
@@ -38,13 +52,47 @@ function luminance([r, g, b]: Rgb): number {
 const f = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(4).replace(/0+$/, '').replace(/\.$/, ''))
 
 /** Overlay content: filled boxes plus optional text, drawn in a clean graphics state. */
-export function overlayBytes(shapes: readonly MarkShape[], opts: OverlayOptions, rotation: number, names: { gs: string; font: string }): Uint8Array {
+/** Centre, reading direction and size of each mark as the reader sees it. */
+function markFrames(shapes: readonly MarkShape[], rotation: number): { cx: number; cy: number; dispW: number; dispH: number; c: number; sn: number }[] {
+  const rot = ((Math.round(rotation / 90) * 90) % 360 + 360) % 360
+  return shapes.map((s) => {
+    if (s.quad) {
+      const q = s.quad
+      const dispW = Math.hypot(q[2] - q[0], q[3] - q[1])
+      const len = dispW || 1
+      return { cx: (q[0] + q[2] + q[4] + q[6]) / 4, cy: (q[1] + q[3] + q[5] + q[7]) / 4, dispW, dispH: Math.hypot(q[4] - q[2], q[5] - q[3]), c: (q[2] - q[0]) / len, sn: (q[3] - q[1]) / len }
+    }
+    const m = s.rect
+    const w = m.x1 - m.x0
+    const h = m.y1 - m.y0
+    const th = (rot * Math.PI) / 180
+    return { cx: (m.x0 + m.x1) / 2, cy: (m.y0 + m.y1) / 2, dispW: rot === 90 || rot === 270 ? h : w, dispH: rot === 90 || rot === 270 ? w : h, c: Math.round(Math.cos(th)), sn: Math.round(Math.sin(th)) }
+  })
+}
+
+export function overlayBytes(shapes: readonly MarkShape[], opts: OverlayOptions, rotation: number, names: { gs: string; font: string; engineFonts?: Map<string, string> }): Uint8Array {
   const [r, g, b] = opts.fill
   const lines: string[] = ['q', `/${names.gs} gs`, `${f(r)} ${f(g)} ${f(b)} rg`]
   for (const m of disjointRects(shapes.filter((s) => !s.quad).map((s) => s.rect))) lines.push(`${f(m.x0)} ${f(m.y0)} ${f(m.x1 - m.x0)} ${f(m.y1 - m.y0)} re f`)
   for (const s of shapes) {
     const q = s.quad
     if (q) lines.push(`${f(q[0])} ${f(q[1])} m ${f(q[2])} ${f(q[3])} l ${f(q[4])} ${f(q[5])} l ${f(q[6])} ${f(q[7])} l h f`)
+  }
+  const et = opts.engineText
+  if (et && opts.text.trim() !== '' && et.width > 0) {
+    // Engine text (shaped, right-to-left where needed), scaled into every mark like the Helvetica text below.
+    const content = renameContentResources(et.content, names.engineFonts ?? new Map())
+    for (const fr of markFrames(shapes, rotation)) {
+      const size = Math.min(fr.dispH * 0.72, (fr.dispW * 0.94) / et.width)
+      if (!(size >= 4)) continue
+      const ox = (-et.width * size) / 2
+      const oy = -size * 0.32
+      const e = fr.cx + ox * fr.c - oy * fr.sn
+      const fy = fr.cy + ox * fr.sn + oy * fr.c
+      lines.push(`q ${f(fr.c * size)} ${f(fr.sn * size)} ${f(-fr.sn * size)} ${f(fr.c * size)} ${f(e)} ${f(fy)} cm`, content, 'Q')
+    }
+    lines.push('Q', '')
+    return enc(lines.join('\n'))
   }
   const text = opts.text
     .split('')
@@ -134,8 +182,11 @@ export function redactPage(pdf: PDFDocument, pageIndex: number, marks: readonly 
   const gsDict = ctx.obj({ Type: 'ExtGState', CA: 1, ca: 1, BM: 'Normal', SMask: 'None', AIS: false })
   const gsName = res.add('ExtGState', 'EpdfRdGS', gsDict)
   const fontName = res.add('Font', OVERLAY_FONT_PREFIX, opts.font.ref)
+  // Engine fonts of the overlay text get names with the same prefix (the self-check ignores the overlay by it).
+  const engineFonts = new Map<string, string>()
+  if (opts.engineText && opts.text.trim() !== '') for (const ef of opts.engineText.fonts) engineFonts.set(ef.name, res.add('Font', OVERLAY_FONT_PREFIX, ef.ref))
   const rotation = page.getRotation().angle
-  const overlay = overlayBytes(marks, opts, rotation, { gs: gsName, font: fontName })
+  const overlay = overlayBytes(marks, opts, rotation, { gs: gsName, font: fontName, engineFonts })
 
   const refs: PDFRef[] = []
   refs.push(ctx.register(ctx.flateStream(enc('q\n'))))

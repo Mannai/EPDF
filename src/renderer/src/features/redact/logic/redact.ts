@@ -15,7 +15,8 @@ import {
 } from './docScrub'
 import { rectQuad, type Quad, type Rect } from './geom'
 import { RedactRefused, newStats, type RemovedRec, type Rgb, type Stats } from './interp'
-import { redactPage, type MarkShape } from './pageRedact'
+import { redactPage, type EngineOverlayText, type MarkShape } from './pageRedact'
+import { ensureTextEngine, isWinAnsiText, textContent } from '@shared/text'
 import { usableSecrets } from './verify'
 
 export { RedactRefused }
@@ -98,7 +99,28 @@ export function deriveSecrets(marksOfPage: ReadonlyMap<number, MarkInput[]>, rem
  * The redaction as a sequence of steps (one per page, then the document-wide scrub) so callers can keep the UI
  * responsive: each `yield` is a good place to let the event loop run. Returns the outcome.
  */
-export function* redactSteps(pdf: PDFDocument, marks: readonly MarkInput[], options: RedactOptions): Generator<{ done: number; total: number }, RedactOutcome> {
+/**
+ * Lays out overlay text Helvetica cannot encode ("محجوب", "חסוי", "已删除" ...) with the text engine, once per
+ * redaction, in the colour the marks need (white on dark fills). Returns undefined for WinAnsi text (Helvetica keeps
+ * drawing it as before) or when the engine is not available (then only the characters Helvetica has are drawn).
+ */
+export async function prepareOverlayText(pdf: PDFDocument, text: string, fill: Rgb): Promise<EngineOverlayText | undefined> {
+  const t = text.replace(/\s+/g, ' ').trim()
+  if (t === '' || isWinAnsiText(t)) return undefined
+  try {
+    ensureTextEngine()
+    const white = 0.2126 * fill[0] + 0.7152 * fill[1] + 0.0722 * fill[2] < 0.5
+    const c = await textContent(pdf, t, { size: 1, fontStack: ['Helvetica'], color: white ? [1, 1, 1] : [0, 0, 0], origin: 'baseline' })
+    return { content: c.content, fonts: c.fonts, width: c.width }
+  } catch (err) {
+    console.warn('Redaction: the overlay text could not be laid out with the text engine', err)
+    return undefined
+  }
+}
+
+type StepOptions = RedactOptions & { engineText?: EngineOverlayText }
+
+export function* redactSteps(pdf: PDFDocument, marks: readonly MarkInput[], options: StepOptions): Generator<{ done: number; total: number }, RedactOutcome> {
   const stats = newStats()
   const warnings: string[] = []
   const pageCount = pdf.getPageCount()
@@ -125,7 +147,7 @@ export function* redactSteps(pdf: PDFDocument, marks: readonly MarkInput[], opti
     const shapes: MarkShape[] = list.flatMap((m) => m.rects.map((rect, i) => ({ rect, quad: m.quads?.[i] ?? null })))
     marksByPage.set(pi, shapes.map((s) => s.rect))
     shapesByPage.set(pi, shapes.map((s) => s.quad ?? rectQuad(s.rect)))
-    const r = redactPage(pdf, pi, shapes, { fill: options.fill, text: options.overlayText, font }, stats)
+    const r = redactPage(pdf, pi, shapes, { fill: options.fill, text: options.overlayText, font, engineText: options.engineText }, stats)
     removed.set(pi, r.removed)
     warnings.push(...r.warnings.map((w) => `Page ${pi + 1}: ${w}`))
     yield { done: ++done, total: pages.length }
@@ -164,9 +186,13 @@ export function redactDocument(pdf: PDFDocument, marks: readonly MarkInput[], op
   return r.value
 }
 
-/** Like `redactDocument`, letting the event loop run between pages. */
+/**
+ * Like `redactDocument`, letting the event loop run between pages. Overlay text in any script is drawn with the text
+ * engine (the synchronous `redactDocument` can only draw what Helvetica encodes).
+ */
 export async function redactDocumentAsync(pdf: PDFDocument, marks: readonly MarkInput[], options: RedactOptions, onProgress?: (done: number, total: number) => void): Promise<RedactOutcome> {
-  const g = redactSteps(pdf, marks, options)
+  const engineText = await prepareOverlayText(pdf, options.overlayText, options.fill)
+  const g = redactSteps(pdf, marks, { ...options, engineText })
   let r = g.next()
   while (!r.done) {
     onProgress?.(r.value.done, r.value.total)
