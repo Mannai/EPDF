@@ -26,9 +26,14 @@ extraResources:
     filter: ['**/*']
   # Bundled fonts (SIL OFL / Apache-2.0) with their license texts: signature script fonts, the Unicode font
   # for form text, and the fonts of the built-in Office converter (Liberation, Carlito, Caladea, Noto Sans).
+  # The text engine adds the Noto script fonts (Arabic, Hebrew, Thai, Indic, CJK .otf, symbols, emoji), the font
+  # catalogue text-fonts.json and its licence notices, and the two HarfBuzz WebAssembly modules (resources/text).
   - from: resources/fonts
     to: fonts
-    filter: ['*.ttf', '*.txt']
+    filter: ['*.ttf', '*.otf', '*.json', '*.txt']
+  - from: resources/text
+    to: text
+    filter: ['*.wasm', '*.txt']
   # OCR: the English trained data (tessdata_fast, Apache-2.0) with its license. Other languages are downloaded on demand.
   - from: resources/ocr
     to: ocr

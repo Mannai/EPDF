@@ -365,12 +365,14 @@ function buildLayout(text: string, plans: ParaPlan[], styleInfos: StyleInfo[], o
   let maxWidth = 0
   const maxLines = options.maxLines && options.maxLines > 0 ? options.maxLines : Infinity
   let truncated = false
+  const paraTexts: string[] = []
 
   for (let pi = 0; pi < plans.length; pi++) {
     const plan = plans[pi]!
     const rtl = (plan.level & 1) === 1
     directions.push(rtl ? 'rtl' : 'ltr')
     const ptext = text.slice(plan.start, plan.end)
+    paraTexts.push(ptext)
     const baseInfo = styleInfos[0]!
     const lrunsAll: LRun[] = plan.runs.map((r) => shapeRun(r, styleInfos[r.styleIdx]!, ptext, plan.start, options.lang ?? wantLang))
 
@@ -464,7 +466,7 @@ function buildLayout(text: string, plans: ParaPlan[], styleInfos: StyleInfo[], o
 
   // Alignment when no box width was given: relative to the widest line.
   const box = boxWidth ?? maxWidth
-  for (const line of lines) placeLine(line, box, options)
+  for (const line of lines) placeLine(line, box, options, paraTexts[line.paragraph]!)
 
   const layout: ParagraphLayout = { text, lines, width: maxWidth, height: y, boxWidth, missing, directions, truncated }
   // Translate paragraph-relative indices to global ones.
@@ -630,13 +632,13 @@ function assembleLine(
 }
 
 /** Alignment, justification and final glyph x positions of one line inside a box of width `box`. */
-function placeLine(line: Line, box: number, options: ParagraphOptions): void {
+function placeLine(line: Line, box: number, options: ParagraphOptions, ptext: string): void {
   const align = alignOf(options.align, line.rtl)
   const hangW = line.runs.filter((r) => r.hanging).reduce((s, r) => s + r.width, 0)
   let extra = 0
   if (align === 'justify' && (!line.last || options.justifyLast) && box > line.width + 0.01) {
     extra = box - line.width
-    const used = options.kashida !== false ? kashidaJustify(line, extra) : 0
+    const used = options.kashida !== false ? kashidaJustify(line, extra, ptext) : 0
     extra -= used
     // remaining slack goes to the spaces (or between characters when there are none)
     const spaces: LayoutGlyph[] = []

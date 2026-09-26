@@ -72,7 +72,6 @@ export function resolveScripts(text: string): ScriptRuns {
   const n = text.length
   const ids = new Uint8Array(n)
   let cur = -1
-  let pendingStart = 0 // start of the leading run of commons awaiting a script
   const stack: { close: number; script: number }[] = []
   for (let i = 0; i < n; ) {
     const cp = text.codePointAt(i)!
@@ -100,13 +99,12 @@ export function resolveScripts(text: string): ScriptRuns {
       id = cur >= 0 && set.includes(cur) ? cur : first
       if (cur < 0) {
         // Back-fill leading commons with the first specific script.
-        for (let j = pendingStart; j < i; j++) ids[j] = id
+        for (let j = 0; j < i; j++) ids[j] = id
         for (const s of stack) if (s.script < 0) s.script = id
       }
       cur = id
     }
     for (let j = 0; j < len; j++) ids[i + j] = id
-    if (cur < 0) pendingStart = i + len
     i += len
   }
   return { ids, tags: SCRIPT_TAGS }

@@ -155,6 +155,11 @@ export function mirroredCodePoint(cp: number): number | null {
   return m === null ? null : m.charCodeAt(0)
 }
 
+/** The paragraph text in visual order with mirrored characters swapped (rule L1-L4 for one line = the whole text). */
+export function reorderedString(info: BidiInfo): string {
+  return bidi.getReorderedString(info.text, info.raw)
+}
+
 /** For a bracket code point: whether it opens or closes, and the code point of its partner. */
 export function bracketPartner(cp: number): { kind: 'open' | 'close'; other: number } | null {
   const ch = String.fromCharCode(cp)

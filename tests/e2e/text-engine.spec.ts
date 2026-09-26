@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { grayPng } from '../support/png'
 import { CORPUS } from '../support/textCorpus'
-import { similarity, toInk, type Ink, type Similarity } from '../support/textCompare'
+import { inkBox, similarity, toInk, type Ink, type Similarity } from '../support/textCompare'
 
 /**
  * Rendering vs Chromium: every corpus item is written into a PDF by the text engine (tests/unit/text-artifacts.test.ts
@@ -101,7 +101,7 @@ async function compare(pdfName: string, specName: string): Promise<Similarity> {
 
 const report = (id: string, s: Similarity): string => `${id}: ncc ${s.ncc.toFixed(3)}  width ${s.a.width}/${s.b.width} (${s.widthRatio.toFixed(3)})  height ${s.a.height}/${s.b.height} (${s.heightRatio.toFixed(3)})`
 
-for (const item of CORPUS) {
+for (const item of CORPUS.filter((c) => !c.noReference)) {
   test(`renders like Chromium: ${item.label} [${item.id}]`, async () => {
     const s = await compare(item.id, item.id)
     record(item.id, { ...s, label: item.label })
@@ -109,6 +109,18 @@ for (const item of CORPUS) {
     expect(s.ncc, report(item.id, s)).toBeGreaterThanOrEqual(NCC_MIN)
     expect(Math.abs(s.a.width - s.b.width), report(item.id, s)).toBeLessThanOrEqual(s.b.width * 0.04 + 2)
     expect(Math.abs(s.a.height - s.b.height), report(item.id, s)).toBeLessThanOrEqual(s.b.height * 0.12 + 3)
+  })
+}
+
+for (const item of CORPUS.filter((c) => c.noReference)) {
+  test(`justified text fills its box: ${item.label} [${item.id}]`, async () => {
+    const a = await renderPdfJs(readFileSync(resolve(OUT, `${item.id}.pdf`)))
+    const box = inkBox(a)!
+    saveImages(item.id, a, { width: 1, height: 1, data: new Float32Array(1) })
+    // every line but the last spans the whole box (in px at 96/72): check the widest ink row group is the box width
+    const px = (item.width! * 96) / 72
+    expect(box.x1 - box.x0, `ink width ${box.x1 - box.x0}px vs box ${px}px`).toBeGreaterThan(px - 4)
+    expect(box.x1 - box.x0).toBeLessThanOrEqual(px + 2)
   })
 }
 

@@ -13,6 +13,9 @@ export interface CorpusItem {
   fonts?: string[]
   /** Wrap width in points (multi-line items). */
   width?: number
+  align?: 'start' | 'end' | 'center' | 'justify'
+  /** Chromium cannot produce this layout (kashida justification): only sanity-checked, not compared. */
+  noReference?: boolean
   /** PDF.js is known to insert stray spaces/text items for these (see docs/text-engine.md "PDF.js quirks"). */
   pdfjsQuirk?: 'combining-marks'
 }
@@ -29,6 +32,9 @@ export const CORPUS: CorpusItem[] = [
   { id: 'ar-wrap-300', label: 'Arabic paragraph, width 300', text: arLong, fonts: ['Noto Naskh Arabic'], width: 300, size: 16 },
   { id: 'ar-wrap-220', label: 'Arabic paragraph, width 220', text: arLong, fonts: ['Noto Naskh Arabic'], width: 220, size: 16 },
   { id: 'ar-wrap-150', label: 'Arabic paragraph, width 150', text: arLong, fonts: ['Noto Sans Arabic'], width: 150, size: 14 },
+  { id: 'ar-justify', label: 'Arabic justified with kashida', text: arLong, fonts: ['Noto Naskh Arabic'], width: 260, size: 16, align: 'justify', noReference: true },
+  { id: 'ar-justify-sans', label: 'Arabic justified with kashida (Sans)', text: arLong, fonts: ['Noto Sans Arabic'], width: 260, size: 16, align: 'justify', noReference: true },
+  { id: 'en-justify', label: 'English justified', text: 'The quick brown fox jumps over the lazy dog while the five boxing wizards jump quickly and the sphinx of black quartz judges my vow.', fonts: ['Noto Sans'], width: 240, size: 14, align: 'justify', noReference: true },
   { id: 'fa', label: 'Persian', text: 'سلام دنیا، این یک متن فارسی است ۱۲۳ گچپژ', fonts: ['Noto Naskh Arabic'], lang: 'fa' },
   { id: 'ur', label: 'Urdu (Naskh)', text: 'یہ ایک اردو جملہ ہے۔ ٹھیک ہے، شکریہ', fonts: ['Noto Naskh Arabic'], lang: 'ur' },
   { id: 'ur-nastaliq', label: 'Urdu (Nastaliq)', text: 'یہ ایک اردو جملہ ہے', fonts: ['Noto Nastaliq Urdu'], lang: 'ur', size: 28 },

@@ -57,9 +57,8 @@ export interface ParagraphOptions extends TextStyle {
   wordBreak?: WordBreak
   /** Break a single word that is wider than `width` (default true). */
   breakLongWords?: boolean
-  /** Stop after this many lines; with `ellipsis` the last visible line ends with it. */
+  /** Stop after this many lines (`ParagraphLayout.truncated` reports it); the rest of the text is not laid out. */
   maxLines?: number
-  ellipsis?: string
   /** What to do with characters no font covers: draw the font's .notdef (default) or throw. They are always reported in `missing`. */
   onMissing?: 'notdef' | 'throw'
 }

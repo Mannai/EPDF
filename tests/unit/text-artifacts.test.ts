@@ -20,7 +20,7 @@ const fontUrl = (file: string): string => 'file:///' + resolve('resources/fonts'
 
 async function make(item: CorpusItem, name: string, override: { direction?: 'ltr' | 'rtl' | 'auto' } = {}): Promise<void> {
   const size = item.size ?? 20
-  const opts = { size, fontStack: item.fonts, lang: item.lang, direction: override.direction ?? item.direction, width: item.width }
+  const opts = { size, fontStack: item.fonts, lang: item.lang, direction: override.direction ?? item.direction, width: item.width, align: item.align }
   const layout = await layoutParagraph(item.text, opts)
   const pdf = await PDFDocument.create()
   const boxW = layout.boxWidth ?? layout.width
