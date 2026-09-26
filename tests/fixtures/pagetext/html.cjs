@@ -48,4 +48,18 @@ function rotated() {
   return page(body, true)
 }
 
-module.exports = { lines, paragraphs, columns, rotated }
+/**
+ * An independent check document (written by someone else, Arial, dir on <html>): dates, times, a currency amount in
+ * brackets, an e-mail address, a phone number, a quotation with tashkeel and Arabic-Indic years.
+ */
+function fresh() {
+  const lines = corpus.fresh.map((t) => `<p>${esc(t)}</p>`).join('\n')
+  return `<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>t</title></head>
+<body style="font-family: 'Arial'; font-size: 14pt">
+${lines}
+</body></html>
+`
+}
+
+module.exports = { lines, paragraphs, columns, rotated, fresh }
