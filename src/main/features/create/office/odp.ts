@@ -8,6 +8,7 @@ import {
   PT_PER_CM,
   applyParaProps,
   applyTextProps,
+  logicalParaAlign,
   baseParaProps,
   baseTextProps,
   odfBorder,
@@ -761,9 +762,12 @@ function buildParagraph(ctx: Ctx, p: XNode, tp0: TextProps, pb0: ParaBase, list:
     left += firstLine + 14
     firstLine = -14
   }
+  // right-to-left paragraph (writing mode rl-tb): logical alignment; margins are used as start/end indents (as in
+  // the ODT reader, following LibreOffice)
+  const rtl = !!pb.rtl
   const props: ParaProps = {
     ...DEFAULT_PARA_PROPS,
-    align: pb.align,
+    align: logicalParaAlign(pb),
     spaceBefore: first ? 0 : pb.before,
     spaceAfter: pb.after,
     line: pb.line,
@@ -771,7 +775,8 @@ function buildParagraph(ctx: Ctx, p: XNode, tp0: TextProps, pb0: ParaBase, list:
     indentRight: pb.marginRight,
     firstLine,
     widowControl: false,
-    marker
+    marker,
+    rtl: rtl || undefined
   }
   return { k: 'p', props, inlines, markStyle }
 }

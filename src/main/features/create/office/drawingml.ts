@@ -17,6 +17,9 @@ export interface ThemeInfo {
   colors: Record<string, string>
   major: string
   minor: string
+  /** Complex-script (Arabic...) theme fonts, if the theme names them. */
+  majorCs?: string
+  minorCs?: string
   fillStyles: XNode[]
   lnStyles: XNode[]
   effectStyles: XNode[]
@@ -59,6 +62,10 @@ export function parseTheme(root: XNode | undefined): ThemeInfo {
   const fonts = child(elements, 'fontScheme')
   t.major = attr(child(child(fonts, 'majorFont'), 'latin'), 'typeface') || t.major
   t.minor = attr(child(child(fonts, 'minorFont'), 'latin'), 'typeface') || t.minor
+  // complex-script theme fonts: a:cs, else the script="Arab" entry
+  const csOf = (f: XNode | undefined): string | undefined => attr(child(f, 'cs'), 'typeface') || f?.children.find((c) => c.name === 'font' && attr(c, 'script') === 'Arab')?.attrs['typeface'] || undefined
+  t.majorCs = csOf(child(fonts, 'majorFont'))
+  t.minorCs = csOf(child(fonts, 'minorFont'))
   const fmt = child(elements, 'fmtScheme')
   t.fillStyles = child(fmt, 'fillStyleLst')?.children ?? []
   t.lnStyles = child(fmt, 'lnStyleLst')?.children ?? []
@@ -342,6 +349,8 @@ export interface RPr {
   caps?: boolean
   color?: Rgba
   family?: string
+  /** a:cs: the font of complex-script (Arabic, Hebrew...) characters. */
+  csFamily?: string
   spc?: number // points
   link?: string // relationship id of hyperlink
   highlight?: Rgba
@@ -400,6 +409,10 @@ export function applyRPr(t: RPr, n: XNode | undefined, cc: ColorCtx): void {
     } else if (c.name === 'latin') {
       const f = resolveTypeface(attr(c, 'typeface'), cc.theme)
       if (f) t.family = f
+    } else if (c.name === 'cs') {
+      const face = attr(c, 'typeface')
+      const f = face === '+mn-cs' ? cc.theme.minorCs : face === '+mj-cs' ? cc.theme.majorCs : resolveTypeface(face, cc.theme)
+      if (f) t.csFamily = f
     } else if (c.name === 'hlinkClick') {
       const id = attr(c, 'id')
       if (id) t.link = id

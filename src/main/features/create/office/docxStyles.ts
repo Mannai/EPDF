@@ -1,5 +1,5 @@
 import type { BorderSpec, TabStop, TextStyle } from './flow'
-import { DEFAULT_TEXT_STYLE } from './flow'
+import { DEFAULT_TEXT_STYLE, splitByScript } from './flow'
 import type { Pkg } from './package'
 import { attr, child, childrenNamed, numAttr, path, type XNode } from './xml'
 
@@ -10,6 +10,14 @@ export interface RPr {
   size?: number
   bold?: boolean
   italic?: boolean
+  /** Complex-script properties (Arabic, Hebrew...): w:rFonts w:cs / w:cstheme, w:szCs, w:bCs, w:iCs. */
+  csFont?: string
+  sizeCs?: number
+  boldCs?: boolean
+  italicCs?: boolean
+  /** w:rtl: right-to-left run (all its characters use the complex-script properties). w:cs: complex-script run. */
+  rtl?: boolean
+  cs?: boolean
   underline?: boolean
   strike?: boolean
   color?: string
@@ -52,6 +60,8 @@ export interface PPr {
   pStyle?: string
   rtl?: boolean
   contextualSpacing?: boolean
+  /** jc lowKashida/mediumKashida/highKashida */
+  kashida?: boolean
 }
 
 export interface TblPrStyle {
@@ -59,6 +69,8 @@ export interface TblPrStyle {
   cellMar?: { top?: number; right?: number; bottom?: number; left?: number }
   indent?: number
   align?: 'left' | 'center' | 'right'
+  /** w:bidiVisual: right-to-left table (first column on the right). */
+  rtl?: boolean
 }
 
 export interface TcPr {
@@ -111,6 +123,9 @@ export interface Theme {
   colors: Record<string, string>
   major?: string
   minor?: string
+  /** Complex-script theme fonts (majorBidi/minorBidi): `a:cs`, else the `a:font script="Arab"` entry. */
+  majorCs?: string
+  minorCs?: string
 }
 
 export function readTheme(pkg: Pkg, part: string | undefined): Theme {
@@ -137,6 +152,14 @@ export function readTheme(pkg: Pkg, part: string | undefined): Theme {
   const fonts = child(els, 'fontScheme')
   theme.major = attr(path(fonts, 'majorFont', 'latin'), 'typeface')
   theme.minor = attr(path(fonts, 'minorFont', 'latin'), 'typeface')
+  const csOf = (kind: string): string | undefined => {
+    const f = child(fonts, kind)
+    const cs = attr(child(f, 'cs'), 'typeface')
+    if (cs) return cs
+    return f?.children.find((c) => c.name === 'font' && attr(c, 'script') === 'Arab')?.attrs['typeface'] || undefined
+  }
+  theme.majorCs = csOf('majorFont')
+  theme.minorCs = csOf('minorFont')
   return theme
 }
 
@@ -192,20 +215,39 @@ export function parseRPr(n: XNode | undefined, theme: Theme): RPr {
     switch (c.name) {
       case 'rFonts': {
         const themeFont = attr(c, 'asciiTheme') ?? attr(c, 'hAnsiTheme')
-        const f = attr(c, 'ascii') ?? attr(c, 'hAnsi') ?? attr(c, 'cs') ?? attr(c, 'eastAsia')
+        const f = attr(c, 'ascii') ?? attr(c, 'hAnsi') ?? attr(c, 'eastAsia')
         if (themeFont) r.font = /major/i.test(themeFont) ? theme.major : theme.minor
         else if (f) r.font = f
         if (!r.font && f) r.font = f
+        const csTheme = attr(c, 'cstheme')
+        const cs = attr(c, 'cs')
+        if (csTheme) r.csFont = (/major/i.test(csTheme) ? theme.majorCs : theme.minorCs) ?? cs
+        else if (cs) r.csFont = cs
         break
       }
       case 'sz':
         if (numAttr(c, 'val') !== undefined) r.size = numAttr(c, 'val')! / 2
         break
+      case 'szCs':
+        if (numAttr(c, 'val') !== undefined) r.sizeCs = numAttr(c, 'val')! / 2
+        break
       case 'b':
         r.bold = on(c)
         break
+      case 'bCs':
+        r.boldCs = on(c)
+        break
       case 'i':
         r.italic = on(c)
+        break
+      case 'iCs':
+        r.italicCs = on(c)
+        break
+      case 'rtl':
+        r.rtl = on(c)
+        break
+      case 'cs':
+        r.cs = on(c)
         break
       case 'u': {
         const v = attr(c, 'val')
@@ -303,7 +345,9 @@ export function parsePPr(n: XNode | undefined, theme: Theme): PPr {
     switch (c.name) {
       case 'jc': {
         const v = attr(c, 'val')
-        p.align = v === 'center' ? 'center' : v === 'right' || v === 'end' ? 'right' : v === 'both' || v === 'distribute' || v === 'justify' ? 'justify' : 'left'
+        // Logical values: in a bidi paragraph Word reads left/start as the right edge (the layout mirrors them).
+        p.align = v === 'center' ? 'center' : v === 'right' || v === 'end' ? 'right' : v === 'both' || v === 'distribute' || v === 'justify' || v === 'lowKashida' || v === 'mediumKashida' || v === 'highKashida' || v === 'thaiDistribute' ? 'justify' : 'left'
+        p.kashida = v === 'lowKashida' || v === 'mediumKashida' || v === 'highKashida'
         break
       }
       case 'spacing': {
@@ -418,6 +462,8 @@ export function parseTblPr(n: XNode | undefined, theme: Theme): TblPrStyle {
   if (ind !== undefined) t.indent = twips(ind)
   const jc = attr(child(n, 'jc'), 'val')
   if (jc) t.align = jc === 'center' ? 'center' : jc === 'right' || jc === 'end' ? 'right' : 'left'
+  const bv = child(n, 'bidiVisual')
+  if (bv) t.rtl = on(bv)
   return t
 }
 
@@ -518,6 +564,29 @@ export function mergePPr(...layers: (PPr | undefined)[]): PPr {
     if (borders) out.borders = { ...(out.borders ?? {}), ...defined(borders) }
   }
   return out
+}
+
+/** Base complex-script properties of a document (docDefaults, else the theme's minorBidi font, else Times New Roman). */
+export interface ComplexBase {
+  family: string
+  size: number
+  bold: boolean
+  italic: boolean
+}
+
+/** The style for the complex-script characters (Arabic, Hebrew, Thai...) of a run: cs font, szCs, bCs, iCs. */
+export function toComplexStyle(r: RPr, base: TextStyle, cs: ComplexBase): TextStyle {
+  return { ...toTextStyle(r, base), family: r.csFont ?? cs.family, size: r.sizeCs ?? cs.size, bold: r.boldCs ?? cs.bold, italic: r.italicCs ?? cs.italic }
+}
+
+/**
+ * Splits run text between the Latin and the complex-script style, as Word does: a run marked w:rtl or w:cs is
+ * entirely complex script; otherwise Arabic/Hebrew/Thai letters use the complex properties and neutral characters
+ * (spaces, digits, punctuation) go with the letters before them (see flow.splitByScript).
+ */
+export function splitComplex(text: string, r: RPr, latin: TextStyle, complex: TextStyle): { text: string; style: TextStyle }[] {
+  if (r.rtl || r.cs) return [{ text, style: complex }]
+  return splitByScript(text, latin, complex)
 }
 
 /** Applies resolved character properties on top of the document's base text style. */

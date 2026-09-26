@@ -20,6 +20,11 @@ export interface TextStyle {
   smallCaps?: boolean
   /** Extra space added after every character, in points. */
   spacing?: number
+  /**
+   * Complex-script properties (ODF *-complex, RTF \af/\afs/\ab/\ai): used instead of family/size/bold/italic for
+   * Arabic, Hebrew, Syriac, Thaana and Thai characters (and the spaces/punctuation between them). See layout.ts.
+   */
+  cs?: { family?: string; size?: number; bold?: boolean; italic?: boolean }
 }
 
 export const DEFAULT_TEXT_STYLE: TextStyle = {
@@ -87,8 +92,17 @@ export interface ParaProps {
   borders?: { top?: BorderSpec; bottom?: BorderSpec; left?: BorderSpec; right?: BorderSpec }
   /** List marker (bullet or number) drawn at the start of the first line. */
   marker?: { text: string; style: TextStyle }
-  /** Right-to-left paragraph (mirrors alignment); glyph shaping for RTL scripts is not supported. */
+  /**
+   * Right-to-left paragraph: the paragraph direction for the bidi algorithm, and the start edge is the right one.
+   * `align` ('left' = start, 'right' = end), `indentLeft` (start), `indentRight` (end), `firstLine`, tab stops and the
+   * list marker are all logical and mirrored by the layout.
+   */
   rtl?: boolean
+  /**
+   * Justify Arabic by stretching words with kashida (tatweel) before widening spaces: Word's "Justify Low/Medium/
+   * High" (w:jc lowKashida...), RTF \qk. Plain justification (w:jc both) widens the spaces only, as Word does.
+   */
+  kashida?: boolean
 }
 
 export const DEFAULT_PARA_PROPS: ParaProps = {
@@ -141,6 +155,8 @@ export interface Table {
   padding: { top: number; right: number; bottom: number; left: number }
   align: 'left' | 'center' | 'right'
   indent: number
+  /** Right-to-left table: first column on the right; `align`/`indent`, cell margins and left/right borders are logical (start/end). */
+  rtl?: boolean
 }
 
 export type Block = Paragraph | Table
@@ -160,6 +176,8 @@ export interface HeaderFooterSet {
 export interface Section {
   page: PageSetup
   columns?: { count: number; gap: number }
+  /** Right-to-left section (Word sectPr/bidi, RTF \rtlsect): text columns are filled from right to left. */
+  rtl?: boolean
   /** `continuous` sections start on the current page (when the page setup is unchanged). */
   type: 'nextPage' | 'continuous'
   blocks: Block[]
@@ -179,6 +197,44 @@ export interface FlowDocument {
    * (LibreOffice's behaviour for ODF and RTF; Word keeps it, so DOCX leaves this off).
    */
   suppressSpaceBeforeAtPageTop?: boolean
+}
+
+/** Characters Office formats with the complex-script properties (Word's "cs" slot, ODF "complex", RTF \a...). */
+const COMPLEX_CHAR = /[֐-ࣿיִ-﷿ﹰ-ﻼ฀-๿]/
+const LETTER = /\p{L}/u
+
+/**
+ * Splits text between a Latin and a complex-script style: Arabic/Hebrew/Thai letters take `complex`, other letters
+ * `latin`; neutral characters (spaces, digits, punctuation) go with the letters before them (with the ones after
+ * them at the start of the text).
+ */
+export function splitByScript(text: string, latin: TextStyle, complex: TextStyle): { text: string; style: TextStyle }[] {
+  if (!COMPLEX_CHAR.test(text)) return [{ text, style: latin }]
+  const out: { text: string; style: TextStyle }[] = []
+  let cur: { text: string; style: TextStyle } | null = null
+  let pending = ''
+  for (const ch of text) {
+    const style = COMPLEX_CHAR.test(ch) ? complex : LETTER.test(ch) ? latin : null
+    if (!style) {
+      if (cur) cur.text += ch
+      else pending += ch
+      continue
+    }
+    if (cur && cur.style === style) cur.text += ch
+    else {
+      cur = { text: pending + ch, style }
+      pending = ''
+      out.push(cur)
+    }
+  }
+  if (pending) out.push({ text: pending, style: latin })
+  return out
+}
+
+/** The style a text style gives complex-script characters (its `cs` overrides applied). */
+export function complexStyleOf(s: TextStyle): TextStyle {
+  if (!s.cs) return s
+  return { ...s, family: s.cs.family ?? s.family, size: s.cs.size ?? s.size, bold: s.cs.bold ?? s.bold, italic: s.cs.italic ?? s.italic, cs: undefined }
 }
 
 export const paragraph = (text: string, style: TextStyle, props: Partial<ParaProps> = {}): Paragraph => ({

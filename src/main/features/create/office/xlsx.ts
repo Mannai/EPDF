@@ -258,7 +258,9 @@ function readStyles(pkg: Pkg, env: ConvertEnv): Styles {
         v: v === 'top' ? 'top' : v === 'center' ? 'center' : 'bottom',
         wrap: attr(al, 'wrapText') === '1' || attr(al, 'wrapText') === 'true',
         indent: numAttr(al, 'indent') ?? 0,
-        shrink: attr(al, 'shrinkToFit') === '1' || attr(al, 'shrinkToFit') === 'true'
+        shrink: attr(al, 'shrinkToFit') === '1' || attr(al, 'shrinkToFit') === 'true',
+        // readingOrder: 0 = context (first strong character), 1 = left to right, 2 = right to left
+        readingOrder: attr(al, 'readingOrder') === '1' ? 'ltr' : attr(al, 'readingOrder') === '2' ? 'rtl' : undefined
       }
     })
   }
@@ -657,6 +659,10 @@ export async function convertXlsx(bytes: Uint8Array, env: ConvertEnv): Promise<P
     const sheet = newSheet(sref.name, env.page)
     sheet.print.fileName = ''
     sheet.defaultFont = dfont
+    // Right-to-left sheet (column A on the right), from the first sheet view
+    const view = child(child(wsRoot, 'sheetViews'), 'sheetView')
+    const rtlView = attr(view, 'rightToLeft')
+    sheet.rtl = rtlView === '1' || rtlView === 'true'
 
     // format defaults
     const fmt = child(wsRoot, 'sheetFormatPr')

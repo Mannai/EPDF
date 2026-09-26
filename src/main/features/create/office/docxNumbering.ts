@@ -67,8 +67,67 @@ function ordinal(n: number): string {
   return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`
 }
 
+/** Arabic letters in abjad order (أبجد هوز حطي كلمن سعفص قرشت ثخذ ضظغ) and in the common alphabetical order. */
+const ABJAD = 'أبجدهوزحطيكلمنسعفصقرشتثخذضظغ'
+const ALPHA = 'أبتثجحخدذرزسشصضطظعغفقكلمنهوي'
+const HEBREW_ALPHA = 'אבגדהוזחטיכלמנסעפצקרשת'
+const DEVANAGARI_VOWELS = 'अआइईउऊऋऌएऐओऔ'
+const DEVANAGARI_CONSONANTS = 'कखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसह'
+
+const digitsIn = (n: number, zero: number): string => String(n).replace(/[0-9]/g, (d) => String.fromCharCode(zero + Number(d)))
+
+/** Letter sequences repeat with doubled letters after the last one (like Word's a..z, aa..zz). */
+function lettersOf(n: number, alphabet: string): string {
+  if (n <= 0) return String(n)
+  const chars = Array.from(alphabet)
+  const k = (n - 1) % chars.length
+  return chars[k]!.repeat(Math.floor((n - 1) / chars.length) + 1)
+}
+
+/** Hebrew numerals (gematria): 15 and 16 are written ט״ו / ט״ז. */
+function hebrewNumeral(n: number): string {
+  if (n <= 0 || n >= 1000) return String(n)
+  const H = [[400, 'ת'], [300, 'ש'], [200, 'ר'], [100, 'ק'], [90, 'צ'], [80, 'פ'], [70, 'ע'], [60, 'ס'], [50, 'נ'], [40, 'מ'], [30, 'ל'], [20, 'כ'], [10, 'י'], [9, 'ט'], [8, 'ח'], [7, 'ז'], [6, 'ו'], [5, 'ה'], [4, 'ד'], [3, 'ג'], [2, 'ב'], [1, 'א']] as const
+  let out = ''
+  let r = n
+  for (const [v, s] of H) {
+    while (r >= v) {
+      if (r === 15 || r === 16) {
+        out += r === 15 ? 'טו' : 'טז'
+        r = 0
+        break
+      }
+      out += s
+      r -= v
+    }
+  }
+  return out
+}
+
 export function formatNumber(fmt: string, n: number): string {
   switch (fmt) {
+    case 'arabicAbjad':
+      return lettersOf(n, ABJAD)
+    case 'arabicAlpha':
+      return lettersOf(n, ALPHA)
+    case 'hindiNumbers':
+      // Word's "Hindi numbers" are the Arabic-Indic digits used in Arabic text (١، ٢، ٣)
+      return digitsIn(n, 0x0660)
+    case 'hindiCounting':
+      return digitsIn(n, 0x0966)
+    case 'hindiVowels':
+      return lettersOf(n, DEVANAGARI_VOWELS)
+    case 'hindiConsonants':
+      return lettersOf(n, DEVANAGARI_CONSONANTS)
+    case 'hebrew1':
+      return hebrewNumeral(n)
+    case 'hebrew2':
+      return lettersOf(n, HEBREW_ALPHA)
+    case 'thaiNumbers':
+      return digitsIn(n, 0x0e50)
+    case 'decimalFullWidth':
+    case 'decimalFullWidth2':
+      return String(n).replace(/[0-9]/g, (d) => String.fromCharCode(0xff10 + Number(d)))
     case 'decimal':
       return String(n)
     case 'decimalZero':

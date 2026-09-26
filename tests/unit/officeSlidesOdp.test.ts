@@ -313,6 +313,7 @@ describe.skipIf(!existsSync(SOFFICE))('odp: real LibreOffice files', () => {
       for (const s of ['Round trip title', 'First bullet', 'Second bullet', 'Rot', 'Plain box', 'Name', 'Qty', 'Apple']) expect(flattenText(b.pages)).toContain(s)
       const ta = a.pages[0].items.find((i) => i.str === 'Round trip title')!
       const tb = b.pages[0].items.find((i) => i.str === 'Round trip title')!
+      console.log(`[fidelity] odp "Round trip title": dx=${(ta.x - tb.x).toFixed(2)} dy=${(ta.y - tb.y).toFixed(2)}`)
       expect(Math.abs(ta.x - tb.x)).toBeLessThan(8)
       expect(Math.abs(ta.y - tb.y)).toBeLessThan(8)
     } finally {

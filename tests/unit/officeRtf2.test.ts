@@ -100,11 +100,12 @@ describe('RTF: more constructs', () => {
     expect(flat).toBe('café €x')
   })
 
-  it('keeps double-byte (Shift-JIS) text as characters and warns when no bundled font has them', async () => {
+  it('keeps double-byte (Shift-JIS) text as characters and draws them with the bundled CJK font', async () => {
     const r = await run('{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil\\fcharset128 MS Mincho;}}\\pard\\f0 A\\\'93\\\'fa\\\'96\\\'7b\\\'8c\\\'ea B\\par}')
     const { pages } = await readPdf(r.bytes)
-    expect(pages[0].text).toBe('A??? B')
-    expect(r.warnings.join(' ')).toMatch(/not available in Epdf’s built-in fonts/)
+    // (before the text engine, CJK had no bundled font and became "???" with a warning)
+    expect(pages[0].text.replace(/\s+/g, ' ')).toBe('A日本語 B')
+    expect(r.warnings.join(' ')).not.toMatch(/not available in Epdf’s built-in fonts/)
   })
 
   it('flattens nested tables into their cell with a warning', async () => {

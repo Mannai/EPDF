@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { convertOffice } from '../../src/main/features/create/office'
 import { flattenText, readPdf } from '../support/pdfText'
+import { logFidelity } from '../support/fidelity'
 import { XF, buildXlsx, row, worksheet } from '../support/xlsxBuilder'
 import { buildOds, tcell, trow } from '../support/odsBuilder'
 
@@ -45,6 +46,7 @@ describe.skipIf(!have)('built-in spreadsheet conversion vs real LibreOffice', ()
     expect(missing.filter((w) => !/^(Page|of|Data)$/.test(w))).toEqual([])
     expect(Math.abs(lo.pages.length - mine.pages.length)).toBeLessThanOrEqual(1)
     console.log(`[LibreOffice comparison] xlsx pages: LibreOffice=${lo.pages.length} built-in=${mine.pages.length}`)
+    logFidelity('xlsx', mine.pages, lo.pages)
   }, 180000)
 
   it('ods: same text and a similar page count', async () => {
@@ -56,6 +58,7 @@ describe.skipIf(!have)('built-in spreadsheet conversion vs real LibreOffice', ()
     for (const i of [1, 70, 140]) expect(myFlat).toContain(`Line ${i}`)
     expect(flattenText(lo.pages)).toContain('Line 70')
     console.log(`[LibreOffice comparison] ods pages: LibreOffice=${lo.pages.length} built-in=${mine.pages.length}`)
+    logFidelity('ods', mine.pages, lo.pages)
     expect(Math.abs(lo.pages.length - mine.pages.length)).toBeLessThanOrEqual(2)
   }, 180000)
 
@@ -67,5 +70,6 @@ describe.skipIf(!have)('built-in spreadsheet conversion vs real LibreOffice', ()
     for (const i of [1, 80, 160]) expect(flattenText(mine.pages)).toContain(`item ${i}`)
     expect(flattenText(lo.pages)).toContain('item 80')
     console.log(`[LibreOffice comparison] csv pages: LibreOffice=${lo.pages.length} built-in=${mine.pages.length}`)
+    logFidelity('csv', mine.pages, lo.pages)
   }, 180000)
 })
