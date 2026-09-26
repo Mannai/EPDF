@@ -116,6 +116,8 @@ function PageViewImpl({ loaded, pageIndex, scale, width, height, onGoToPage }: P
           const old = host.firstElementChild as HTMLCanvasElement | null
           host.replaceChildren(canvas)
           if (old) old.width = old.height = 0 // release the old backing store immediately
+          // Read by scripts/perf.mjs to time "open a document → first page visible" (first page only).
+          if (pageNo === 1 && !performance.getEntriesByName('epdf:first-page-painted').length) performance.mark('epdf:first-page-painted')
         }
 
         const td = textDiv.current

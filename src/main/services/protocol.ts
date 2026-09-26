@@ -27,7 +27,9 @@ export function registerSchemePrivileges(): void {
   protocol.registerSchemesAsPrivileged([
     {
       scheme: APP_SCHEME,
-      privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true }
+      // codeCache: V8 keeps the compiled renderer bundle between launches, which removes most of the script
+      // parse/compile time on every start after the first.
+      privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true }
     }
   ])
 }
