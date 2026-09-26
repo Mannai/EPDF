@@ -1,8 +1,9 @@
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { PDFDocument } from 'pdf-lib'
 import { canvasHasInk, fixture, launch, menuClick, quitDiscarding } from './helpers'
 
 /**
@@ -255,6 +256,35 @@ test.describe('page text model in the app', () => {
       expect(firstPaint).toBeLessThan(8000)
     } finally {
       await quitDiscarding(app, page)
+    }
+  })
+
+  test('a 300-page Arabic document: time until the logical text layer is ready (first page, then page 200)', async () => {
+    const src = await PDFDocument.load(readFileSync(join(FIXTURES, 'lo-para.pdf')))
+    const lines = await PDFDocument.load(readFileSync(join(FIXTURES, 'lo-lines.pdf')))
+    const out = await PDFDocument.create()
+    for (let p = 0; p < 300; p++) out.addPage((await out.copyPages(p % 2 ? src : lines, [0]))[0])
+    const dir = mkdtempSync(join(tmpdir(), 'epdf-pagetext-big-'))
+    const file = join(dir, 'arabic-300.pdf')
+    writeFileSync(file, await out.save())
+    const t0 = Date.now()
+    const { app, page } = await launch({ files: [file] })
+    try {
+      await expect.poll(() => canvasHasInk(page, '[data-page="1"] canvas'), { timeout: 30_000 }).toBe(true)
+      const painted = Date.now() - t0
+      await page.locator('[data-page="1"] .textLayer[data-pagetext="model"]').waitFor({ timeout: 60_000 })
+      const layer1 = Date.now() - t0
+      const g0 = Date.now()
+      const input = page.getByLabel('Page number')
+      await input.fill('200')
+      await input.press('Enter')
+      await page.locator('[data-page="200"] .textLayer[data-pagetext="model"]').waitFor({ timeout: 60_000 })
+      const layer200 = Date.now() - g0
+      console.log(`300-page Arabic PDF (${(statSync(file).size / 1e6).toFixed(1)} MB): page 1 painted ${painted} ms, its logical text layer ${layer1} ms after launch; page 200 logical layer ${layer200} ms after going there`)
+      expect(layer1).toBeLessThan(30_000)
+    } finally {
+      await quitDiscarding(app, page)
+      rmSync(dir, { recursive: true, force: true })
     }
   })
 
