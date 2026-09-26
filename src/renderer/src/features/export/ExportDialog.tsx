@@ -115,7 +115,7 @@ export function ExportDialogHost(): JSX.Element | null {
 
       {s.phase === 'failed' && (
         <div>
-          <p role="alert" className="mb-4 text-red-600 dark:text-red-400">
+          <p role="alert" className="mb-4 text-danger">
             {s.error}
           </p>
           <div className="flex justify-end gap-2">

@@ -152,7 +152,7 @@ export function ScannerPanel(): JSX.Element {
         </p>
       )}
       {loadError && (
-        <p role="alert" className="mb-3 rounded-md border border-red-500 p-3 text-sm text-red-700 dark:text-red-300">
+        <p role="alert" className="mb-3 rounded-md border border-danger-line p-3 text-sm text-danger">
           {loadError}
         </p>
       )}
@@ -239,7 +239,7 @@ export function ScannerPanel(): JSX.Element {
         )}
       </div>
       {status.kind === 'error' && (
-        <p role="alert" className="mt-3 rounded-md border border-red-500 p-3 text-sm text-red-700 dark:text-red-300" data-testid="scan-error">
+        <p role="alert" className="mt-3 rounded-md border border-danger-line p-3 text-sm text-danger" data-testid="scan-error">
           {status.message}
         </p>
       )}

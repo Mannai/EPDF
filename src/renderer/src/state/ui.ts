@@ -20,6 +20,12 @@ interface UiState {
   answerPassword(pw: string | null): void
   announcement: string
   announce(msg: string): void
+  /** The ribbon task tab that is showing (see components/ribbon.ts). */
+  ribbonTask: string
+  setRibbonTask(id: string): void
+  /** Windows: the renderer draws the title bar and Windows draws the caption buttons over its right end. */
+  customTitleBar: boolean
+  setCustomTitleBar(v: boolean): void
 }
 
 export const useUi = create<UiState>((set, get) => ({
@@ -39,5 +45,9 @@ export const useUi = create<UiState>((set, get) => ({
     set({ passwordRequest: null })
   },
   announcement: '',
-  announce: (announcement) => set({ announcement })
+  announce: (announcement) => set({ announcement }),
+  ribbonTask: 'comment',
+  setRibbonTask: (ribbonTask) => set({ ribbonTask }),
+  customTitleBar: false,
+  setCustomTitleBar: (customTitleBar) => set({ customTitleBar })
 }))

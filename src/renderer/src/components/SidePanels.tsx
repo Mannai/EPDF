@@ -3,7 +3,10 @@ import type { Tab } from '../state/tabs'
 import { useWorkspace } from '../state/workspace'
 import { IconClose } from './Icons'
 
-/** Left sidebar: shows the selected panel, with an icon strip to switch when several are registered. */
+/** Short switcher labels (the design's "Pages | Bookmarks"); the full label stays the accessible name. */
+const SHORT: Record<string, string> = { 'Page thumbnails': 'Pages', Thumbnails: 'Pages' }
+
+/** Left sidebar: the selected panel under a row of text tabs (when several panels are registered). */
 export function LeftSidebar({ tab }: { tab: Tab }): JSX.Element | null {
   const panels = getPanels('left')
   const current = useWorkspace((s) => s.leftPanel)
@@ -13,25 +16,30 @@ export function LeftSidebar({ tab }: { tab: Tab }): JSX.Element | null {
   const Active = active.Component
 
   return (
-    <aside aria-label={panels.length > 1 ? 'Sidebar' : active.label} className="flex shrink-0 border-r border-line bg-surface-alt">
+    <aside aria-label={panels.length > 1 ? 'Sidebar' : active.label} className="flex shrink-0 flex-col border-e border-line bg-surface-alt" style={{ width: Math.max(active.width ?? 160, 160) }}>
       {panels.length > 1 && (
-        <div role="toolbar" aria-label="Sidebar panels" aria-orientation="vertical" className="flex w-10 flex-col items-center gap-1 border-r border-line py-2">
-          {panels.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              aria-pressed={p.id === active.id}
-              aria-label={p.label}
-              title={p.label}
-              onClick={() => setLeft(p.id)}
-              className="btn-icon"
-            >
-              {p.icon}
-            </button>
-          ))}
+        // Toggle buttons styled as tabs: ARIA "tab" is reserved for the open documents (see Ribbon.tsx).
+        <div role="toolbar" aria-label="Sidebar panels" className="flex h-9 shrink-0 gap-1 border-b border-line px-2">
+          {panels.map((p) => {
+            const on = p.id === active.id
+            return (
+              <button
+                key={p.id}
+                type="button"
+                aria-pressed={on}
+                aria-label={p.label}
+                title={p.label}
+                onClick={() => setLeft(p.id)}
+                className={`focus-inset relative inline-flex items-center whitespace-nowrap px-2 ${on ? 'font-semibold text-ink' : 'text-ink-muted hover:text-ink'}`}
+              >
+                {SHORT[p.label] ?? p.label}
+                {on && <span aria-hidden="true" className="absolute inset-x-2 bottom-0 h-[3px] rounded-full bg-accent" />}
+              </button>
+            )
+          })}
         </div>
       )}
-      <div role={panels.length > 1 ? 'region' : undefined} aria-label={active.label} className="min-w-0" style={{ width: active.width ?? 160 }}>
+      <div role={panels.length > 1 ? 'region' : undefined} aria-label={active.label} className="min-h-0 min-w-0 flex-1">
         <Active tab={tab} />
       </div>
     </aside>
@@ -46,10 +54,10 @@ export function RightSidebar({ tab }: { tab: Tab }): JSX.Element | null {
   if (!panel) return null
   const Panel = panel.Component
   return (
-    <aside aria-label={panel.label} className="flex w-72 shrink-0 flex-col border-l border-line bg-surface-alt">
-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-line px-3">
-        <h2 className="text-sm font-semibold">{panel.label}</h2>
-        <button className="btn-icon" aria-label={`Close ${panel.label}`} onClick={() => setRight(null)}>
+    <aside aria-label={panel.label} className="flex w-72 shrink-0 flex-col border-s border-line bg-surface-alt">
+      <div className="flex h-9 shrink-0 items-center justify-between border-b border-line pe-1.5 ps-3">
+        <h2 className="text-title">{panel.label}</h2>
+        <button className="btn-icon btn-icon-sm" aria-label={`Close ${panel.label}`} onClick={() => setRight(null)}>
           <IconClose />
         </button>
       </div>

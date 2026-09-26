@@ -8,20 +8,20 @@ export function Toasts(): JSX.Element {
   const toasts = useToasts((s) => s.toasts)
   const dismiss = useToasts((s) => s.dismiss)
   return (
-    <div className="pointer-events-none fixed bottom-4 left-1/2 z-[60] flex -translate-x-1/2 flex-col items-center gap-2">
+    <div className="pointer-events-none fixed bottom-10 left-1/2 z-toast flex -translate-x-1/2 flex-col items-center gap-2">
       {toasts.map((t) => (
         <div
           key={t.id}
           role={t.kind === 'error' ? 'alert' : 'status'}
           className={`pointer-events-auto flex max-w-xl items-center gap-3 rounded-lg border px-4 py-2 shadow-lg ${
             t.kind === 'error'
-              ? 'border-red-500/60 bg-raised text-ink'
+              ? 'border-danger-line/60 bg-raised text-ink'
               : t.kind === 'success'
                 ? 'border-emerald-500/60 bg-raised text-ink'
                 : 'border-line bg-raised text-ink'
           }`}
         >
-          <span className={t.kind === 'error' ? 'font-semibold text-red-600 dark:text-red-400' : 'sr-only'}>
+          <span className={t.kind === 'error' ? 'font-semibold text-danger' : 'sr-only'}>
             {t.kind === 'error' ? 'Error' : t.kind === 'success' ? 'Done' : 'Note'}
           </span>
           <span>{t.message}</span>
@@ -51,7 +51,7 @@ export function JobsTray(): JSX.Element | null {
   const jobs = useJobs((s) => s.jobs)
   if (order.length === 0) return null
   return (
-    <section aria-label="Background tasks" className="fixed bottom-4 right-4 z-[55] flex w-80 flex-col gap-2">
+    <section aria-label="Background tasks" className="fixed bottom-10 right-4 z-[55] flex w-80 flex-col gap-2">
       {order.map((id) => {
         const j = jobs[id]
         if (!j) return null
@@ -74,7 +74,7 @@ export function JobsTray(): JSX.Element | null {
                 </p>
               </>
             ) : (
-              <p className={`mt-1 text-xs ${j.state === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-ink-muted'}`} role={j.state === 'failed' ? 'alert' : 'status'}>
+              <p className={`mt-1 text-xs ${j.state === 'failed' ? 'text-danger' : 'text-ink-muted'}`} role={j.state === 'failed' ? 'alert' : 'status'}>
                 {j.state === 'done' ? 'Finished' : j.state === 'cancelled' ? 'Cancelled' : `Failed: ${j.error ?? 'unknown error'}`}
               </p>
             )}
@@ -99,7 +99,7 @@ export function ConfirmHost(): JSX.Element | null {
           <button
             key={b.value}
             autoFocus={b === initial}
-            className={b.variant === 'primary' ? 'btn-primary' : b.variant === 'danger' ? 'btn border-red-500/60 text-red-700 dark:text-red-300' : 'btn'}
+            className={b.variant === 'primary' ? 'btn-primary' : b.variant === 'danger' ? 'btn border-danger-line/60 text-danger' : 'btn'}
             onClick={() => req.resolve(b.value)}
           >
             {b.label}

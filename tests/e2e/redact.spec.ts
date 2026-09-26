@@ -6,7 +6,7 @@ import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFStream, PDFSt
 import { analyzePage } from '../../src/renderer/src/features/textedit/pdfcontent/analyze'
 import { bytesToLatin1 } from '../../src/renderer/src/features/textedit/pdfcontent/content'
 import { decodeImage } from '../../src/renderer/src/features/redact/logic/imageRedact'
-import { FIX, axeViolations, copyFixture, launch, menuClick, quitDiscarding } from './helpers'
+import { FIX, axeViolations, copyFixture, launch, menuClick, quitDiscarding, clickTool } from './helpers'
 import { decoded, residue } from '../support/redactProof'
 import { flattenText, readPdf } from '../support/pdfText'
 import { openWith } from '../unit/helpers/securityHelpers'
@@ -47,7 +47,7 @@ async function saveNow(page: Page): Promise<void> {
 }
 
 async function search(page: Page, text: string): Promise<void> {
-  await tool(page, 'redact-find').click()
+  await clickTool(page, 'redact-find')
   await panel(page).getByLabel('Text to find').fill(text)
   await page.getByTestId('redact-search').click()
 }
@@ -224,7 +224,7 @@ test.describe('redaction: mark, preview, apply, save, prove', () => {
   test('the text tool marks a selection (exact glyph boxes); Escape/keys, undo of marks and the notice work', async () => {
     const { app, page } = await openDoc('redact-proof.pdf')
     try {
-      await tool(page, 'redact-text').click()
+      await clickTool(page, 'redact-text')
       await expect(tool(page, 'redact-text')).toHaveAttribute('aria-pressed', 'true')
       await expect(panel(page)).toBeVisible() // the tool opens the panel
       // select the heading through the browser selection, as a mouse drag would, then finish it with a mouse-up
@@ -260,7 +260,7 @@ test.describe('redaction: mark, preview, apply, save, prove', () => {
       await expect(marks(page)).toHaveCount(0)
       await expect(page.getByTestId('redact-no-marks')).toBeVisible()
       // Tools ▸ Redact… opens the panel and activates the text tool from the menu
-      await tool(page, 'redact-text').click()
+      await clickTool(page, 'redact-text')
       await expect(tool(page, 'redact-text')).toHaveAttribute('aria-pressed', 'false')
       await menuClick(app, 'Tools', 'Redact…')
       await expect(tool(page, 'redact-text')).toHaveAttribute('aria-pressed', 'true')
@@ -272,7 +272,7 @@ test.describe('redaction: mark, preview, apply, save, prove', () => {
   test('the area tool: draw with the pointer, nudge and resize with the keyboard, edit by number, delete', async () => {
     const { app, page } = await openDoc('redact-proof.pdf')
     try {
-      await tool(page, 'redact-area').click()
+      await clickTool(page, 'redact-area')
       const box = (await pageEl(page).boundingBox())!
       await page.mouse.move(box.x + 100, box.y + 300)
       await page.mouse.down()
@@ -377,7 +377,7 @@ test.describe('find and mark: patterns, regular expressions, review list', () =>
   test('every built-in pattern finds the right matches (and skips the look-alikes); review, skip, mark all, page filter', async () => {
     const { app, page } = await openDoc('redact-patterns.pdf')
     try {
-      await tool(page, 'redact-find').click()
+      await clickTool(page, 'redact-find')
       await panel(page).getByLabel('Search type').selectOption('preset')
       for (const [label, status, first] of PRESET_COUNTS) {
         await panel(page).getByLabel('Pattern', { exact: true }).selectOption({ label })
@@ -416,7 +416,7 @@ test.describe('find and mark: patterns, regular expressions, review list', () =>
   test('custom regular expressions: validated, matched with real geometry, and stopped when they would backtrack forever', async () => {
     const { app, page } = await openDoc('redact-patterns.pdf')
     try {
-      await tool(page, 'redact-find').click()
+      await clickTool(page, 'redact-find')
       await panel(page).getByLabel('Search type').selectOption('regex')
       const re = panel(page).getByLabel('Regular expression')
       const msg = page.getByTestId('redact-regex-message')
@@ -451,7 +451,7 @@ test.describe('find and mark: patterns, regular expressions, review list', () =>
   test('undo and redo of an applied redaction before saving; saving then keeps the version history when asked', async () => {
     const { path, app, page, userData } = await openDoc('redact-patterns.pdf')
     try {
-      await tool(page, 'redact-find').click()
+      await clickTool(page, 'redact-find')
       await panel(page).getByLabel('Search type').selectOption('preset')
       await panel(page).getByLabel('Pattern', { exact: true }).selectOption({ label: 'E-mail addresses' })
       await page.getByTestId('redact-search').click()
@@ -487,7 +487,7 @@ test.describe('apply dialog', () => {
     const positions = JSON.parse(readFileSync(join(FIX, 'redact-proof.json'), 'utf8')).positions as Record<string, { x0: number; y0: number; x1: number; y1: number }>
     const { app, page } = await openDoc('redact-proof.pdf')
     try {
-      await tool(page, 'redact-area').click()
+      await clickTool(page, 'redact-area')
       const r = positions.rawLeft
       await addArea(page, 1, r.x0, 792 - r.y1, r.x1 - r.x0, r.y1 - r.y0)
       await page.getByTestId('redact-open-apply').click()
@@ -531,11 +531,11 @@ test.describe('apply dialog', () => {
       await expect(dialog(page)).toHaveCount(0)
       await expect(dot(page)).toHaveCount(0)
       // the ribbon's Apply button opens the dialog; with nothing marked it explains instead
-      await tool(page, 'redact-apply').click()
+      await clickTool(page, 'redact-apply')
       await expect(dialog(page)).toBeVisible()
       await page.keyboard.press('Escape')
       await panel(page).getByRole('button', { name: 'Clear all' }).click()
-      await tool(page, 'redact-apply').click()
+      await clickTool(page, 'redact-apply')
       await expect(toast(page, 'Nothing is marked for redaction yet')).toBeVisible()
       await expect(dialog(page)).toHaveCount(0)
     } finally {
@@ -621,7 +621,7 @@ test.describe('accessibility of the redaction UI (WCAG 2.1 A/AA, light and dark)
           expect(await axeViolations(page, `${label} ${theme}`)).toEqual([])
         }
       }
-      await tool(page, 'redact-find').click()
+      await clickTool(page, 'redact-find')
       await scan('ribbon and empty panel')
       await panel(page).getByLabel('Text to find').fill('ATTACHSECRET')
       await page.getByTestId('redact-search').click()
@@ -635,7 +635,7 @@ test.describe('accessibility of the redaction UI (WCAG 2.1 A/AA, light and dark)
       await panel(page).getByLabel('Search type').selectOption('literal')
       await page.getByTestId('redact-mark-all').click()
       await scan('panel with marks and area fields')
-      await tool(page, 'redact-area').click()
+      await clickTool(page, 'redact-area')
       await scan('area tool active')
       await page.getByTestId('redact-open-apply').click()
       await scan('apply dialog')

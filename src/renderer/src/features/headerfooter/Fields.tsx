@@ -4,7 +4,7 @@ import { useEffect, useId, useState } from 'react'
 
 export function ErrorText({ id, children }: { id?: string; children: React.ReactNode }): JSX.Element | null {
   return children ? (
-    <p id={id} role="alert" className="mt-1 text-xs text-red-700 dark:text-red-400">
+    <p id={id} role="alert" className="mt-1 text-xs text-danger">
       {children}
     </p>
   ) : null

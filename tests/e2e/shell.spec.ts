@@ -23,12 +23,12 @@ test.describe('shell: tabs, windows, session, security', () => {
       await page.getByRole('tab', { name: /mixed\.pdf/ }).focus()
       await page.keyboard.press('ArrowLeft')
       await expect(page.getByRole('tab', { name: /sample\.pdf/ })).toHaveAttribute('aria-selected', 'true')
-      await expect(page.getByRole('toolbar').getByText('/ 5')).toBeVisible()
+      await expect(page.getByRole('toolbar').getByText('of 5')).toBeVisible()
 
       // Close by button; the other tab becomes active.
       await page.locator('[data-close="sample.pdf"]').click()
       await expect(page.getByRole('tab')).toHaveCount(1)
-      await expect(page.getByRole('toolbar').getByText('/ 4')).toBeVisible()
+      await expect(page.getByRole('toolbar').getByText('of 4')).toBeVisible()
       // Keyboard equivalent of the ✕: Delete on the focused tab.
       await page.getByRole('tab', { name: /mixed\.pdf/ }).focus()
       await page.keyboard.press('Delete')

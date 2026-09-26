@@ -5,7 +5,7 @@ import { currentBytes } from '../../edit/session'
 import { getLoaded } from '../../pdf/docCache'
 import { AnnotationMode, useViewerOptions } from '../../state/viewerOptions'
 import { selectActiveTab, useTabs } from '../../state/tabs'
-import { useActiveView } from '../../state/workspace'
+import { useActiveView, useWorkspace } from '../../state/workspace'
 import { extractFormModel, FILLABLE_KINDS } from './model'
 import { currentOverrideVersion, settleOverrides, useForms } from './store'
 
@@ -70,6 +70,7 @@ export function FormsHost(): JSX.Element | null {
     []
   )
 
+  const rightPanelOpen = useWorkspace((s) => s.rightPanel !== null)
   const interactive = !!info?.model && info.model.fields.length > 0 && !info.encrypted && !viewId
   useEffect(() => {
     useViewerOptions.getState().setAnnotationMode(interactive ? AnnotationMode.ENABLE_FORMS : AnnotationMode.ENABLE)
@@ -77,10 +78,12 @@ export function FormsHost(): JSX.Element | null {
   useEffect(() => () => useViewerOptions.getState().setAnnotationMode(AnnotationMode.ENABLE), [])
 
   if (!docId || !info?.model || viewId || dismissed) return null
+  // Float over the page area: above the status bar, and left of a right-hand panel when one is open (w-72).
+  const place = `fixed bottom-10 ${rightPanelOpen ? 'right-[312px]' : 'right-6'} z-[45]`
 
   if (info.encrypted) {
     return (
-      <div role="region" aria-label="Form" className="fixed bottom-4 right-6 z-[45] max-w-sm rounded-lg border border-line bg-raised px-3 py-2 text-sm shadow-lg">
+      <div role="region" aria-label="Form" className={`${place} max-w-sm rounded-lg border border-line bg-raised px-3 py-2 text-sm shadow-3`}>
         This form is password protected, so it can’t be filled in. Remove the password first, then open it again.
       </div>
     )
@@ -93,7 +96,7 @@ export function FormsHost(): JSX.Element | null {
       role="region"
       aria-label="Form"
       data-testid="form-banner"
-      className="fixed bottom-4 right-6 z-[45] flex max-w-xl items-center gap-3 rounded-lg border border-line bg-raised px-3 py-2 text-sm shadow-lg"
+      className={`${place} flex max-w-xl items-center gap-3 rounded-lg border border-line bg-raised px-3 py-2 text-sm shadow-3`}
     >
       <span>
         This form has {fields.length} {fields.length === 1 ? 'field' : 'fields'}

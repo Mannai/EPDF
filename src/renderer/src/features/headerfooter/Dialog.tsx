@@ -245,16 +245,16 @@ function DialogBody({ docId, initialGroup, initialPage }: { docId: string; initi
   }
 
   return (
-    <Modal title="Headers, footers and watermarks" onClose={onClose} wide>
-      <div data-testid="hf-dialog" data-ready={loaded ? 'true' : 'false'}>
+    <Modal title="Headers, footers and watermarks" description="Add text, page numbers or a watermark to the pages of this document." onClose={onClose} size="l">
+      <div data-testid="hf-dialog" data-ready={loaded ? 'true' : 'false'} className="flex min-h-0 flex-1 flex-col">
         <Tabs group={group} onChange={setGroup} disabled={!!busy} />
         {!loaded || !settings || !gs ? (
           <p className="py-8 text-center text-sm text-ink-muted" role="status">
             Reading the document…
           </p>
         ) : (
-          <div role="tabpanel" id={`hf-panel-${group}`} aria-labelledby={`hf-tab-${group}`} className="mt-3 flex gap-4">
-            <div className="min-w-0 flex-1">
+          <div role="tabpanel" id={`hf-panel-${group}`} aria-labelledby={`hf-tab-${group}`} className="-me-6 flex min-h-0 flex-1">
+            <div className="min-w-0 flex-1 overflow-y-auto py-4 pe-6">
               <ExistingNotice group={group} summary={loaded.summary[group]} mode={mode} onMode={(m) => setModes((s) => ({ ...s, [group]: m }))} />
               {gs.group === 'headerfooter' || gs.group === 'bates' ? (
                 <HeaderFooterForm key={group} value={gs.settings} bates={gs.group === 'bates'} rangeError={rangeError} onChange={(s) => update({ group: gs.group, settings: s } as GroupSettings)} />
@@ -287,29 +287,31 @@ function DialogBody({ docId, initialGroup, initialPage }: { docId: string; initi
                 }}
               />
             </div>
-            <div className="w-56 shrink-0">
-              <div className="flex items-end gap-1">
-                <label htmlFor="hf-preview-page" className="text-xs text-ink-muted">
-                  Preview page
-                </label>
-                <input id="hf-preview-page" className="field h-7 w-14" inputMode="numeric" value={previewPage} aria-invalid={!pageOk} onChange={(e) => setPreviewPage(e.target.value.replace(/[^0-9]/g, ''))} />
-                <span className="pb-1 text-xs text-ink-muted">of {numPages}</span>
+            <aside aria-label="Preview" className="flex w-[280px] shrink-0 flex-col items-center gap-2.5 border-s border-line bg-surface-alt px-5 py-4">
+              <div className="flex w-full items-center justify-between gap-2">
+                <span className="font-semibold">Preview</span>
+                <span className="flex items-center gap-1 text-ink-muted">
+                  <label htmlFor="hf-preview-page">Page</label>
+                  <input id="hf-preview-page" aria-label="Preview page" className="field field-sm w-12 text-center" inputMode="numeric" value={previewPage} aria-invalid={!pageOk} onChange={(e) => setPreviewPage(e.target.value.replace(/[^0-9]/g, ''))} />
+                  <span>of {numPages}</span>
+                </span>
               </div>
-              <div className="mt-2 flex min-h-[17.5rem] items-center justify-center rounded-md border border-line bg-canvas p-1">
-                <canvas ref={canvasRef} data-testid="hf-preview" data-state={previewState} role="img" aria-label={`Preview of page ${pageNo} with the ${GROUP_LABEL[group].toLowerCase()}`} className="bg-white shadow" />
+              <div className="flex min-h-[17.5rem] w-full items-center justify-center">
+                <canvas ref={canvasRef} data-testid="hf-preview" data-state={previewState} role="img" aria-label={`Preview of page ${pageNo} with the ${GROUP_LABEL[group].toLowerCase()}`} className="bg-white shadow-2" />
               </div>
-              <p className="mt-1 text-xs text-ink-muted" aria-live="polite">
+              <p className="m-0 text-center text-caption text-ink-muted" aria-live="polite">
                 {pageOk ? previewNote : `Enter a page from 1 to ${numPages}.`}
               </p>
-            </div>
+            </aside>
           </div>
         )}
         <ErrorText>{error}</ErrorText>
         {problem && loaded && <p className="mt-2 text-xs text-ink-muted">{problem}</p>}
-        <div className="mt-4 flex items-center justify-end gap-2">
+        {/* Windows 11 footer: the primary action first, buttons sharing the width; "Remove" stays at the start. */}
+        <div className="dialog-footer -mx-6">
           {busy ? (
             <>
-              <span role="status" aria-live="polite" className="mr-auto text-sm" data-testid="hf-progress">
+              <span role="status" aria-live="polite" className="me-auto" data-testid="hf-progress">
                 {busy.total > 0 ? `Applying… page ${Math.min(busy.done + 1, busy.total)} of ${busy.total}` : 'Working…'}
               </span>
               <button className="btn" onClick={() => (cancelled.current = true)}>
@@ -319,15 +321,15 @@ function DialogBody({ docId, initialGroup, initialPage }: { docId: string; initi
           ) : (
             <>
               {summary && summary.pages + summary.foreignPages > 0 && (
-                <button className="btn mr-auto" onClick={() => void remove()}>
+                <button className="btn-ghost" onClick={() => void remove()}>
                   Remove {GROUP_NOUN[group]}
                 </button>
               )}
-              <button className="btn" onClick={close}>
-                Cancel
-              </button>
               <button className="btn-primary" disabled={!loaded || !!problem} onClick={() => void apply()}>
                 {updating && mode === 'replace' ? 'Update' : 'Apply'}
+              </button>
+              <button className="btn" onClick={close}>
+                Cancel
               </button>
             </>
           )}
@@ -352,7 +354,7 @@ function Tabs({ group, onChange, disabled }: { group: MarkGroup; onChange(g: Mar
     refs.current.get(GROUPS[next]!)?.focus()
   }
   return (
-    <div role="tablist" aria-label="What to add" className="flex gap-1 border-b border-line" onKeyDown={onKey}>
+    <div role="tablist" aria-label="What to add" className="tabs" onKeyDown={onKey}>
       {GROUPS.map((g) => (
         <button
           key={g}
@@ -367,7 +369,7 @@ function Tabs({ group, onChange, disabled }: { group: MarkGroup; onChange(g: Mar
           tabIndex={g === group ? 0 : -1}
           disabled={disabled}
           onClick={() => onChange(g)}
-          className={`-mb-px rounded-t-md border px-3 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent ${g === group ? 'border-line border-b-raised bg-raised font-semibold' : 'border-transparent text-ink-muted hover:text-ink'}`}
+          className="tab"
         >
           {GROUP_LABEL[g]}
         </button>

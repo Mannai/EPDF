@@ -104,7 +104,7 @@ export function SaveStep(): JSX.Element {
         </div>
       )}
       {error && (
-        <p role="alert" className="mb-3 rounded-md border border-red-500 p-3 text-sm text-red-700 dark:text-red-300" data-testid="save-error">
+        <p role="alert" className="mb-3 rounded-md border border-danger-line p-3 text-sm text-danger" data-testid="save-error">
           {error}
         </p>
       )}

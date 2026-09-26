@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { PDFArray, PDFDocument, PDFName, PDFRawStream, decodePDFRawStream } from 'pdf-lib'
 import { analyzePage } from '../../src/renderer/src/features/textedit/pdfcontent/analyze'
 import { buildBlocks } from '../../src/renderer/src/features/textedit/pdfcontent/blocks'
-import { FIX, axeViolations, canvasHasInk, copyFixture, gotoPage, launch, quitDiscarding } from './helpers'
+import { FIX, axeViolations, canvasHasInk, copyFixture, gotoPage, launch, quitDiscarding, clickTool } from './helpers'
 
 test.beforeAll(() => {
   execFileSync(process.execPath, ['tests/fixtures/edit-content.mjs', FIX], { stdio: 'ignore' })
@@ -87,7 +87,7 @@ test.describe('edit text', () => {
   test('edits a line in place with the document’s own font: saved file changed, old text gone, rest untouched', async () => {
     const { path, app, page } = await openDoc('ec-text.pdf')
     try {
-      await tool(page, 'edit-text').click()
+      await clickTool(page, 'edit-text')
       await expect(tool(page, 'edit-text')).toHaveAttribute('aria-pressed', 'true')
       const editor = await beginEdit(page, 'Total: 1234')
       await expect(editor).toHaveValue('Total: 1234')
@@ -122,7 +122,7 @@ test.describe('edit text', () => {
   test('undo and redo move the edit in and out; escape cancels without leaving a mark', async () => {
     const { app, page } = await openDoc('ec-text.pdf')
     try {
-      await tool(page, 'edit-text').click()
+      await clickTool(page, 'edit-text')
       // cancel with Escape
       const editor = await beginEdit(page, 'Signed by Alice')
       await editor.fill('Signed by Bob')
@@ -149,7 +149,7 @@ test.describe('edit text', () => {
   test('blur commits the edit; an unchanged text does not create an undo step', async () => {
     const { app, page } = await openDoc('ec-text.pdf')
     try {
-      await tool(page, 'edit-text').click()
+      await clickTool(page, 'edit-text')
       const editor = await beginEdit(page, 'Total: 1234')
       await editor.press('Enter') // nothing changed
       await expect(page.getByTestId('textedit-editor')).toHaveCount(0)
@@ -168,7 +168,7 @@ test.describe('edit text', () => {
   test('font size and color from the tool options, keeping the document font', async () => {
     const { path, app, page } = await openDoc('ec-text.pdf')
     try {
-      await tool(page, 'edit-text').click()
+      await clickTool(page, 'edit-text')
       const editor = await beginEdit(page, 'Signed by Alice')
       await page.getByTestId('textedit-size').fill('24')
       await page.getByTestId('textedit-color').fill('#0000ff')
@@ -193,7 +193,7 @@ test.describe('edit text', () => {
   test('paragraph scope edits a whole paragraph and re-wraps it', async () => {
     const { path, app, page } = await openDoc('ec-text.pdf')
     try {
-      await tool(page, 'edit-text').click()
+      await clickTool(page, 'edit-text')
       await page.getByTestId('textedit-scope').selectOption('paragraph')
       const editor = await beginEdit(page, /Edit paragraph: The revenue grew/)
       await expect(editor).toHaveValue(
@@ -224,7 +224,7 @@ test.describe('edit text', () => {
   test('a Unicode replacement uses the bundled font and says so; the page still renders and old text is gone', async () => {
     const { path, app, page } = await openDoc('ec-text.pdf')
     try {
-      await tool(page, 'edit-text').click()
+      await clickTool(page, 'edit-text')
       await replaceText(page, 'Quarterly Report', 'Квартальный отчёт')
       await expect(toast(page, 'Font not available in this PDF — used Noto Sans')).toBeVisible()
       await expect(pageEl(page).locator('.textLayer')).toContainText('Квартальный отчёт')
@@ -246,7 +246,7 @@ test.describe('edit text', () => {
   test('characters missing from an embedded subset font fall back to Helvetica (announced)', async () => {
     const { path, app, page } = await openDoc('ec-embedded.pdf')
     try {
-      await tool(page, 'edit-text').click()
+      await clickTool(page, 'edit-text')
       await replaceText(page, 'Embedded font sample', 'Embedded font zebra quiz')
       await expect(toast(page, 'Font not available in this PDF — used Helvetica')).toBeVisible()
       await expect(pageEl(page).locator('.textLayer')).toContainText('Embedded font zebra quiz')
@@ -263,7 +263,7 @@ test.describe('edit text', () => {
   test('characters the subset already contains are edited in place', async () => {
     const { path, app, page } = await openDoc('ec-embedded.pdf')
     try {
-      await tool(page, 'edit-text').click()
+      await clickTool(page, 'edit-text')
       await replaceText(page, 'Another embedded line', 'Another line embedded')
       await expect(toast(page, 'Edited using the document’s own font')).toBeVisible()
       await save(page)
@@ -276,7 +276,7 @@ test.describe('edit text', () => {
   test('clicking outside any text does nothing; a page with no text says so', async () => {
     const { app, page } = await openDoc('ec-text.pdf')
     try {
-      await tool(page, 'edit-text').click()
+      await clickTool(page, 'edit-text')
       await pageEl(page).getByTestId('textedit-layer').click({ position: { x: 300, y: 400 } })
       await expect(page.getByTestId('textedit-editor')).toHaveCount(0)
       await expect(dot(page)).toHaveCount(0)
@@ -286,7 +286,7 @@ test.describe('edit text', () => {
     }
     const scan = await openDoc('ec-scan.pdf')
     try {
-      await tool(scan.page, 'edit-text').click()
+      await clickTool(scan.page, 'edit-text')
       await expect(scan.page.getByTestId('textedit-banner')).toContainText('No editable text on this page')
       await pageEl(scan.page).getByTestId('textedit-layer').click({ position: { x: 200, y: 300 } })
       await expect(toast(scan.page, 'No editable text on this page')).toBeVisible()
@@ -299,7 +299,7 @@ test.describe('edit text', () => {
   test('rotated text and text in a shared form are outlined as not editable and explain why when clicked', async () => {
     const { app, page } = await openDoc('ec-special.pdf')
     try {
-      await tool(page, 'edit-text').click()
+      await clickTool(page, 'edit-text')
       const rotated = textBlock(page, 'Sideways text')
       await expect(rotated).toHaveAttribute('data-editable', 'false')
       await rotated.click()
@@ -323,7 +323,7 @@ test.describe('edit text', () => {
   test('the accessibility scan is clean with the tool and the editor open (light and dark)', async () => {
     const { app, page } = await openDoc('ec-text.pdf')
     try {
-      await tool(page, 'edit-text').click()
+      await clickTool(page, 'edit-text')
       await expect(textBlock(page, 'Total: 1234')).toBeVisible()
       expect(await axeViolations(page, 'edit text idle light')).toEqual([])
       await beginEdit(page, 'Total: 1234')
@@ -343,7 +343,7 @@ test.describe('edit text', () => {
   test('the edit survives autosave-style reopen: Save, close, open again shows the new text', async () => {
     const { path, app, page } = await openDoc('ec-text.pdf')
     try {
-      await tool(page, 'edit-text').click()
+      await clickTool(page, 'edit-text')
       await replaceText(page, 'Total: 1234', 'Total: 777')
       await save(page)
     } finally {
@@ -396,7 +396,7 @@ test.describe('edit images', () => {
   test('outlines images, shows their box, and moves one through the numeric fields (one undo step)', async () => {
     const { path, app, page } = await openDoc('ec-images.pdf')
     try {
-      await tool(page, 'edit-images').click()
+      await clickTool(page, 'edit-images')
       await expect(outlines(page)).toHaveCount(2)
       await outlines(page).nth(0).click()
       await expect(field(page, 'x')).toHaveValue('72')
@@ -429,7 +429,7 @@ test.describe('edit images', () => {
   test('resizes with the fields and keeps proportions; the page still renders the image', async () => {
     const { path, app, page } = await openDoc('ec-images.pdf')
     try {
-      await tool(page, 'edit-images').click()
+      await clickTool(page, 'edit-images')
       await outlines(page).nth(0).click()
       await field(page, 'w').fill('300') // "Keep proportions" is on: height follows
       await expect(field(page, 'h')).toHaveValue('150')
@@ -461,7 +461,7 @@ test.describe('edit images', () => {
   test('drags an image with the mouse; handles resize, Shift keeps the aspect ratio', async () => {
     const { path, app, page } = await openDoc('ec-images.pdf')
     try {
-      await tool(page, 'edit-images').click()
+      await clickTool(page, 'edit-images')
       const s = await pageScale(page)
       const o = outlines(page).nth(0)
       await o.scrollIntoViewIfNeeded()
@@ -502,7 +502,7 @@ test.describe('edit images', () => {
   test('arrow keys nudge the selected image; a burst of key presses is a single undo step', async () => {
     const { path, app, page } = await openDoc('ec-images.pdf')
     try {
-      await tool(page, 'edit-images').click()
+      await clickTool(page, 'edit-images')
       const o = outlines(page).nth(0)
       await o.click()
       await o.focus()
@@ -519,7 +519,7 @@ test.describe('edit images', () => {
     }
     const second = await openDoc('ec-images.pdf')
     try {
-      await tool(second.page, 'edit-images').click()
+      await clickTool(second.page, 'edit-images')
       const o = outlines(second.page).nth(0)
       await o.click()
       await o.focus()
@@ -535,7 +535,7 @@ test.describe('edit images', () => {
   test('deletes images (Delete key and button), leaves no dangling image data, and undo/redo work', async () => {
     const { path, app, page } = await openDoc('ec-images.pdf')
     try {
-      await tool(page, 'edit-images').click()
+      await clickTool(page, 'edit-images')
       expect(await imageObjectCount(path)).toBe(2)
       const first = outlines(page).nth(0)
       await first.click()
@@ -566,7 +566,7 @@ test.describe('edit images', () => {
     const { path, app, page } = await openDoc('ec-images.pdf')
     try {
       await mockOpenDialog(app, join(FIX, 'ec-picture.png'))
-      await tool(page, 'edit-images').click()
+      await clickTool(page, 'edit-images')
       // red box 200x100 (aspect 2) gets a 50x25 picture (aspect 2): exact fit
       await outlines(page).nth(0).click()
       await page.getByTestId('imageedit-replace').click()
@@ -604,7 +604,7 @@ test.describe('edit images', () => {
       const jpg = join(dirname(path), 'picture.jpg')
       writeFileSync(jpg, Buffer.from(jpgB64, 'base64'))
       await mockOpenDialog(app, jpg)
-      await tool(page, 'edit-images').click()
+      await clickTool(page, 'edit-images')
       await outlines(page).nth(0).click()
       await page.getByTestId('imageedit-replace').click()
       await expect(toast(page, /Image replaced/)).toBeVisible()
@@ -641,7 +641,7 @@ test.describe('edit images', () => {
     const { path, app, page } = await openDoc('ec-images.pdf')
     try {
       await mockOpenDialog(app, join(FIX, 'ec-picture.png'))
-      await tool(page, 'edit-images').click()
+      await clickTool(page, 'edit-images')
       const s = await pageScale(page)
       await page.getByTestId('imageedit-add').click()
       await expect(pageEl(page).getByTestId('imageedit-banner')).toContainText('Click on the page where')
@@ -673,7 +673,7 @@ test.describe('edit images', () => {
   test('a cancelled dialog, a fake image and an unsupported file change nothing', async () => {
     const { app, page } = await openDoc('ec-images.pdf')
     try {
-      await tool(page, 'edit-images').click()
+      await clickTool(page, 'edit-images')
       await mockOpenDialog(app, null)
       await page.getByTestId('imageedit-add').click()
       await expect(pageEl(page).getByTestId('imageedit-banner')).toHaveCount(0)
@@ -711,7 +711,7 @@ test.describe('edit images', () => {
   test('a page without images says so; images can be edited on another page', async () => {
     const { app, page } = await openDoc('ec-images.pdf')
     try {
-      await tool(page, 'edit-images').click()
+      await clickTool(page, 'edit-images')
       await gotoPage(page, 2)
       await expect(pageEl(page, 2).getByTestId('imageedit-banner')).toContainText('No images on this page')
     } finally {
@@ -726,7 +726,7 @@ test.describe('edit images', () => {
         nativeTheme.themeSource = 'light'
       })
       await expect(page.locator('html')).not.toHaveClass(/dark/)
-      await tool(page, 'edit-images').click()
+      await clickTool(page, 'edit-images')
       await outlines(page).nth(0).click()
       await expect(field(page, 'w')).toHaveValue('200')
       expect(await axeViolations(page, 'edit images selected light')).toEqual([])
@@ -747,7 +747,7 @@ test.describe('edit images', () => {
         nativeTheme.themeSource = 'light'
       })
       await expect(page.locator('html')).not.toHaveClass(/dark/)
-      await tool(page, 'edit-text').click()
+      await clickTool(page, 'edit-text')
       await beginEdit(page, 'Total: 1234')
       expect(await axeViolations(page, 'edit text editing (explicit light)')).toEqual([])
     } finally {
@@ -758,7 +758,7 @@ test.describe('edit images', () => {
   test('images on a rotated page: outlines follow the rotation and edits land in unrotated page space', async () => {
     const { path, app, page } = await openDoc('ec-images.pdf')
     try {
-      await tool(page, 'edit-images').click()
+      await clickTool(page, 'edit-images')
       const before = (await outlines(page).nth(0).boundingBox())!
       expect(before.width).toBeGreaterThan(before.height) // 200 x 100 landscape box
       await app.evaluate(({ Menu }) => {
@@ -794,7 +794,7 @@ test.describe('edit images', () => {
         const doc = Menu.getApplicationMenu()!.items.find((x) => x.label.replace('&', '') === 'Document')!
         doc.submenu!.items.find((x) => x.label === 'Rotate Page Clockwise')!.click()
       })
-      await tool(page, 'edit-text').click()
+      await clickTool(page, 'edit-text')
       const b = pageEl(page).getByRole('button', { name: /Can’t edit text: Total: 1234/ })
       await expect(b).toBeVisible()
       await b.click()
@@ -808,9 +808,9 @@ test.describe('edit images', () => {
   test('text and image edits share one history: text edit, image move, undo twice', async () => {
     const { path, app, page } = await openDoc('ec-images.pdf')
     try {
-      await tool(page, 'edit-text').click()
+      await clickTool(page, 'edit-text')
       await replaceText(page, 'Image page', 'Pictures page')
-      await tool(page, 'edit-images').click()
+      await clickTool(page, 'edit-images')
       await outlines(page).nth(0).click()
       await field(page, 'x').fill('100')
       await field(page, 'apply').click()

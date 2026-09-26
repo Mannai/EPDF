@@ -71,7 +71,7 @@ export function PageStrip({ showTools = true }: { showTools?: boolean }): JSX.El
         </div>
       )}
       {sel?.state === 'error' && (
-        <p role="alert" className="mt-2 text-sm text-red-700 dark:text-red-300">
+        <p role="alert" className="mt-2 text-sm text-danger">
           Page {index + 1}: {sel.error}
         </p>
       )}

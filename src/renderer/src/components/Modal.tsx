@@ -6,14 +6,20 @@ import { useEffect, useRef } from 'react'
  */
 export function Modal({
   title,
+  description,
   children,
   onClose,
-  wide
+  wide,
+  size
 }: {
   title: string
+  /** One line under the title saying what the dialog does (Windows 11 dialog style). */
+  description?: string
   children: React.ReactNode
   onClose(): void
   wide?: boolean
+  /** s = 400 px, m = 640 px (same as `wide`), l = 900 px. */
+  size?: 's' | 'm' | 'l'
 }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const returnFocus = useRef<Element | null>(document.activeElement)
@@ -53,18 +59,25 @@ export function Modal({
     }
   }
 
+  const width = size === 'l' ? 'w-[900px]' : size === 'm' || wide ? 'w-[640px]' : 'w-[400px]'
+  // A large dialog has a fixed height and scrolls inside its own panes, so its footer never scrolls away.
+  const large = size === 'l'
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-24" onKeyDown={onKeyDown}>
+    <div className="dialog-scrim" onKeyDown={onKeyDown}>
       <div
         ref={ref}
         role="dialog"
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={`${wide ? 'w-[40rem]' : 'w-96'} max-h-[80vh] max-w-[92vw] overflow-y-auto rounded-lg border border-line bg-raised p-5 shadow-2xl`}
+        className={`modal epdf-dialog ${width} ${large ? 'h-[min(700px,85vh)]' : 'overflow-y-auto'} focus-visible:outline-none`}
       >
-        <h2 className="mb-3 text-base font-semibold">{title}</h2>
-        {children}
+        <div className="flex shrink-0 flex-col gap-0.5 px-6 pb-3 pt-5">
+          <h2 className="dialog-title m-0">{title}</h2>
+          {description && <p className="dialog-desc m-0">{description}</p>}
+        </div>
+        {/* The last row of buttons becomes the grey footer (see .epdf-dialog-body in index.css). */}
+        <div className={large ? 'flex min-h-0 flex-1 flex-col px-6' : 'epdf-dialog-body px-6 pb-5'}>{children}</div>
       </div>
     </div>
   )

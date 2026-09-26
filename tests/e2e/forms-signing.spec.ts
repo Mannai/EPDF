@@ -7,7 +7,7 @@ import { deflateSync } from 'node:zlib'
 import Database from 'better-sqlite3'
 import { PDFCheckBox, PDFDict, PDFDocument, PDFName, PDFRadioGroup, PDFRawStream, PDFStream, decodePDFRawStream } from 'pdf-lib'
 import { pageModel } from '../support/retrofit'
-import { FIX, axeViolations, copyFixture, launch, menuClick, quitDiscarding } from './helpers'
+import { FIX, axeViolations, copyFixture, launch, menuClick, quitDiscarding, clickTool } from './helpers'
 
 test.beforeAll(() => {
   execFileSync(process.execPath, ['tests/fixtures/forms-signing.mjs', resolve(FIX)], { stdio: 'inherit' })
@@ -492,7 +492,7 @@ test.describe('form filling', () => {
       await expect(page.locator('[data-page="1"] .textLayer')).toContainText('Encrypted form')
 
       // Editing unlocks the document in memory and applies the edit as one undo step.
-      await tool(page, 'Add text').click()
+      await clickTool(page, 'Add text')
       const b = await box(page.locator('[data-page="1"]'))
       await page.mouse.click(b.x + 200, b.y + 200)
       await page.getByLabel('Text to add to the page').fill('unlocked edit')
@@ -567,7 +567,7 @@ test.describe('add text and stamps', () => {
     try {
       await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
       await expect(page.getByTestId('form-banner')).toHaveCount(0) // a flat PDF has no form banner
-      await tool(page, 'Add text').click()
+      await clickTool(page, 'Add text')
       await page.getByLabel('Size').selectOption('18')
       await page.getByLabel('Color').fill('#ff0000')
       const pb = await box(page.locator('[data-page="1"]'))
@@ -609,7 +609,7 @@ test.describe('add text and stamps', () => {
     const { app, page } = await launch({ files: [path] })
     try {
       await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
-      await tool(page, 'Add text').click()
+      await clickTool(page, 'Add text')
       const pb = await box(page.locator('[data-page="1"]'))
       const s = pb.width / 612
 
@@ -670,7 +670,7 @@ test.describe('add text and stamps', () => {
     const { app, page } = await launch({ files: [copyFixture('flat.pdf')] })
     try {
       await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
-      await tool(page, 'Add text').click()
+      await clickTool(page, 'Add text')
       const pb = await box(page.locator('[data-page="1"]'))
       await page.mouse.click(pb.x + 100, pb.y + 100)
       // (Chinese used to be refused here; the text engine draws it now. No bundled font has Tibetan.)
@@ -691,14 +691,14 @@ test.describe('add text and stamps', () => {
       await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
       const pb = await box(page.locator('[data-page="1"]'))
       const s = pb.width / 612
-      await tool(page, 'Check').click()
+      await clickTool(page, 'Check')
       await page.mouse.click(pb.x + 100, pb.y + 400)
       await expect(undoBtn(page, 'Undo Add check mark')).toBeEnabled()
-      await tool(page, 'Cross').click()
+      await clickTool(page, 'Cross')
       await page.mouse.click(pb.x + 200, pb.y + 400)
-      await tool(page, 'Dot').click()
+      await clickTool(page, 'Dot')
       await page.mouse.click(pb.x + 300, pb.y + 400)
-      await tool(page, 'Date').click()
+      await clickTool(page, 'Date')
       await page.mouse.click(pb.x + 400, pb.y + 400)
       const today = await page.evaluate(() => new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }))
 
@@ -728,7 +728,7 @@ test.describe('add text and stamps', () => {
     const { app, page } = await launch({ files: [path] })
     try {
       await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
-      await tool(page, 'Add text').click()
+      await clickTool(page, 'Add text')
       const pb = await box(page.locator('[data-page="1"]'))
       const s = pb.width / 792
       await page.mouse.click(pb.x + 300, pb.y + 350)
@@ -772,7 +772,7 @@ test.describe('visual signatures', () => {
       expect(Buffer.from(list[0].png).subarray(1, 4).toString()).toBe('PNG')
 
       await gotoPageInput(page, 2)
-      await tool(page, 'Sign').click()
+      await clickTool(page, 'Sign')
       await expect(page.getByLabel('Signature to place', { exact: true })).toHaveValue(String(list[0].id))
       const pb = await box(page.locator('[data-page="2"]'))
       const s = pb.width / 612
@@ -815,7 +815,7 @@ test.describe('visual signatures', () => {
       await createDrawnSignature(page, app)
       const list = await signatureList(page)
       const aspect = list[0].width / list[0].height
-      await tool(page, 'Sign').click()
+      await clickTool(page, 'Sign')
       await page.getByLabel('Add date').check()
       const pb = await box(page.locator('[data-page="1"]'))
       const s = pb.width / 612
@@ -871,7 +871,7 @@ test.describe('visual signatures', () => {
       await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
       await createDrawnSignature(page, app)
       const [sig] = await signatureList(page)
-      await tool(page, 'Sign').click()
+      await clickTool(page, 'Sign')
       const pb = await box(page.locator('[data-page="1"]'))
       const s = pb.width / 792
       await page.mouse.click(pb.x + 400, pb.y + 300)
@@ -1141,7 +1141,7 @@ test.describe('visual signatures', () => {
 
       // With a signature saved: cancel a placement.
       await createDrawnSignature(page, app)
-      await tool(page, 'Sign').click()
+      await clickTool(page, 'Sign')
       const pb = await box(page.locator('[data-page="1"]'))
       await page.mouse.click(pb.x + 300, pb.y + 300)
       await expect(page.getByTestId('signature-draft')).toBeVisible()
@@ -1192,7 +1192,7 @@ test.describe('visual signatures', () => {
     const { app, page } = await launch({ files: [copyFixture('flat.pdf')] })
     try {
       await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
-      await tool(page, 'Sign').click()
+      await clickTool(page, 'Sign')
       await expect(page.getByText('Visual signature only. Not a digital certificate signature.')).toBeVisible()
       await menuClick(app, 'Tools', 'Signatures…')
       await expect(page.getByTestId('visual-signature-notice')).toContainText('not a cryptographic digital signature')
@@ -1218,7 +1218,7 @@ test.describe('accessibility (WCAG 2.1 A/AA)', () => {
         expect(await axeWithOverlays(page, `form ${theme ? 'dark' : 'light'}`)).toEqual([])
       }
       await dark(app, false)
-      await tool(page, 'Add text').click()
+      await clickTool(page, 'Add text')
       const pb = await box(page.locator('[data-page="1"]'))
       await page.mouse.click(pb.x + 300, pb.y + 350)
       await page.getByLabel('Text to add to the page').fill('a11y')
@@ -1257,7 +1257,7 @@ test.describe('accessibility (WCAG 2.1 A/AA)', () => {
       await dialog.getByRole('button', { name: 'Save signature' }).click()
       await expect(dialog.getByTestId('signature-list')).toBeVisible()
       await dialog.getByRole('button', { name: 'Close' }).click()
-      await tool(page, 'Sign').click()
+      await clickTool(page, 'Sign')
       const pb = await box(page.locator('[data-page="1"]'))
       await page.mouse.click(pb.x + 300, pb.y + 300)
       await expect(page.getByTestId('signature-draft')).toBeVisible()

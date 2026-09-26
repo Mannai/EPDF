@@ -257,7 +257,7 @@ function FindSection({ docId, tab }: { docId: string; tab: Tab }): JSX.Element {
           <label className="flex items-center gap-1 text-xs">
             <input type="checkbox" checked={form.caseSensitive} onChange={(e) => patch({ caseSensitive: e.target.checked })} /> Match case
           </label>
-          <p id="redact-regex-msg" className={`text-xs ${problem && form.regex ? 'text-red-700 dark:text-red-400' : 'text-ink-muted'}`} data-testid="redact-regex-message">
+          <p id="redact-regex-msg" className={`text-xs ${problem && form.regex ? 'text-danger' : 'text-ink-muted'}`} data-testid="redact-regex-message">
             {problem && form.regex ? problem : 'Runs with a step limit, so a pattern that would hang is stopped.'}
           </p>
         </>
@@ -283,7 +283,7 @@ function FindSection({ docId, tab }: { docId: string; tab: Tab }): JSX.Element {
         )}
       </div>
       <p role="status" aria-live="polite" className="text-xs text-ink-muted" data-testid="redact-search-status">
-        {d.searchError ? <span className="text-red-700 dark:text-red-400">{d.searchError}</span> : d.searching ? 'Searching all pages…' : d.resultsLabel}
+        {d.searchError ? <span className="text-danger">{d.searchError}</span> : d.searching ? 'Searching all pages…' : d.resultsLabel}
       </p>
       {d.results.length > 0 && (
         <>

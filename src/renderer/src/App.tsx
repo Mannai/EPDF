@@ -3,10 +3,10 @@ import { Dialogs } from './components/DialogsHost'
 import { EmptyState } from './components/EmptyState'
 import { ConfirmHost, JobsTray, Toasts } from './components/Overlays'
 import { SearchBar } from './components/SearchBar'
+import { Ribbon, RibbonTabs } from './components/Ribbon'
 import { LeftSidebar, RightSidebar } from './components/SidePanels'
-import { TabBar } from './components/TabBar'
-import { Toolbar } from './components/Toolbar'
-import { ToolsBar } from './components/ToolsBar'
+import { StatusBar } from './components/StatusBar'
+import { TitleBar } from './components/TitleBar'
 import { isDirty, useEdits } from './edit/session'
 import { getCommands, getView, runCommand } from './features/api'
 import { isEditableTarget, matchesShortcut } from './features/keys'
@@ -63,6 +63,7 @@ function useAppBootstrap(): void {
       useTabs.getState().setSettings(settings)
       useUi.getState().setSidebarOpen(settings.sidebarOpen)
       useUi.getState().setDarkMode(info.darkMode)
+      useUi.getState().setCustomTitleBar(info.platform === 'win32')
       // Only now can main safely deliver queued documents.
       await api.ready()
       performance.mark('epdf:interactive') // read by scripts/perf.mjs (launch-time measurement)
@@ -138,7 +139,13 @@ export function App(): JSX.Element {
   const CustomView = view?.Component
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark)
+    // Switch the theme in one step: without this, every control's colour transition would fade from the old palette.
+    const root = document.documentElement
+    root.classList.add('theme-switching')
+    root.classList.toggle('dark', dark)
+    void root.offsetHeight // apply the new colours before transitions come back
+    const id = requestAnimationFrame(() => root.classList.remove('theme-switching'))
+    return () => cancelAnimationFrame(id)
   }, [dark])
 
   useEffect(() => {
@@ -151,11 +158,16 @@ export function App(): JSX.Element {
   }, [tab?.docId])
 
   return (
-    <div className="flex h-full flex-col" {...drop}>
-      <TabBar />
-      {tab && !view?.hideToolbar && <Toolbar tab={tab} />}
-      {tab && !view && <ToolsBar tab={tab} />}
-      <main id="doc-panel" role="tabpanel" aria-labelledby={tab ? `tab-${tab.docId}` : undefined} className="relative flex min-h-0 flex-1">
+    <div className="flex h-full flex-col bg-chrome" {...drop}>
+      <TitleBar tab={tab ?? null} quickAccess={!view?.hideToolbar} />
+      <RibbonTabs tab={tab && !view ? tab : null} />
+      {tab && !view && <Ribbon tab={tab} />}
+      <main
+        id="doc-panel"
+        role="tabpanel"
+        aria-labelledby={tab ? `tab-${tab.docId}` : undefined}
+        className="relative flex min-h-0 flex-1 border-t border-black/[.06] bg-surface dark:border-white/[.06]"
+      >
         {tab && !view && sidebarOpen && tab.status === 'ready' && <LeftSidebar tab={tab} />}
         <div className="relative min-w-0 flex-1">
           {tab && CustomView ? (
@@ -171,11 +183,12 @@ export function App(): JSX.Element {
         </div>
         {tab && !view && tab.status === 'ready' && <RightSidebar tab={tab} />}
         {dragging && (
-          <div className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-xl border-2 border-dashed border-accent bg-accent/10 text-lg font-medium text-accent">
+          <div className="pointer-events-none absolute inset-2 z-popover flex items-center justify-center rounded-lg border-2 border-dashed border-accent bg-accent/10 text-heading text-accent">
             Drop PDF files to open
           </div>
         )}
       </main>
+      {tab && !view?.hideToolbar && <StatusBar tab={tab} />}
       <div className="sr-only" role="status" aria-live="polite">
         {hasTabs ? announcement : ''}
       </div>

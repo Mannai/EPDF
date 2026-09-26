@@ -113,7 +113,7 @@ function LinkDialog(): JSX.Element | null {
                     className="field ms-6 text-start"
                   />
                   {problem && (
-                    <span id="link-problem" role="alert" className="ms-6 text-sm text-red-700 dark:text-red-300">
+                    <span id="link-problem" role="alert" className="ms-6 text-sm text-danger">
                       Problem: {problem}
                     </span>
                   )}
@@ -183,7 +183,7 @@ function LinkDialog(): JSX.Element | null {
                     )}
                   </div>
                   {problem && (
-                    <span role="alert" className="text-sm text-red-700 dark:text-red-300">
+                    <span role="alert" className="text-sm text-danger">
                       Problem: {problem}
                     </span>
                   )}

@@ -3,7 +3,7 @@ import { useEdits } from '../edit/session'
 import { closeTabInteractive } from '../features/core/closeFlow'
 import { useTabs } from '../state/tabs'
 import { openFiles } from '../state/actions'
-import { IconClose, IconPlus } from './Icons'
+import { Icon } from './Icons'
 
 const TAB_MIME = 'application/x-epdf-tab'
 
@@ -35,8 +35,9 @@ export function TabBar(): JSX.Element {
   }
 
   return (
-    <div className="flex h-9 shrink-0 items-end gap-0.5 border-b border-line bg-surface-alt px-2">
-      <div role="tablist" aria-label="Open documents" className="flex min-w-0 items-end gap-0.5 overflow-x-auto">
+    // Lives in the title bar: tabs sit on its bottom edge, like browser and Office document tabs.
+    <div className="flex min-w-0 shrink items-end gap-0.5 self-end">
+      <div role="tablist" aria-label="Open documents" className="flex min-w-0 items-end gap-0.5 overflow-hidden">
         {tabs.map((t, i) => {
           const active = t.docId === activeId
           return (
@@ -83,12 +84,13 @@ export function TabBar(): JSX.Element {
                 setDropIndex(null)
               }}
               onDragEnd={() => setDropIndex(null)}
-              className={`group relative flex h-8 max-w-56 min-w-28 shrink-0 cursor-default items-center gap-1 rounded-t-md border border-b-0 pl-3 pr-1 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${
-                active ? 'border-line bg-surface text-ink' : 'border-transparent text-ink-muted hover:bg-surface/60'
+              className={`focus-inset group relative flex h-8 min-w-28 max-w-56 shrink cursor-default items-center gap-2 rounded-t-lg pe-1 ps-3 ${
+                active ? 'bg-surface text-ink shadow-[0_0_0_1px_rgb(0_0_0/.06)] dark:shadow-[0_0_0_1px_rgb(255_255_255/.06)]' : 'text-ink-muted hover:bg-hover'
               }`}
             >
-              {dropIndex === i && <span className="absolute -left-px top-1 bottom-1 w-0.5 bg-accent" />}
-              {dropIndex === i + 1 && i === tabs.length - 1 && <span className="absolute -right-px top-1 bottom-1 w-0.5 bg-accent" />}
+              {dropIndex === i && <span className="absolute -left-px bottom-1 top-1 w-0.5 bg-accent" />}
+              {dropIndex === i + 1 && i === tabs.length - 1 && <span className="absolute -right-px bottom-1 top-1 w-0.5 bg-accent" />}
+              <Icon name="file" size={14} className="shrink-0 text-danger" />
               <span className="min-w-0 flex-1 truncate">
                 {t.name}
                 {edits[t.docId]?.dirty && (
@@ -107,16 +109,16 @@ export function TabBar(): JSX.Element {
                   e.stopPropagation()
                   closeTab(t.docId)
                 }}
-                className="flex h-5 w-5 shrink-0 items-center justify-center rounded hover:bg-line/60"
+                className="app-no-drag flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-muted hover:bg-hover hover:text-ink"
               >
-                <IconClose />
+                <Icon name="x" size={12} />
               </span>
             </div>
           )
         })}
       </div>
-      <button type="button" className="btn-icon mb-0.5 shrink-0" aria-label="Open PDF" title="Open PDF (Ctrl+O)" onClick={() => void openFiles()}>
-        <IconPlus />
+      <button type="button" className="btn-icon btn-icon-sm mb-0.5 shrink-0" aria-label="Open PDF" title="Open PDF (Ctrl+O)" onClick={() => void openFiles()}>
+        <Icon name="plus" size={14} />
       </button>
     </div>
   )

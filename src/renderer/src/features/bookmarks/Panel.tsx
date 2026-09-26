@@ -18,6 +18,7 @@ import {
   styleAction
 } from './actions'
 import { refreshBookmarks, useDocBookmarks } from './data'
+import { Icon } from '../../components/Icons'
 import { IconAddBookmark, IconChevron, IconClearFilter, IconDown, IconGenerate, IconIndent, IconOutdent, IconRename, IconTarget, IconTrash, IconUp } from './icons'
 import type { BmNode } from './pdf/model'
 import { contains, locate } from './pdf/tree'
@@ -289,32 +290,33 @@ export function BookmarksPanel({ tab }: { tab: Tab }): JSX.Element {
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="bookmarks-panel" data-count={total}>
       {/* Toolbar */}
-      <div role="toolbar" aria-label="Bookmark tools" className="flex flex-wrap items-center gap-0.5 border-b border-line p-1">
-        <button className="btn-icon" title="Add bookmark for the selected text or the current page" aria-label="Add bookmark" onClick={() => void addBookmarkHere(docId)}>
+      <div role="toolbar" aria-label="Bookmark tools" className="flex min-h-9 flex-wrap items-center gap-0.5 border-b border-line px-1.5 py-1">
+        <button className="btn-ghost btn-sm px-2" title="Add bookmark for the selected text or the current page" aria-label="Add bookmark" onClick={() => void addBookmarkHere(docId)}>
           <IconAddBookmark />
+          <span>Add</span>
         </button>
-        <button className="btn-icon" title="Rename (F2)" aria-label="Rename bookmark" disabled={!canReorder} onClick={() => selectedId && ui().setEditing(selectedId)}>
+        <button className="btn-ghost btn-sm px-2" title="Generate bookmarks from headings" aria-label="Generate bookmarks from headings" onClick={() => ui().openGenerate(docId)}>
+          <IconGenerate />
+          <span>From headings</span>
+        </button>
+        <span className="mx-0.5 h-5 w-px bg-line" aria-hidden="true" />
+        <button className="btn-icon btn-icon-sm" title="Rename (F2)" aria-label="Rename bookmark" disabled={!canReorder} onClick={() => selectedId && ui().setEditing(selectedId)}>
           <IconRename />
         </button>
-        <button className="btn-icon" title="Delete (Delete)" aria-label="Delete bookmark" disabled={!canReorder} onClick={() => selectedId && void deleteAction(docId, selectedId)}>
+        <button className="btn-icon btn-icon-sm" title="Delete (Delete)" aria-label="Delete bookmark" disabled={!canReorder} onClick={() => selectedId && void deleteAction(docId, selectedId)}>
           <IconTrash />
         </button>
-        <span className="mx-0.5 h-5 w-px bg-line" aria-hidden="true" />
-        <button className="btn-icon" title="Nest under the previous bookmark (Alt+Right)" aria-label="Nest bookmark" disabled={!canReorder} onClick={() => selectedId && void indentAction(docId, selectedId)}>
+        <button className="btn-icon btn-icon-sm" title="Nest under the previous bookmark (Alt+Right)" aria-label="Nest bookmark" disabled={!canReorder} onClick={() => selectedId && void indentAction(docId, selectedId)}>
           <IconIndent />
         </button>
-        <button className="btn-icon" title="Move out one level (Alt+Left)" aria-label="Un-nest bookmark" disabled={!canReorder} onClick={() => selectedId && void outdentAction(docId, selectedId)}>
+        <button className="btn-icon btn-icon-sm" title="Move out one level (Alt+Left)" aria-label="Un-nest bookmark" disabled={!canReorder} onClick={() => selectedId && void outdentAction(docId, selectedId)}>
           <IconOutdent />
         </button>
-        <button className="btn-icon" title="Move up (Alt+Up)" aria-label="Move bookmark up" disabled={!canReorder} onClick={() => selectedId && void moveByAction(docId, selectedId, -1)}>
+        <button className="btn-icon btn-icon-sm" title="Move up (Alt+Up)" aria-label="Move bookmark up" disabled={!canReorder} onClick={() => selectedId && void moveByAction(docId, selectedId, -1)}>
           <IconUp />
         </button>
-        <button className="btn-icon" title="Move down (Alt+Down)" aria-label="Move bookmark down" disabled={!canReorder} onClick={() => selectedId && void moveByAction(docId, selectedId, 1)}>
+        <button className="btn-icon btn-icon-sm" title="Move down (Alt+Down)" aria-label="Move bookmark down" disabled={!canReorder} onClick={() => selectedId && void moveByAction(docId, selectedId, 1)}>
           <IconDown />
-        </button>
-        <span className="mx-0.5 h-5 w-px bg-line" aria-hidden="true" />
-        <button className="btn-icon" title="Generate bookmarks from headings" aria-label="Generate bookmarks from headings" onClick={() => ui().openGenerate(docId)}>
-          <IconGenerate />
         </button>
       </div>
 
@@ -347,15 +349,14 @@ export function BookmarksPanel({ tab }: { tab: Tab }): JSX.Element {
       </div>
 
       {empty ? (
-        <div className="flex flex-col gap-3 p-3 text-sm" data-testid="bookmarks-empty">
-          <p className="text-ink-muted">This document has no bookmarks.</p>
-          <button className="btn justify-start" onClick={() => void addBookmarkHere(docId)}>
-            <IconAddBookmark />
-            <span>Add bookmark for this page</span>
-          </button>
-          <button className="btn justify-start" onClick={() => ui().openGenerate(docId)}>
-            <IconGenerate />
-            <span>Generate from headings…</span>
+        <div className="flex flex-col items-center gap-2.5 px-4 py-6 text-center" data-testid="bookmarks-empty">
+          <span className="text-ink-muted">
+            <Icon name="bookmark" size={28} />
+          </span>
+          <p className="m-0 font-semibold">No bookmarks yet</p>
+          <p className="m-0 text-pretty text-ink-muted">Bookmarks let you jump straight to the pages that matter.</p>
+          <button className="btn-primary mt-1" onClick={() => void addBookmarkHere(docId)}>
+            Bookmark this page
           </button>
         </div>
       ) : (

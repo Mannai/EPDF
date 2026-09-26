@@ -30,7 +30,7 @@ export function PasswordDialog(): JSX.Element | null {
           onChange={(e) => setPw(e.target.value)}
         />
         {req.incorrect && (
-          <p id="pw-error" role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">
+          <p id="pw-error" role="alert" className="mt-2 text-sm text-danger">
             That password is incorrect.
           </p>
         )}

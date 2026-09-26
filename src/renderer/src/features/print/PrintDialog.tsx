@@ -198,7 +198,7 @@ function PrintDialogInner({ tab, mode, close }: { tab: Tab; mode: 'print' | 'pdf
               </div>
             </div>
             {rangeErr && (
-              <p id="print-range-error" role="alert" className="mt-1 text-sm text-red-700 dark:text-red-400">
+              <p id="print-range-error" role="alert" className="mt-1 text-sm text-danger">
                 {rangeErr}
               </p>
             )}
@@ -287,7 +287,7 @@ function PrintDialogInner({ tab, mode, close }: { tab: Tab; mode: 'print' | 'pdf
             Print annotations (comments, highlights, markup)
           </label>
           {optErr && (
-            <p role="alert" className="text-sm text-red-700 dark:text-red-400">
+            <p role="alert" className="text-sm text-danger">
               {optErr}
             </p>
           )}
@@ -307,7 +307,7 @@ function PrintDialogInner({ tab, mode, close }: { tab: Tab; mode: 'print' | 'pdf
         </p>
       )}
       {error && (
-        <p role="alert" className="mt-3 text-sm text-red-700 dark:text-red-400">
+        <p role="alert" className="mt-3 text-sm text-danger">
           {error}
         </p>
       )}

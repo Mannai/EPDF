@@ -120,7 +120,7 @@ function DialogBody({ close }: { close(): void }): JSX.Element {
       </p>
 
       {blocked && (
-        <p role="alert" data-testid="encryption-unavailable" className="mb-3 rounded-md border border-red-500/60 px-3 py-2 text-sm">
+        <p role="alert" data-testid="encryption-unavailable" className="mb-3 rounded-md border border-danger-line/60 px-3 py-2 text-sm">
           Your system’s secure storage isn’t available, so a signature can’t be saved safely. Epdf never stores signatures without
           encryption. On Linux, install and unlock a keyring (for example GNOME Keyring or KWallet), then reopen this window.
         </p>
@@ -201,7 +201,7 @@ function DialogBody({ close }: { close(): void }): JSX.Element {
           </button>
         </div>
         {error && (
-          <p role="alert" data-testid="signature-error" className="mt-2 text-red-600 dark:text-red-400">
+          <p role="alert" data-testid="signature-error" className="mt-2 text-danger">
             {error}
           </p>
         )}

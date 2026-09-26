@@ -95,7 +95,7 @@ export function Preview({ docId, afterBytes, marks }: { docId: string; afterByte
         <span className="text-xs text-ink-muted">{mode === 'before' ? 'The document now, with the marks in red.' : 'What the saved file will show.'}</span>
       </div>
       {error && (
-        <p role="alert" className="text-sm text-red-700 dark:text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {error}
         </p>
       )}

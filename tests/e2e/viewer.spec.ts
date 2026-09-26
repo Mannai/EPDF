@@ -6,7 +6,7 @@ test.describe('viewer', () => {
     const { app, page } = await launch({ files: [fixture('sample.pdf')] })
     try {
       await expect(page.getByRole('tab', { name: /sample\.pdf/ })).toBeVisible()
-      await expect(page.getByRole('toolbar').getByText('/ 5')).toBeVisible()
+      await expect(page.getByRole('toolbar').getByText('of 5')).toBeVisible()
       await expect(page.locator('.epdf-page canvas').first()).toBeVisible()
       await expect.poll(() => canvasHasInk(page, '[data-page="1"] canvas')).toBe(true)
       await expect(page.locator('[data-page="1"] .textLayer')).toContainText('Epdf sample page 1')
@@ -169,7 +169,7 @@ test.describe('viewer', () => {
   test('handles pages of different sizes and orientations', async () => {
     const { app, page } = await launch({ files: [fixture('mixed.pdf')] })
     try {
-      await expect(page.getByRole('toolbar').getByText('/ 4')).toBeVisible()
+      await expect(page.getByRole('toolbar').getByText('of 4')).toBeVisible()
       await page.getByLabel('Zoom level').selectOption('100')
       await gotoPage(page, 2)
       const landscape = (await page.locator('[data-page="2"]').boundingBox())!
@@ -192,7 +192,7 @@ test.describe('viewer', () => {
       console.log(`large.pdf: launch → first page painted in ${firstPaintMs} ms`)
       expect(firstPaintMs).toBeLessThan(6000) // generous CI bound; the target (<3s) is logged above
 
-      await expect(page.getByRole('toolbar').getByText('/ 500')).toBeVisible()
+      await expect(page.getByRole('toolbar').getByText('of 500')).toBeVisible()
       const mounted = () => page.locator('.epdf-page').count()
       expect(await mounted()).toBeLessThan(15)
 

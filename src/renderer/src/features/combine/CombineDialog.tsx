@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Icon } from '../../components/Icons'
 import { Modal } from '../../components/Modal'
 import { EngineChoice } from '../create/EngineChoice'
 import { describeKind } from '../create/flow'
@@ -48,12 +49,24 @@ export function CombineDialog(): JSX.Element | null {
   }
 
   return (
-    <Modal title="Combine files" onClose={s.close} wide>
-      <p id="combine-help" className="mb-2 text-sm text-ink-muted">
-        Files are combined from top to bottom. Drag a file to reorder it, or focus its “Reorder” button and press Alt+Up or Alt+Down.
-      </p>
+    <Modal title="Combine files" description="Join several files into one PDF, in the order you choose." onClose={s.close} size={s.items.length ? 'm' : undefined}>
+      {s.items.length > 0 && (
+        <p id="combine-help" className="mb-2 text-caption text-ink-muted">
+          Files are combined from top to bottom. Drag a file to reorder it, or focus its “Reorder” button and press Alt+Up or Alt+Down.
+        </p>
+      )}
       {s.items.length === 0 ? (
-        <p className="mb-3 rounded-md border border-dashed border-line p-4 text-center text-ink-muted">No files yet. Choose “Add files…” to start.</p>
+        <div className="mb-4 flex flex-col items-center gap-2.5 rounded border border-dashed border-line-strong bg-surface-alt px-5 py-7 text-center">
+          <span className="text-ink-muted">
+            <Icon name="file-plus" size={28} />
+          </span>
+          <p className="m-0 font-semibold">No files yet</p>
+          <p className="m-0 text-ink-muted">Add the files you want to join. You can change the order afterwards.</p>
+          <button type="button" className="btn" onClick={() => void addCombineFiles()}>
+            <Icon name="plus" size={14} />
+            Add files…
+          </button>
+        </div>
       ) : (
         <ul aria-label="Files to combine, in order" className="mb-3 divide-y divide-line rounded-md border border-line" data-testid="combine-list">
           {s.items.map((item, index) => {
@@ -104,7 +117,7 @@ export function CombineDialog(): JSX.Element | null {
                     {describeKind(item)} · {item.pages === null ? 'pages counted when combined' : plural(item.pages, 'page')} · {fmtSize(item.size)}
                   </span>
                   {problem && (
-                    <span role="alert" className="mt-1 block text-sm text-red-600 dark:text-red-400" data-testid="combine-problem">
+                    <span role="alert" className="mt-1 block text-sm text-danger" data-testid="combine-problem">
                       {item.problem ? 'Cannot be combined: ' : 'Pages: '}
                       {problem}
                     </span>
@@ -154,20 +167,23 @@ export function CombineDialog(): JSX.Element | null {
       <p role="status" aria-live="polite" className="sr-only" data-testid="combine-announce">
         {s.announcement}
       </p>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <button type="button" className="btn" onClick={() => void addCombineFiles()}>
-          Add files…
-        </button>
-        <span className="text-sm text-ink-muted" data-testid="combine-summary">
+      <div className={`mb-3 flex items-center justify-between gap-3 ${s.items.length === 0 ? 'sr-only' : ''}`}>
+        {s.items.length > 0 && (
+          <button type="button" className="btn" onClick={() => void addCombineFiles()}>
+            <Icon name="plus" size={14} />
+            Add files…
+          </button>
+        )}
+        <span className="text-caption text-ink-muted" data-testid="combine-summary">
           {plural(s.items.length, 'file')}
           {totalKnown && s.items.length > 0 ? ` · ${plural(totalPages, 'page')} before page ranges` : ''}
         </span>
       </div>
-      <label className="mb-3 flex items-start gap-2">
-        <input type="checkbox" className="mt-1 accent-accent" checked={s.bookmarks} onChange={(e) => s.setBookmarks(e.target.checked)} />
-        <span>
+      <label className="mb-1 flex items-start gap-2.5">
+        <input type="checkbox" className="check" checked={s.bookmarks} onChange={(e) => s.setBookmarks(e.target.checked)} />
+        <span className="flex flex-col">
           Add a bookmark for each file
-          <span className="block text-sm text-ink-muted">Each file’s own bookmarks are kept below its bookmark.</span>
+          <span className="text-caption text-ink-muted">Each file’s own bookmarks are kept underneath it.</span>
         </span>
       </label>
       {hasImages && (

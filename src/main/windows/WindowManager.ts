@@ -24,6 +24,20 @@ export interface ManagedWindow {
 /** How long a renderer gets to acknowledge a close request before we assume it is hung. */
 export const CLOSE_ACK_TIMEOUT_MS = 2500
 
+/**
+ * Windows: the app draws its own title bar (quick-access buttons, document tabs, search), and Windows draws the
+ * minimise / maximise / close buttons over its right end (`titleBarOverlay`), so snap layouts, hover and the
+ * system menu stay native. Colours follow the theme; see `chromeOverlay`. Height matches the renderer's title bar.
+ */
+export const TITLE_BAR_HEIGHT = 40
+export const customTitleBar = process.platform === 'win32'
+
+export function chromeOverlay(dark: boolean): { color: string; symbolColor: string; height: number } {
+  return dark
+    ? { color: '#1c1e22', symbolColor: '#e8eaed', height: TITLE_BAR_HEIGHT } // --c-chrome / --c-ink (dark)
+    : { color: '#eef1f5', symbolColor: '#1f2328', height: TITLE_BAR_HEIGHT } // --c-chrome / --c-ink (light)
+}
+
 export class WindowManager {
   private windows = new Map<number, ManagedWindow>()
   onClosed?: (w: ManagedWindow) => void
@@ -41,7 +55,8 @@ export class WindowManager {
       minHeight: 400,
       show: false,
       title: 'Epdf',
-      backgroundColor: nativeTheme.shouldUseDarkColors ? '#1b1c1f' : '#ffffff',
+      backgroundColor: nativeTheme.shouldUseDarkColors ? '#1c1e22' : '#eef1f5',
+      ...(customTitleBar ? { titleBarStyle: 'hidden' as const, titleBarOverlay: chromeOverlay(nativeTheme.shouldUseDarkColors) } : {}),
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
         contextIsolation: true,

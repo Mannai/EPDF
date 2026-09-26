@@ -7,7 +7,7 @@ import { PDFDict, PDFDocument, PDFName, PDFString } from 'pdf-lib'
 import { grayPng } from '../support/png'
 import { appearanceModels, appearanceOnlyPdf, norm, pageModel, pdfjsAnnotations, pageTexts } from '../support/retrofit'
 import { inkBox, similarity, toInk, type Ink } from '../support/textCompare'
-import { FIX, copyFixture, launch, menuClick, quitDiscarding } from './helpers'
+import { FIX, copyFixture, launch, menuClick, quitDiscarding, clickTool } from './helpers'
 
 /**
  * Every feature that writes text into a PDF, driven through the real app with Arabic (and Hebrew / mixed) text:
@@ -33,7 +33,6 @@ async function save(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(dot(page)).toHaveCount(0)
 }
-const ribbonTool = (page: Page, label: string) => page.locator('button[data-tool]', { hasText: label })
 
 async function open(file: string): Promise<{ app: ElectronApplication; page: Page; path: string }> {
   const path = copyFixture(file)
@@ -176,7 +175,7 @@ test('Add text: Arabic typed in the box is drawn on the page, right-aligned, rea
   const { app, page, path } = await open('flat.pdf')
   const AR = 'مرحبا بكم في Epdf'
   try {
-    await ribbonTool(page, 'Add text').click()
+    await clickTool(page, 'Add text')
     const pb = (await page.locator('[data-page="1"]').boundingBox())!
     await page.mouse.click(pb.x + 150, pb.y + pb.height * 0.45) // an empty part of the page
     const area = page.getByLabel('Text to add to the page')
@@ -211,7 +210,7 @@ test('Markup text box: Arabic /Contents and /RC are logical, the appearance read
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1500, 1000))
     await page.getByLabel('Zoom level').selectOption('fit-page')
     await page.waitForTimeout(800)
-    await page.getByRole('toolbar', { name: 'Editing tools' }).getByRole('button', { name: 'Text box', exact: true }).click()
+    await clickTool(page, 'Text box')
     await page.waitForTimeout(500)
     const pb = (await page.locator('[data-page="1"]').boundingBox())!
     const pt = (x: number, y: number) => ({ x: pb.x + (x / 612) * pb.width, y: pb.y + ((792 - y) / 792) * pb.height })
@@ -282,7 +281,7 @@ test('Redaction: a custom Arabic overlay text is shaped on the marks and the sel
   try {
     await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
     await expect(page.locator('[data-page="1"] .textLayer')).not.toBeEmpty()
-    await page.locator('[data-tool="redact-find"]').click()
+    await clickTool(page, 'redact-find')
     const panel = page.getByTestId('redact-panel')
     await panel.getByLabel('Text to find').fill('TOPSECRET')
     await page.getByTestId('redact-search').click()

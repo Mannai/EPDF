@@ -173,7 +173,7 @@ export function CompressDialog(): JSX.Element | null {
       )}
 
       {s.phase === 'error' && (
-        <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400" data-testid="compress-error">
+        <p role="alert" className="mb-3 text-sm text-danger" data-testid="compress-error">
           {s.error}
         </p>
       )}

@@ -33,7 +33,7 @@ function PasswordPromptDialog(): JSX.Element | null {
           onChange={(e) => setPw(e.target.value)}
         />
         {req.incorrect && (
-          <p id={errId} role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">
+          <p id={errId} role="alert" className="mt-2 text-sm text-danger">
             That password is incorrect.
           </p>
         )}
@@ -203,7 +203,7 @@ function ProtectDialog(): JSX.Element | null {
         </p>
 
         {errors.length > 0 && (
-          <div role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">
+          <div role="alert" className="mb-3 text-sm text-danger">
             <ul className="list-disc pl-5">
               {errors.map((e) => (
                 <li key={e}>{e}</li>

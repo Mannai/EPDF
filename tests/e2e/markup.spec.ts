@@ -9,7 +9,7 @@ import { listLocated } from '../../src/renderer/src/features/markup/pdf/annots'
 import { pdfRectToView } from '../../src/renderer/src/features/markup/pdf/geometry'
 import { get, getDict, getName, getNumbers, getString } from '../../src/renderer/src/features/markup/pdf/pdfobj'
 import { readAnnotations } from '../../src/renderer/src/features/markup/pdf/read'
-import { axeViolations, copyFixture, gotoPage, launch, quitDiscarding } from './helpers'
+import { axeViolations, copyFixture, gotoPage, launch, quitDiscarding, clickTool } from './helpers'
 
 const PW = 612
 const PH = 792
@@ -27,7 +27,7 @@ const tool = (page: Page, name: string): Locator => page.getByRole('toolbar', { 
 
 /** Activates the Select tool and waits until the page overlay has read the document's annotations. */
 async function selectTool(page: Page): Promise<void> {
-  await tool(page, 'Select').click()
+  await clickTool(page, 'Select')
   await expect(page.locator('[data-testid="markup-select-layer"][data-ready="true"]').first()).toBeAttached()
 }
 
@@ -231,25 +231,26 @@ test.describe('markup: text markup', () => {
   test('highlight, underline, strikethrough and squiggly on selected text are saved as standard annotations that render', async () => {
     const { app, page, path } = await openMarkup()
     try {
-      // The tools live in the Comment group of the ribbon.
-      await expect(page.getByRole('group', { name: 'Comment' }).getByRole('button')).toHaveCount(13)
+      // The tools live in the Comment task of the ribbon (select, 4 text markups, note, text box, stamp); the shape and
+      // ink tools are in the Draw task.
+      await expect(page.getByRole('group', { name: 'Comment' }).getByRole('button')).toHaveCount(8)
       const region = (y: number): [number, number, number, number] => ptsRegion(72, y - 6, 330, y + 18)
       const before = await regionAvg(page, 1, region(700))
 
-      await tool(page, 'Highlight').click()
+      await clickTool(page, 'Highlight')
       await afterEdit(page, () => selectText(page, 1, 'Epdf markup fixture line one'))
       await expect(undoButton(page, 'Add highlight')).toBeEnabled()
       await expect(page.getByRole('status').filter({ hasText: 'Highlight added on page 1' })).toBeAttached()
 
-      await tool(page, 'Underline').click()
+      await clickTool(page, 'Underline')
       await afterEdit(page, () => selectText(page, 1, 'Second line for underline'))
       await expect(undoButton(page, 'Add underline')).toBeEnabled()
 
-      await tool(page, 'Strikethrough').click()
+      await clickTool(page, 'Strikethrough')
       await afterEdit(page, () => selectText(page, 1, 'Third line for strikethrough'))
       await expect(undoButton(page, 'Add strikethrough')).toBeEnabled()
 
-      await tool(page, 'Squiggly').click()
+      await clickTool(page, 'Squiggly')
       await afterEdit(page, () => selectText(page, 1, 'Fourth line squiggly text'))
       await expect(undoButton(page, 'Add squiggly underline')).toBeEnabled()
 
@@ -301,7 +302,7 @@ test.describe('markup: text markup', () => {
   test('with no selection nothing is created; a selection made earlier is marked up by the tool shortcut', async () => {
     const { app, page } = await openMarkup()
     try {
-      await tool(page, 'Highlight').click()
+      await clickTool(page, 'Highlight')
       // A plain click / drag over empty paper selects no text: no edit.
       const p = await pdfPoint(page, 1, 300, 200)
       await drag(page, p, { x: p.x + 60, y: p.y + 20 })
@@ -337,7 +338,7 @@ test.describe('markup: notes, text boxes, drawings, shapes and stamps', () => {
       }
 
       // Sticky note: click, type in the popup editor, Enter.
-      await tool(page, 'Sticky note').click()
+      await clickTool(page, 'Sticky note')
       await afterEdit(page, async () => {
         const at = await pdfPoint(page, 1, 500, 700)
         await page.mouse.click(at.x, at.y)
@@ -349,7 +350,7 @@ test.describe('markup: notes, text boxes, drawings, shapes and stamps', () => {
       await added('Add sticky note')
 
       // Text box: drag a rectangle, type, Ctrl+Enter.
-      await tool(page, 'Text box').click()
+      await clickTool(page, 'Text box')
       await afterEdit(page, async () => {
         await drag(page, await pdfPoint(page, 1, 72, 490), await pdfPoint(page, 1, 250, 440))
         const box = page.getByLabel('Text box text')
@@ -360,7 +361,7 @@ test.describe('markup: notes, text boxes, drawings, shapes and stamps', () => {
       await added('Add text box')
 
       // Freehand drawing with several points.
-      await tool(page, 'Draw').click()
+      await clickTool(page, 'Draw')
       await afterEdit(page, async () => {
         const pts = [
           [300, 480],
@@ -382,7 +383,7 @@ test.describe('markup: notes, text boxes, drawings, shapes and stamps', () => {
       await added('Add drawing')
 
       const drawShape = async (name: string, label: string, a: [number, number], b: [number, number]): Promise<void> => {
-        await tool(page, name).click()
+        await clickTool(page, name)
         await afterEdit(page, async () => drag(page, await pdfPoint(page, 1, a[0], a[1]), await pdfPoint(page, 1, b[0], b[1])))
         await added(label)
       }
@@ -392,7 +393,7 @@ test.describe('markup: notes, text boxes, drawings, shapes and stamps', () => {
       await drawShape('Arrow', 'Add arrow', [440, 380], [540, 330])
 
       // Built-in stamp: pick one, click.
-      await tool(page, 'Stamp').click()
+      await clickTool(page, 'Stamp')
       await page.getByRole('combobox', { name: 'Stamp' }).selectOption('Confidential')
       await afterEdit(page, async () => {
         const at = await pdfPoint(page, 1, 150, 240)
@@ -500,14 +501,14 @@ test.describe('markup: notes, text boxes, drawings, shapes and stamps', () => {
     const bad = join(mkdtempSync(join(tmpdir(), 'epdf-bad-')), 'not-an-image.png')
     writeFileSync(bad, 'this is not a png')
     try {
-      await tool(page, 'Text box').click()
+      await clickTool(page, 'Text box')
       await drag(page, await pdfPoint(page, 1, 72, 490), await pdfPoint(page, 1, 250, 440))
       const box = page.getByLabel('Text box text')
       await expect(box).toBeVisible()
       await box.press('Control+Enter') // nothing typed
       await expect(box).toHaveCount(0)
 
-      await tool(page, 'Sticky note').click()
+      await clickTool(page, 'Sticky note')
       const at = await pdfPoint(page, 1, 400, 600)
       await page.mouse.click(at.x, at.y)
       const editor = page.getByRole('dialog', { name: 'New sticky note' })
@@ -515,7 +516,7 @@ test.describe('markup: notes, text boxes, drawings, shapes and stamps', () => {
       await page.keyboard.press('Escape')
       await expect(editor).toHaveCount(0)
 
-      await tool(page, 'Stamp').click()
+      await clickTool(page, 'Stamp')
       await stubOpenDialog(app, { canceled: true, filePaths: [] })
       await page.getByRole('button', { name: 'Choose image…' }).click()
       await expect(page.getByRole('combobox', { name: 'Stamp' })).not.toHaveValue('__custom')
@@ -917,7 +918,7 @@ test.describe('markup: rotated pages', () => {
       }
 
       // Highlight the vertical text of the rotated page.
-      await tool(page, 'Highlight').click()
+      await clickTool(page, 'Highlight')
       await afterEdit(page, () => selectText(page, 2, 'Rotated page first line'), 2)
       await expect(undoButton(page, 'Add highlight')).toBeEnabled()
       // Regression: after an edit the reloaded document used to lay the landscape page out with page 1's
@@ -925,7 +926,7 @@ test.describe('markup: rotated pages', () => {
       await expect.poll(async () => { const b = await pageBox(page, 2); return b.width > b.height }).toBe(true)
 
       // Rectangle and text box drawn in the displayed (rotated) orientation.
-      await tool(page, 'Rectangle').click()
+      await clickTool(page, 'Rectangle')
       await afterEdit(
         page,
         async () => {
@@ -936,7 +937,7 @@ test.describe('markup: rotated pages', () => {
       )
       await expect(undoButton(page, 'Add rectangle')).toBeEnabled()
 
-      await tool(page, 'Text box').click()
+      await clickTool(page, 'Text box')
       await afterEdit(
         page,
         async () => {
@@ -1024,7 +1025,7 @@ test.describe('markup: accessibility', () => {
       await scan('select tool + comments light')
 
       for (const t of ['Highlight', 'Sticky note', 'Text box', 'Draw', 'Rectangle', 'Arrow', 'Stamp']) {
-        await tool(page, t).click()
+        await clickTool(page, t)
         await scan(`${t} options light`)
       }
       // A reply form and filters in the panel.
@@ -1038,7 +1039,7 @@ test.describe('markup: accessibility', () => {
       await expect(page.locator('html')).toHaveClass(/dark/)
       await scan('reply form dark')
       for (const t of ['Highlight', 'Text box', 'Stamp', 'Select']) {
-        await tool(page, t).click()
+        await clickTool(page, t)
         await scan(`${t} options dark`)
       }
       await page.getByLabel('Filter by status').selectOption('Completed')

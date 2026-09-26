@@ -93,11 +93,20 @@ export async function axeViolations(page: Page, label: string): Promise<string[]
   const found = await page.evaluate(async () => {
     type Axe = { run(ctx: unknown, opts: unknown): Promise<{ violations: { id: string; nodes: { target: string[] }[] }[] }> }
     const axe = (window as unknown as { axe: Axe }).axe
-    const r = await axe.run(
-      { exclude: [['.epdf-page']] },
-      { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] } }
-    )
-    return r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`)
+    // Measure the settled colours: controls fade colours on hover/press (~100 ms), and a scan taken right after a
+    // click or hover would otherwise read a half-faded colour as a contrast failure.
+    const freeze = document.createElement('style')
+    freeze.textContent = '*, *::before, *::after { transition: none !important; }'
+    document.head.appendChild(freeze)
+    try {
+      const r = await axe.run(
+        { exclude: [['.epdf-page']] },
+        { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] } }
+      )
+      return r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`)
+    } finally {
+      freeze.remove()
+    }
   })
   return found.map((f) => `[${label}] ${f}`)
 }
@@ -109,6 +118,33 @@ export async function gotoPage(page: Page, n: number): Promise<void> {
   const input = page.getByLabel('Page number')
   await input.fill(String(n))
   await input.press('Enter')
+}
+
+/**
+ * The ribbon shows one task's tools at a time (Comment, Draw, Fill & sign, ...). Shows the task that holds the tool
+ * with this id or visible label, so the tool's button can then be found and clicked. No-op if it is already showing.
+ */
+export async function showToolTask(page: Page, tool: string): Promise<void> {
+  const tasks = page.locator('[data-task]')
+  await tasks.first().waitFor({ state: 'visible', timeout: 15_000 })
+  const n = await tasks.count()
+  for (let i = 0; i < n; i++) {
+    const t = tasks.nth(i)
+    const ids = ((await t.getAttribute('data-tools')) ?? '').split(' ')
+    const labels = ((await t.getAttribute('data-tool-labels')) ?? '').split('|')
+    if (!ids.includes(tool) && !labels.includes(tool)) continue
+    if ((await t.getAttribute('aria-pressed')) !== 'true') await t.click()
+    return
+  }
+  throw new Error(`No ribbon task holds the tool "${tool}"`)
+}
+
+/** Clicks a ribbon tool by id (`data-tool`) or by its visible label, showing its task first. */
+export async function clickTool(page: Page, tool: string): Promise<void> {
+  await showToolTask(page, tool)
+  const byId = page.locator(`button[data-tool="${tool}"]`)
+  const target = (await byId.count()) ? byId : page.getByRole('toolbar', { name: 'Editing tools' }).getByRole('button', { name: tool, exact: true })
+  await target.click()
 }
 
 /** True if the canvas inside `selector` has any visibly dark pixel (i.e. something was actually drawn). */
