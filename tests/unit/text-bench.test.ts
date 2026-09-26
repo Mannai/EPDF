@@ -49,6 +49,11 @@ async function run(paras: string[]): Promise<{ ms: number; lines: number }> {
   return { ms: performance.now() - t0, lines }
 }
 
+// The thresholds are for a quiet machine: run `EPDF_BENCH=1 npx vitest run tests/unit/text-bench.test.ts`. In the
+// normal suite ~140 other files run in parallel, so they get 4x headroom there (still catches a real regression,
+// which would be an order of magnitude, not a busy CPU).
+const SLACK = process.env['EPDF_BENCH'] === '1' ? 1 : 4
+
 describe('performance: shaping + layout of 1,000 mixed-script paragraphs', () => {
   it('meets the timing thresholds after warm-up', async () => {
     const a = paragraphs(1000, 1)
@@ -64,12 +69,12 @@ describe('performance: shaping + layout of 1,000 mixed-script paragraphs', () =>
     )
     expect(warm.lines).toBeGreaterThan(1500)
     // "well under a second" for 1,000 paragraphs once warmed up
-    expect(warm.ms).toBeLessThan(1000)
-    expect(again.ms).toBeLessThan(700)
+    expect(warm.ms).toBeLessThan(1000 * SLACK)
+    expect(again.ms).toBeLessThan(700 * SLACK)
     // without any shaping cache (worst case, fonts loaded) it must stay in the same ballpark, not degrade to seconds
-    expect(noCache.ms).toBeLessThan(2500)
+    expect(noCache.ms).toBeLessThan(2500 * SLACK)
     // and the very first pass, which also loads a dozen fonts (CJK, Indic, Thai, Arabic, Hebrew), stays usable
-    expect(cold.ms).toBeLessThan(6000)
+    expect(cold.ms).toBeLessThan(6000 * SLACK)
   }, 60_000)
 
   it('itemization and line breaking scale linearly with text length', async () => {
@@ -89,6 +94,6 @@ describe('performance: shaping + layout of 1,000 mixed-script paragraphs', () =>
     const small = await t(500)
     const big = await t(4000)
     console.log(`bench: 500 word pairs ${small.toFixed(1)} ms, 4000 word pairs ${big.toFixed(1)} ms`)
-    expect(big).toBeLessThan(small * 8 * 3 + 50) // 8x the text in well under quadratic time
-  })
+    expect(big).toBeLessThan(small * 8 * 3 + 50) // 8x the text in well under quadratic time (quadratic = 64x; best-of-5 already absorbs load)
+  }, 60_000)
 })
