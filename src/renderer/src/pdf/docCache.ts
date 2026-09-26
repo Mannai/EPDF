@@ -4,6 +4,13 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import type { PageSize } from '../viewer/layout'
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
+// Start the PDF.js worker thread right away, so it boots (compiles its 1.2 MB script) while the UI mounts instead
+// of only once the first document is requested. All documents in this window share it.
+try {
+  pdfjs.GlobalWorkerOptions.workerPort = new Worker(workerUrl, { type: 'module' })
+} catch {
+  /* fall back to PDF.js creating its own worker on demand */
+}
 
 /** Fonts, CMaps and WASM decoders are bundled in /pdfjs so nothing is fetched from the network. */
 const ASSETS = {
