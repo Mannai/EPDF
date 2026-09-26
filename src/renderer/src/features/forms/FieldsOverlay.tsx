@@ -76,7 +76,8 @@ function boxStyle(p: WidgetProps): { style: CSSProperties; scale: number; height
     fontSize: fontPt * scale,
     lineHeight: p.field.multiline ? 1.2 : undefined,
     color: p.widget.color ?? '#000',
-    textAlign: p.widget.align,
+    // /Q 0 (the default) is "start": right-to-left text is right-aligned, as in the saved appearance.
+    textAlign: p.widget.align === 'left' ? 'start' : p.widget.align,
     padding: `${p.field.multiline ? 1 * scale : 0}px ${2 * scale}px`,
     border: bw > 0 && p.widget.borderColor ? `${bw}px solid ${p.widget.borderColor}` : undefined
   }
@@ -136,6 +137,7 @@ function TextWidget(p: WidgetProps): JSX.Element {
     'data-widget-key': widget.key,
     'data-field': field.name,
     autoComplete: 'off',
+    dir: 'auto',
     spellCheck: field.password ? false : undefined,
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft(e.target.value),
     onBlur: finish,
@@ -218,6 +220,7 @@ function ChoiceWidget(p: WidgetProps): JSX.Element {
           className={cls(p)}
           style={style}
           list={listId}
+          dir="auto"
           value={shown}
           readOnly={field.readOnly}
           autoComplete="off"
@@ -274,7 +277,7 @@ function ChoiceWidget(p: WidgetProps): JSX.Element {
     >
       {!isList && <option value="" />}
       {field.options.map((o) => (
-        <option key={o} value={o}>
+        <option key={o} value={o} dir="auto">
           {o}
         </option>
       ))}

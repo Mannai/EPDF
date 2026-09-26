@@ -18,6 +18,7 @@ import {
   type PDFFont,
   type PDFWidgetAnnotation
 } from 'pdf-lib'
+import { needsEngineAppearance, writeEngineAppearances } from '../../forms/appearance'
 import { DEFAULT_STYLE, type Align, type BorderStyle, type FieldStyle, type FontName } from './spec'
 
 /**
@@ -52,9 +53,14 @@ const ALIASES: Record<string, FontName> = {
   arial: 'Helv'
 }
 
+/** /DA names the forms feature writes for fields drawn by the text engine (see forms/appearance.ts). */
+const ENGINE_NAMES: Record<string, FontName> = { sans: 'Helv', sansbd: 'HeBo', serif: 'TiRo', serifbd: 'TiBo', mono: 'Cour', monobd: 'CoBo' }
+
 export const toFontName = (name: string | undefined): FontName => {
   if (!name) return 'Helv'
   if (name in STANDARD) return name as FontName
+  const engine = /^Epdf(Sans|Serif|Mono)(Bd)?(?:_\d+)?$/.exec(name)
+  if (engine) return ENGINE_NAMES[`${engine[1].toLowerCase()}${engine[2] ? 'bd' : ''}`]
   return ALIASES[name.toLowerCase()] ?? 'Helv'
 }
 
@@ -212,8 +218,16 @@ export function applyTextStyle(field: PDFField, style: Pick<FieldStyle, 'fontNam
   if (field instanceof PDFTextField) field.setAlignment(ALIGN_TO[style.align])
 }
 
-/** Regenerates the appearance streams of a field with the standard font its /DA names. */
+/**
+ * Regenerates the appearance streams of a field with the standard font its /DA names. A field showing text the
+ * standard fonts cannot encode (an Arabic default value, Hebrew options, a Cyrillic caption ...) is drawn by the text
+ * engine instead, in the same family and weight (forms/appearance.ts: its /DA then names the engine font in /DR).
+ */
 export async function refreshField(pdf: PDFDocument, field: PDFField): Promise<void> {
+  if ((field instanceof PDFTextField || field instanceof PDFDropdown || field instanceof PDFOptionList || field instanceof PDFButton) && needsEngineAppearance(field)) {
+    await writeEngineAppearances(pdf, field)
+    return
+  }
   const daText = readDA(field)
   const da = parseDA(daText)
   const font = await loadStandardFont(pdf, da.fontName)

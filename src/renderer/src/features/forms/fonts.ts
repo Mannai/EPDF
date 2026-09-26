@@ -2,10 +2,13 @@ import fontkit from '@pdf-lib/fontkit'
 import { StandardFonts, type PDFDocument, type PDFFont } from 'pdf-lib'
 
 /**
- * Choosing a font that can actually encode the text. Standard Helvetica only covers WinAnsi (Western
- * European); anything else needs an embedded font. Epdf bundles Noto Sans (SIL OFL 1.1) for that: it covers
- * Latin, Latin Extended, Greek, Cyrillic and Vietnamese. Scripts it does not contain (CJK, Arabic, Hebrew,
- * Indic, ...) are refused with a clear message rather than drawn as empty boxes.
+ * Standard fonts and coverage checks. Standard Helvetica only covers WinAnsi (Western European): text it can encode
+ * is drawn with it as it always was. Everything else is drawn by the text engine (`@shared/text`, see
+ * appearance.ts and draw.ts), which shapes and orders every script and embeds subset fonts; only characters no
+ * bundled font has are refused (`UnsupportedCharactersError`).
+ *
+ * `unicodeFont` / `fontForText` are the older pdf-lib + fontkit path (Noto Sans, no shaping); the drawing code no
+ * longer uses them and they are kept for callers outside this feature.
  */
 
 /** Supplies the bundled Unicode font file (the renderer fetches it; tests read it from disk). */
@@ -15,7 +18,7 @@ export class UnsupportedCharactersError extends Error {
   constructor(readonly chars: string[]) {
     super(
       `These characters can’t be written with the fonts built into Epdf: ${chars.slice(0, 8).join(' ')}${chars.length > 8 ? ' …' : ''}. ` +
-        'Remove them or use characters from Latin, Greek or Cyrillic scripts.'
+        'Remove them or replace them with characters of a supported script.'
     )
   }
 }

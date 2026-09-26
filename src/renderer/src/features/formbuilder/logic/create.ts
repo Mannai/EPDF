@@ -1,4 +1,5 @@
 import { PDFHexString, PDFRadioGroup, type PDFDocument, type PDFField, type PDFPage } from 'pdf-lib'
+import { isWinAnsiText } from '@shared/text'
 import { applyWidgetLook, ensureAcroFormDefaults, readWidgetLook, setWidgetRotation } from './appearance'
 import { BuilderError, applyPatch, assertNewName, buildBoxAppearance, refreshAppearance, removeField, toWidgetRect } from './edit'
 import { normRotation } from './frame'
@@ -83,9 +84,11 @@ export async function createField(pdf: PDFDocument, spec: FieldSpec): Promise<st
       break
     }
     case 'dropdown': {
+      // Options are set after addToPage: pdf-lib draws a first appearance there with Helvetica, which cannot encode
+      // Arabic/Hebrew/... options; the real appearance is drawn below (applyPatch), by the text engine when needed.
       const f = form.createDropdown(spec.name)
-      f.setOptions(spec.options ?? [])
       f.addToPage(page, boxOptions(rect))
+      f.setOptions(spec.options ?? [])
       field = f
       if (spec.editable) patch.editable = true
       if (spec.value) patch.value = spec.value
@@ -93,8 +96,8 @@ export async function createField(pdf: PDFDocument, spec: FieldSpec): Promise<st
     }
     case 'list': {
       const f = form.createOptionList(spec.name)
-      f.setOptions(spec.options ?? [])
       f.addToPage(page, boxOptions(rect))
+      f.setOptions(spec.options ?? [])
       field = f
       if (spec.multiSelect) patch.multiSelect = true
       if (spec.value) patch.value = spec.value
@@ -102,7 +105,9 @@ export async function createField(pdf: PDFDocument, spec: FieldSpec): Promise<st
     }
     case 'button': {
       const f = form.createButton(spec.name)
-      f.addToPage(spec.caption ?? 'Button', page, boxOptions(rect))
+      const caption = spec.caption ?? 'Button'
+      // A caption Helvetica cannot encode is set by applyPatch below and drawn by the text engine.
+      f.addToPage(isWinAnsiText(caption) ? caption : '', page, boxOptions(rect))
       field = f
       break
     }
