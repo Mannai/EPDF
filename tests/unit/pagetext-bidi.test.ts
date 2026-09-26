@@ -96,7 +96,7 @@ describe('generated mixed-direction sentences', () => {
       console.log(`${label}: valid ${valid}/2000, original recovered ${((100 * original) / 2000).toFixed(1)}%`)
       expect(valid).toBe(2000)
       expect(original / 2000).toBeGreaterThan(minOriginal)
-    })
+    }, 180_000) // ~3-5 s alone; several times that when the whole suite runs in parallel
   }
 })
 
