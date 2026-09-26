@@ -1,4 +1,4 @@
-import { PDFDocument, PDFRef, StandardFonts, degrees } from 'pdf-lib'
+import { PDFDocument, PDFName, PDFRef, PDFStream, StandardFonts, degrees } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import { defaultBackground, defaultHeaderFooter, defaultWatermark, type OverlaySettings } from '../../src/shared/features/headerfooter'
 import { applyOverlay } from '../../src/renderer/src/features/headerfooter/pdf/apply'
@@ -75,6 +75,27 @@ describe('a page of another PDF as the watermark', () => {
     await expect(applyOverlay(await target(1), 'watermark', pdfWm(1), undefined, { fileName: 'x' })).rejects.toThrow('Choose a PDF file.')
     const img: OverlaySettings = { ...defaultWatermark(), source: { kind: 'image', name: 'x.png' } }
     await expect(applyOverlay(await target(1), 'watermark', img, { bytes: new Uint8Array([1, 2, 3]), kind: 'png' }, { fileName: 'x' })).rejects.toThrow(/picture could not be read/)
+  })
+})
+
+describe('pictures', () => {
+  it('a JPEG picture is embedded once and drawn at its size (1 px = 1 pt) on every page', async () => {
+    const jpeg = await import('jpeg-js')
+    const w = 40
+    const h = 20
+    const data = Buffer.alloc(w * h * 4, 0)
+    for (let i = 0; i < w * h; i++) data.set([200, 30, 30, 255], i * 4)
+    const bytes = new Uint8Array(jpeg.encode({ data, width: w, height: h }, 90).data)
+    const pdf = await target(3)
+    const s: OverlaySettings = { ...defaultWatermark(), source: { kind: 'image', name: 'x.jpg' }, scale: { mode: 'absolute', percent: 100 }, rotation: 0 }
+    const r = await applyOverlay(pdf, 'watermark', s, { bytes, kind: 'jpeg' }, { fileName: 'x' })
+    expect(r.pages).toBe(3)
+    const doc = await PDFDocument.load(await pdf.save())
+    const images = doc.context.enumerateIndirectObjects().filter(([, o]) => o instanceof PDFStream && o.dict.get(PDFName.of('Subtype')) === PDFName.of('Image'))
+    expect(images.length).toBe(1)
+    const src = summarizeMarks(doc).watermark.source!
+    const bbox = doc.context.lookup(src, PDFStream).dict.lookup(PDFName.of('BBox'))!.toString()
+    expect(bbox).toBe('[ 0 0 40 20 ]')
   })
 })
 

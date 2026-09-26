@@ -1,5 +1,6 @@
 import { PDFDocument, PDFObjectCopier, PDFRef } from 'pdf-lib'
 import type { GroupSettings } from '../../../../../shared/features/headerfooter'
+import { stripProtectionMarker } from '../../../../../shared/features/protectionMarker'
 import type { SourceInput } from './apply'
 import { applyGroup } from './ops'
 
@@ -33,5 +34,8 @@ export async function previewBytes(r: PreviewRequest): Promise<Uint8Array> {
     }
     await applyGroup(doc, r.gs, { mode: r.mode, source, fileName: r.fileName, now: r.now, numPages: r.base.getPageCount(), only: [{ index: r.pageIndex, page: doc.getPage(0) }] })
   }
+  // A new document derived from the working copy: it must never carry a protected document's key. (copyPages does not
+  // copy the catalog, so there is none; this keeps it that way whatever pdf-lib does.)
+  stripProtectionMarker(doc)
   return doc.save()
 }

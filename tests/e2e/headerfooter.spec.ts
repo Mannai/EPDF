@@ -472,6 +472,47 @@ test.describe('watermarks and backgrounds', () => {
     expect(seen[0]!.text).toContain('PRINT ONLY') // it is in the file, only hidden on screen
   })
 
+  test("Epdf's printing: a print-only watermark is printed, a screen-only one is not", async () => {
+    const out = join(mkdtempSync(join(tmpdir(), 'epdf-hf-print-')), 'printed.pdf')
+    const { app, page } = await open('hf-basic.pdf', { env: { EPDF_PRINT_TO_FILE: out } })
+    try {
+      let d = await openDialog(app, page, 'Watermark…')
+      await d.getByLabel('Watermark text (any language; new lines are kept)').fill('ON PAPER')
+      await d.getByLabel('Color').fill('#ff0000')
+      await d.getByLabel('Opacity').fill('100')
+      await d.getByRole('checkbox', { name: 'Show on screen' }).uncheck()
+      await applyAndWait(page, d)
+      d = await openDialog(app, page, 'Watermark…')
+      await d.getByRole('radio', { name: 'Keep them and add another' }).check()
+      await d.getByLabel('Watermark text (any language; new lines are kept)').fill('ON SCREEN')
+      await d.getByLabel('Color').fill('#0040ff')
+      await d.getByRole('checkbox', { name: 'Show on screen' }).check()
+      await d.getByRole('checkbox', { name: 'Show when printing' }).uncheck()
+      await d.getByLabel('Rotation').fill('-45')
+      await applyAndWait(page, d)
+      const screen = await canvasPixels(page, 1)
+      expect(inkIn(screen, blue), 'screen: the screen-only mark').toBeTruthy()
+      expect(inkIn(screen, red), 'screen: no print-only mark').toBeNull()
+      await menuClick(app, 'File', 'Print…')
+      const dlg = page.getByRole('dialog', { name: 'Print' })
+      await expect(dlg).toBeVisible()
+      await dlg.getByLabel('Page range').fill('1')
+      await dlg.getByRole('button', { name: 'Print…' }).click()
+      await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 60_000 })
+    } finally {
+      await quitDiscarding(app, page)
+    }
+    // Open what was sent to the printer and look at it.
+    const printed = await open(out)
+    try {
+      const px = await canvasPixels(printed.page, 1)
+      expect(inkIn(px, red), 'paper: the print-only mark').toBeTruthy()
+      expect(inkIn(px, blue), 'paper: no screen-only mark').toBeNull()
+    } finally {
+      await quitDiscarding(printed.app, printed.page)
+    }
+  })
+
   test('a file that is not a picture is refused with a clear message', async () => {
     const { app, page } = await open('hf-basic.pdf')
     try {

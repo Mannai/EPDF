@@ -123,13 +123,16 @@ No new dependencies. Nothing is installed or downloaded at run time; fonts are t
   logical text in ActualText and in PDF.js extraction; Hebrew; Bates; behind/front ordering; transparency group;
   optional content per intent (PDF.js); remove/update/add round trips on saved-and-reopened files (no text, objects,
   fonts or OCGs left; merged content streams; Acrobat-style marks with non-nested q/Q); shared/inherited resources;
-  presets; 500 pages (time, progress, cancel, one subset per font, size).
+  PNG and JPEG pictures; the protection marker of an unlocked protected document is kept by apply/update/remove and
+  never in the preview; Epdf's print preparation keeps the optional content; presets; 500 pages (time, progress,
+  cancel, one subset per font, size).
 * `npx playwright test tests/e2e/headerfooter.spec.ts` — in the real app, checking the rendered page pixels: the Arabic
   header "صفحة ١ من ٣" at the top centre and, rendered by PDF.js, compared with Chromium's own rendering of the same
   line in the same font (NCC 0.99; a negative control with unjoined letters in the wrong order scores 0.60); Hebrew and
   mixed text on a /Rotate 90 page and a cropped page (upright: compared with the upright page, and a 180° turned copy
   must not match); Bates on 3 pages from the ribbon; a red text watermark behind an opaque block (hidden there) and a
-  blue picture in front (on top); background colour on a page range; print-only watermark hidden on screen; a page of
+  blue picture in front (on top); background colour on a page range; print-only watermark hidden on screen, and through
+  Epdf's real print path (print-to-file hook) a print-only mark is on the printed page and a screen-only one is not; a page of
   another PDF as the watermark; a file that is not a picture; undo/redo; save, reopen, update from the stored settings,
   presets across a restart, remove; an encrypted document (stays encrypted, marks inside); 500 pages with progress and
   Cancel; axe (light and dark, every tab) and keyboard.
