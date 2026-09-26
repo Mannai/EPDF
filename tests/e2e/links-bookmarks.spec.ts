@@ -854,6 +854,7 @@ test.describe('links: add', () => {
       await dlg.getByLabel('A page in this document').check()
       await dlg.getByLabel('Target page').fill('3')
       await dlg.getByLabel('How the page opens').selectOption('position')
+      await dlg.getByLabel('Zoom when opened').selectOption('1.5')
       await dlg.getByRole('button', { name: 'Choose the spot on a page…' }).click()
       // The dialog steps aside; a banner explains, and Escape would go back.
       await expect(dlg).toHaveCount(0)
@@ -875,7 +876,7 @@ test.describe('links: add', () => {
         const [type, x, y, zoom] = mine.target.dest.tail
         expect(type).toBe('XYZ')
         expect(near(x as number, 100, 4) && near(y as number, 300, 4)).toBe(true)
-        expect(zoom).toBeNull()
+        expect(zoom).toBe(1.5)
       }
       // Follow it in the viewer: page 3 opens with the spot near the top of the window.
       await page.keyboard.press('Escape')
@@ -1200,6 +1201,7 @@ test.describe('accessibility (axe, WCAG 2.1 A/AA)', () => {
         await selectRow(page, /^Last/)
         await page.getByLabel('Bookmark colour').fill('#ffee00')
         expect(await axeViolations(page, `panel selected ${theme}`)).toEqual([])
+        await tree(page).focus()
         await page.keyboard.press('F2')
         await expect(tree(page).getByLabel('Bookmark title')).toBeFocused()
         expect(await axeViolations(page, `panel editing ${theme}`)).toEqual([])

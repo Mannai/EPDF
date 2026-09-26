@@ -451,7 +451,7 @@ export function BookmarksPanel({ tab }: { tab: Tab }): JSX.Element {
                       {n.title || 'Untitled'}
                     </span>
                   )}
-                  <span className="ms-1 shrink-0 text-xs tabular-nums text-ink-muted" aria-hidden="true">
+                  <span className={`ms-1 shrink-0 text-xs tabular-nums ${selected ? 'text-ink' : 'text-ink-muted'}`} aria-hidden="true">
                     {destLabel(n)}
                   </span>
                 </div>

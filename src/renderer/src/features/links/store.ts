@@ -24,6 +24,8 @@ export interface LinkForm {
   view: PageView
   /** A position picked on the target page, as fractions of the displayed page from its top-left. */
   pos: { fx: number; fy: number } | null
+  /** Zoom (1 = 100%) a reader should switch to for `top`/`position` views; null keeps the reader's zoom. */
+  zoom: number | null
   named: string
   border: BorderStyle
   color: string
@@ -38,6 +40,7 @@ export const defaultForm = (): LinkForm => ({
   page: 1,
   view: 'top',
   pos: null,
+  zoom: null,
   named: '',
   border: 'none',
   color: DEFAULT_LINK_COLOR,

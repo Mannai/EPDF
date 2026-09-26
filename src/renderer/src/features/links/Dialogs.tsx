@@ -158,6 +158,19 @@ function LinkDialog(): JSX.Element | null {
                         <option value="position">A spot I choose on the page</option>
                       </select>
                     </label>
+                    {(form.view === 'top' || form.view === 'position') && (
+                      <label className="flex items-center gap-2">
+                        <span>Zoom</span>
+                        <select aria-label="Zoom when opened" value={form.zoom === null ? '' : String(form.zoom)} onChange={(e) => patch({ zoom: e.target.value === '' ? null : Number(e.target.value) })} className="field">
+                          <option value="">Keep the reader’s zoom</option>
+                          {[0.5, 0.75, 1, 1.25, 1.5, 2, 4].map((z) => (
+                            <option key={z} value={String(z)}>
+                              {Math.round(z * 100)}%
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <button type="button" className="btn" onClick={() => useLinkUi.getState().setPicking(true)}>

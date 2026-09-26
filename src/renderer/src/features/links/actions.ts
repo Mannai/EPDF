@@ -46,9 +46,11 @@ export function targetFromForm(pdf: PDFDocument, form: LinkForm): LinkTargetInpu
       break
     case 'position':
       tail = xyzTail(page, form.pos ?? { fx: 0, fy: 0 })
+      tail[3] = form.zoom
       break
     default: // 'top' (and 'keep' for a page that was changed)
       tail = xyzTail(page, { fx: 0, fy: 0 })
+      tail[3] = form.zoom
   }
   return { kind: 'page', pageIndex, tail }
 }
