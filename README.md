@@ -2,11 +2,15 @@
 
 A desktop PDF application (Electron + TypeScript + React). Works fully offline for all local features.
 
-**Status: Phases 1, 2 and 3 complete** — the secure Electron shell and PDF viewer (Phase 1); form filling,
-signing, creating/combining/exporting, text and image editing, markup, page organization and printing (Phase 2);
-and OCR, file-size reduction, password protection, scanning, the form builder, true redaction, file comparison and a
-local library (Phase 3). The cloud features (Phase 4) and installers/signing/auto-update (Phase 5) are next. Epdf is
-**self-contained**: nothing besides Epdf itself needs to be installed (see "Licensing and self-containment").
+**Status: 1.0.0-beta.1 (Windows beta).** Phases 1–3 are complete: the secure Electron shell and PDF viewer; form
+filling, signing, creating/combining/exporting, text and image editing, markup, page organization and printing; OCR,
+file-size reduction, password protection, scanning, the form builder, true redaction, file comparison and a local
+library. Phase 5 on Windows is in: headers/footers/watermarks, links and bookmarks, performance work, NSIS/MSI
+installers, auto-update and the signing pipeline, plus Arabic and other scripts inside PDFs: a shaping text engine
+for everything Epdf writes, and logical-order reading for selecting, copying and searching. Not in this beta: the
+cloud features (Phase 4), macOS/Linux, editing existing Arabic text in place, and Arabic OCR. The beta is **unsigned**
+(Windows SmartScreen warns) and its update feed is a placeholder. Epdf is **self-contained**: nothing besides Epdf
+itself needs to be installed (see "Licensing and self-containment").
 
 Each feature has its own page in `docs/features/`; how to add a feature is in `docs/FEATURES.md`.
 
