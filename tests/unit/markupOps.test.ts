@@ -204,12 +204,13 @@ describe('text boxes (FreeText)', () => {
     expect(info.rect).toEqual([300, 300, 350, 500])
   })
 
-  it('replaces characters the standard font cannot show instead of failing', async () => {
+  it('draws characters the standard font cannot show with the text engine', async () => {
+    // (This used to replace them with "?" in the appearance; the text engine now draws them.)
     const pdf = await makePdf()
     await addFreeText(pdf, 0, { ...who, rect: [100, 500, 300, 560], text: '日本語 ok', fontSize: 12, color: [0, 0, 0], fill: null, borderWidth: 0 })
     const [d] = annotsOf(await roundTrip(pdf))
     expect(getString(d, 'Contents')).toBe('日本語 ok') // the comment text itself keeps Unicode
-    expect(apOps(d)).toMatch(/<[0-9a-fA-F]+> Tj/)
+    expect(apOps(d)).toMatch(/\/EpdfTx0 Do/)
   })
 })
 

@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { norm, pageTexts, type0Fonts } from '../support/retrofit'
 import { PDFDocument } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import type { ChangeText } from '../../src/renderer/src/features/compare/diff/enrich'
@@ -106,42 +107,62 @@ describe('PDF report', () => {
     expect(flattenText(pages)).toContain('#300')
   })
 
-  it('text outside the standard font\'s alphabet prints as "?" instead of failing', async () => {
+  it('without the text engine, text outside the standard font\'s alphabet prints as "?" instead of failing', async () => {
     const t: ChangeText[] = [{ oldText: 'Привет мир 日本語 ok', newText: 'naïve café – “quoted”', oldMarks: [], newMarks: [], before: '', after: '' }]
-    const bytes = await buildReportPdf({
-      oldName: 'файл.pdf',
-      newName: 'new.pdf',
-      result: { ...result, changes: [{ id: 0, kind: 'modified', pair: 0, old: loc(1), new: loc(1) }], counts: { added: 0, removed: 0, modified: 1, moved: 0, total: 1 } },
-      texts: t,
-      opts: opts()
-    })
+    const bytes = await buildReportPdf(
+      {
+        oldName: 'файл.pdf',
+        newName: 'new.pdf',
+        result: { ...result, changes: [{ id: 0, kind: 'modified', pair: 0, old: loc(1), new: loc(1) }], counts: { added: 0, removed: 0, modified: 1, moved: 0, total: 1 } },
+        texts: t,
+        opts: opts()
+      },
+      { engine: false }
+    )
     const text = flattenText((await readPdf(bytes)).pages)
     expect(text).toContain('?????? ??? ??? ok')
     expect(text).toContain('naïve café')
   })
 
-  it('sets Greek and Cyrillic text in the bundled Noto Sans when a font provider is given (CJK still prints as "?")', async () => {
-    const noto = new Uint8Array(readFileSync(resolve('src/renderer/src/features/textedit/fonts/NotoSans-Regular.ttf')))
-    const t: ChangeText[] = [{ oldText: 'Привет мир Ελληνικά 日本', newText: 'Привет, мир!', oldMarks: [], newMarks: [], before: '', after: '' }]
+  it('writes Cyrillic, Greek, CJK, Arabic and Hebrew with the text engine; Latin-only reports embed no font', async () => {
+    // (This used to set Cyrillic/Greek in Noto Sans through fontkit and print CJK as "?"; the engine writes every script.)
+    const t: ChangeText[] = [
+      { oldText: 'Привет мир Ελληνικά 日本', newText: 'Привет, мир!', oldMarks: [], newMarks: [], before: '', after: '' },
+      { oldText: 'المبلغ الإجمالي 1,250.00 دينار', newText: 'המחיר הכולל 1,250.00 שקל', oldMarks: [], newMarks: [], before: '', after: '' }
+    ]
     const input = {
       oldName: 'файл.pdf',
-      newName: 'new.pdf',
-      result: { ...result, changes: [{ id: 0, kind: 'modified' as const, pair: 0, old: loc(1), new: loc(1) }], counts: { added: 0, removed: 0, modified: 1, moved: 0, total: 1 } },
+      newName: 'تقرير.pdf',
+      result: {
+        ...result,
+        changes: [
+          { id: 0, kind: 'modified' as const, pair: 0, old: loc(1), new: loc(1) },
+          { id: 1, kind: 'modified' as const, pair: 0, old: loc(1), new: loc(1) }
+        ],
+        counts: { added: 0, removed: 0, modified: 2, moved: 0, total: 2 }
+      },
       texts: t,
       opts: opts()
     }
-    const bytes = await buildReportPdf(input, async () => noto)
+    const bytes = await buildReportPdf(input)
     const text = flattenText((await readPdf(bytes)).pages)
-    expect(text).toContain('Привет мир Ελληνικά ??')
+    expect(text).toContain('Привет мир Ελληνικά 日本')
     expect(text).toContain('Привет, мир!')
     expect(text).toContain('файл.pdf')
-    // a provider that fails must not fail the report
-    const fallback = await buildReportPdf(input, () => Promise.reject(new Error('no font')))
-    expect(flattenText((await readPdf(fallback)).pages)).toContain('?????? ??? ???????? ??')
-    // text that Helvetica can encode never triggers the provider
-    let called = 0
-    await buildReportPdf({ ...input, oldName: 'a.pdf', texts: [{ ...t[0], oldText: 'plain text', newText: 'still plain' }] }, async () => (called++, noto))
-    expect(called).toBe(0)
+    // right-to-left lines read back in logical order with the page text model
+    const [model] = await pageTexts(bytes)
+    const lines = model.split('\n').map(norm)
+    expect(lines).toContain('المبلغ الإجمالي 1,250.00 دينار')
+    expect(lines).toContain('המחיר הכולל 1,250.00 שקל')
+    expect(lines).toContain('New version: تقرير.pdf')
+    mkdirSync(resolve('test-results/text-retrofit'), { recursive: true })
+    writeFileSync(resolve('test-results/text-retrofit/compare-report-arabic.pdf'), bytes)
+    // Latin-only: standard fonts only, byte size as without the engine
+    const latin = { ...input, oldName: 'a.pdf', newName: 'b.pdf', texts: [{ ...t[0], oldText: 'plain text', newText: 'still plain' }, { ...t[1], oldText: 'x', newText: 'y' }] }
+    const latinBytes = await buildReportPdf({ ...latin, generatedAt: new Date('2026-01-01T00:00:00Z') })
+    expect(type0Fonts(await PDFDocument.load(latinBytes))).toHaveLength(0)
+    const noEngine = await buildReportPdf({ ...latin, generatedAt: new Date('2026-01-01T00:00:00Z') }, { engine: false })
+    expect(Math.abs(latinBytes.length - noEngine.length)).toBeLessThan(64)
   })
 
   it('an empty comparison says the text is identical', async () => {

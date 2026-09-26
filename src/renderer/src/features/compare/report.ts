@@ -1,5 +1,5 @@
-import fontkit from '@pdf-lib/fontkit'
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
+import { drawText, ensureTextEngine, isWinAnsiText, layoutParagraph } from '@shared/text'
 import type { ChangeText } from './diff/enrich'
 import { KIND_LABEL, primaryPage } from './diff/summary'
 import type { Change, ChangeKind, CompareCounts, CompareOptions, CompareResult } from './diff/types'
@@ -133,32 +133,41 @@ function optionsLine(o: CompareOptions): string {
   return on.length ? `Ignored while comparing: ${on.join(', ')}.` : 'Comparison is exact (case, punctuation and spacing count).'
 }
 
-/** Supplies the bytes of a Unicode font (Noto Sans) when the report has text that WinAnsi cannot hold. */
-export type FontProvider = () => Promise<Uint8Array>
+export interface ReportOptions {
+  /**
+   * Write text the standard fonts cannot encode with the text engine (default true). When false, or when the
+   * engine cannot be used, such characters print as "?": a wrong glyph is better than a report that fails to build.
+   */
+  engine?: boolean
+}
 
+/** Engine font stacks with the look of the report's standard fonts (every script's font is a fallback). */
+const ENGINE_STYLE = { regular: { fontStack: ['Helvetica'] }, bold: { fontStack: ['Helvetica'], weight: 'bold' as const }, mono: { fontStack: ['Courier'] } }
 
 /**
- * A PDF report listing the changes page by page. Text that the standard Helvetica cannot encode (Greek, Cyrillic,
- * ...) is set in the bundled Noto Sans when `unicodeFont` is given; characters not even that font has (CJK) print
- * as "?" - a wrong glyph is better than a report that fails to build.
+ * A PDF report listing the changes page by page. Text WinAnsi can encode is set in the standard Helvetica /
+ * Helvetica-Bold / Courier as always (nothing embedded); any other text (Arabic, Hebrew, Cyrillic, Indic, CJK ...)
+ * is written by the text engine: shaped, in reading order, right-to-left paragraphs right-aligned in their column,
+ * extractable in logical order.
  */
-export async function buildReportPdf(input: ReportInput, unicodeFont?: FontProvider): Promise<Uint8Array> {
+export async function buildReportPdf(input: ReportInput, options: ReportOptions = {}): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
   const helvetica = await doc.embedFont(StandardFonts.Helvetica)
-  const encodable = new Set(helvetica.getCharacterSet())
-  const needsUnicode = [input.oldName, input.newName, ...input.texts.flatMap((t) => [t.oldText, t.newText])].some((s) => Array.from(s.replace(/\s+/g, ' ')).some((ch) => !encodable.has(ch.codePointAt(0)!)))
-  let uni: PDFFont | null = null
-  if (unicodeFont && needsUnicode) {
+  let engine = options.engine !== false
+  if (engine) {
     try {
-      doc.registerFontkit(fontkit)
-      uni = await doc.embedFont(await unicodeFont(), { subset: true })
+      ensureTextEngine()
     } catch (err) {
-      console.warn('Compare: the Unicode font for the report could not be loaded', err)
+      console.warn('Compare: the text engine is not available for the report', err)
+      engine = false
     }
   }
-  const font = uni ?? helvetica
-  const bold = uni ?? (await doc.embedFont(StandardFonts.HelveticaBold))
-  const mono = uni ?? (await doc.embedFont(StandardFonts.Courier))
+  const font = helvetica
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const mono = await doc.embedFont(StandardFonts.Courier)
+  const styleOf = (f: PDFFont): (typeof ENGINE_STYLE)[keyof typeof ENGINE_STYLE] => (f === bold ? ENGINE_STYLE.bold : f === mono ? ENGINE_STYLE.mono : ENGINE_STYLE.regular)
+  /** Does this text go through the engine? */
+  const viaEngine = (s: string): boolean => engine && !isWinAnsiText(s)
   const when = input.generatedAt ?? new Date()
   doc.setTitle('Epdf comparison report')
   doc.setProducer('Epdf')
@@ -180,36 +189,55 @@ export async function buildReportPdf(input: ReportInput, unicodeFont?: FontProvi
   const need = (h: number): void => {
     if (y - h < MARGIN + 16) newPage()
   }
-  const text = (s: string, o: { size?: number; f?: PDFFont; color?: ReturnType<typeof rgb>; x?: number } = {}): void => {
-    page.drawText(toWinAnsi(s, o.f ?? font), { x: o.x ?? MARGIN, y, size: o.size ?? BODY, font: o.f ?? font, color: o.color ?? ink })
+  type TextOptions = { size?: number; f?: PDFFont; color?: ReturnType<typeof rgb>; x?: number; width?: number; direction?: 'ltr' | 'rtl' }
+  /** One line at the current baseline `y`. With `width`, a right-to-left engine line is right-aligned in that column. */
+  const text = async (s: string, o: TextOptions = {}, on: PDFPage = page, at = y): Promise<void> => {
+    const f = o.f ?? font
+    const size = o.size ?? BODY
+    const x = o.x ?? MARGIN
+    const clean = s.replace(/\s+/g, ' ')
+    if (viaEngine(clean)) {
+      await drawText(on, clean, { x, y: at, size, color: o.color ?? ink, width: o.width, direction: o.direction, align: 'start', ...styleOf(f) })
+      return
+    }
+    on.drawText(toWinAnsi(s, f), { x, y: at, size, font: f, color: o.color ?? ink })
   }
-  const paragraph = (s: string, o: { size?: number; f?: PDFFont; color?: ReturnType<typeof rgb>; x?: number; width?: number } = {}): void => {
+  /** Lines of `s` wrapped at `width`, each with the paragraph direction (engine text) so every line reads the same way. */
+  const lines = async (s: string, f: PDFFont, size: number, width: number): Promise<{ text: string; direction?: 'ltr' | 'rtl' }[]> => {
+    const clean = s.replace(/\s+/g, ' ')
+    if (!viaEngine(clean)) return wrap(toWinAnsi(clean, f), f, size, width).map((t) => ({ text: t }))
+    const layout = await layoutParagraph(clean, { size, width, ...styleOf(f) })
+    const direction = layout.directions[0]
+    return layout.lines.map((l) => ({ text: clean.slice(l.textStart, l.textEnd).trimEnd(), direction }))
+  }
+  const paragraph = async (s: string, o: TextOptions = {}): Promise<void> => {
     const size = o.size ?? BODY
     const f = o.f ?? font
-    for (const line of wrap(toWinAnsi(s, f), f, size, o.width ?? PAGE_W - 2 * MARGIN - (o.x ? o.x - MARGIN : 0))) {
+    const width = o.width ?? PAGE_W - 2 * MARGIN - (o.x ? o.x - MARGIN : 0)
+    for (const line of await lines(s, f, size, width)) {
       need(LEAD)
       y -= LEAD
-      text(line, { ...o, size, f })
+      await text(line.text, { ...o, size, f, width, direction: line.direction })
     }
   }
 
   newPage()
   y -= 22
-  text('Comparison report', { size: 22, f: bold })
+  await text('Comparison report', { size: 22, f: bold })
   y -= 26
-  paragraph(`Old version: ${input.oldName}`, { size: 11 })
-  paragraph(`New version: ${input.newName}`, { size: 11 })
-  paragraph(`Created ${when.toISOString().slice(0, 16).replace('T', ' ')} UTC by Epdf`, { color: muted })
-  paragraph(optionsLine(input.opts), { color: muted })
+  await paragraph(`Old version: ${input.oldName}`, { size: 11 })
+  await paragraph(`New version: ${input.newName}`, { size: 11 })
+  await paragraph(`Created ${when.toISOString().slice(0, 16).replace('T', ' ')} UTC by Epdf`, { color: muted })
+  await paragraph(optionsLine(input.opts), { color: muted })
   y -= 8
-  paragraph(countLine(input.result.counts), { size: 12, f: bold })
+  await paragraph(countLine(input.result.counts), { size: 12, f: bold })
   const { pairs } = input.result
   const added = pairs.filter((p) => p.old === null).length
   const removed = pairs.filter((p) => p.new === null).length
   const moved = pairs.filter((p) => p.moved).length
-  paragraph(`Pages: ${pairs.filter((p) => p.old !== null).length} old, ${pairs.filter((p) => p.new !== null).length} new; ${added} added, ${removed} removed, ${moved} moved.`)
+  await paragraph(`Pages: ${pairs.filter((p) => p.old !== null).length} old, ${pairs.filter((p) => p.new !== null).length} new; ${added} added, ${removed} removed, ${moved} moved.`)
   if (input.visualPages) {
-    paragraph(
+    await paragraph(
       input.visualPages.length
         ? `Visual differences (images, graphics, layout) on ${input.visualPages.length} page pair${input.visualPages.length === 1 ? '' : 's'}: ${input.visualPages
             .map((p) => (p.old !== null && p.new !== null && p.old !== p.new ? `${p.old}/${p.new}` : String(p.new ?? p.old)))
@@ -226,7 +254,7 @@ export async function buildReportPdf(input: ReportInput, unicodeFont?: FontProvi
     need(LEAD * 4)
     y -= 6
     y -= LEAD + 2
-    text(`Page ${pageNo}`, { size: 12, f: bold })
+    await text(`Page ${pageNo}`, { size: 12, f: bold })
     page.drawLine({ start: { x: MARGIN, y: y - 3 }, end: { x: PAGE_W - MARGIN, y: y - 3 }, thickness: 0.6, color: muted })
     y -= 4
     for (const c of list) {
@@ -237,7 +265,7 @@ export async function buildReportPdf(input: ReportInput, unicodeFont?: FontProvi
       const head = `#${c.id + 1}  ${KIND_MARK[c.kind]}${c.kind === 'moved' ? ` (page ${c.old?.page} to page ${c.new?.page}${c.edited ? ', edited' : ''})` : ''}`
       const top = y
       const startPage = page
-      text(head, { f: bold, color: rgb(col[0], col[1], col[2]), x: MARGIN + 8 })
+      await text(head, { f: bold, color: rgb(col[0], col[1], col[2]), x: MARGIN + 8 })
       const body: [string, string][] = []
       if (c.kind === 'removed') body.push(['Old', t?.oldText ?? ''])
       else if (c.kind === 'added') body.push(['New', t?.newText ?? ''])
@@ -245,29 +273,34 @@ export async function buildReportPdf(input: ReportInput, unicodeFont?: FontProvi
         body.push(['Old', t?.oldText ?? ''])
         body.push(['New', t?.newText ?? ''])
       }
+      const valueWidth = PAGE_W - 2 * MARGIN - 44
       for (const [label, value] of body) {
-        const lines = wrap(toWinAnsi(clip(value), mono), mono, BODY - 0.5, PAGE_W - 2 * MARGIN - 44)
+        const valueLines = await lines(clip(value), mono, BODY - 0.5, valueWidth)
         need(LEAD)
         y -= LEAD
-        text(label, { x: MARGIN + 8, color: muted })
-        lines.forEach((line, i) => {
+        await text(label, { x: MARGIN + 8, color: muted })
+        for (let i = 0; i < valueLines.length; i++) {
           if (i > 0) {
             need(LEAD)
             y -= LEAD
           }
-          text(line, { f: mono, size: BODY - 0.5, x: MARGIN + 44 })
-        })
+          await text(valueLines[i].text, { f: mono, size: BODY - 0.5, x: MARGIN + 44, width: valueWidth, direction: valueLines[i].direction })
+        }
       }
       // A coloured bar next to the entry (the words above carry the meaning; the bar is decoration).
       if (page === startPage) page.drawRectangle({ x: MARGIN, y: y - 3, width: 3, height: top - y + LEAD, color: rgb(col[0], col[1], col[2]) })
     }
   }
-  if (input.result.changes.length === 0) paragraph('The two documents have identical text.', { size: 11 })
+  if (input.result.changes.length === 0) await paragraph('The two documents have identical text.', { size: 11 })
 
-  pages.forEach((p, i) => {
+  for (let i = 0; i < pages.length; i++) {
+    const p = pages[i]
     const label = `Page ${i + 1} of ${pages.length}`
     p.drawText(label, { x: PAGE_W - MARGIN - font.widthOfTextAtSize(label, 8), y: 26, size: 8, font, color: muted })
-    p.drawText(toWinAnsi(`${input.oldName} vs ${input.newName}`.slice(0, 110), font), { x: MARGIN, y: 26, size: 8, font, color: muted })
-  })
+    // The footer line is English ("a.pdf vs b.pdf"): a left-to-right paragraph whatever the file names are written in.
+    const names = `${input.oldName} vs ${input.newName}`.slice(0, 110)
+    if (viaEngine(names)) await text(names, { size: 8, color: muted, direction: 'ltr' }, p, 26)
+    else p.drawText(toWinAnsi(names, font), { x: MARGIN, y: 26, size: 8, font, color: muted })
+  }
   return doc.save()
 }

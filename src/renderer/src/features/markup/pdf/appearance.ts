@@ -1,4 +1,5 @@
-import { PDFDict, PDFName, PDFRef, PDFStream, type PDFDocument, type PDFFont } from 'pdf-lib'
+import { PDFDict, PDFHexString, PDFName, PDFRef, PDFStream, type PDFDocument, type PDFFont } from 'pdf-lib'
+import { ensureTextEngine, hasRtl, isWinAnsiText, makeTextXObject, measureText, type TextColor } from '@shared/text'
 import { clampOpacity, isOurName, sanitizeColor, type Color } from './basics'
 import { stdFont, sanitizeText, wrapLines } from './fonts'
 import {
@@ -13,7 +14,7 @@ import {
   type Rect
 } from './geometry'
 import type { AnnotInfo } from './model'
-import { formStream, fmt, get, getDict, getNumbers, getString, setNumbers } from './pdfobj'
+import { formStream, fmt, get, getDict, getNumber, getNumbers, getString, setNumbers } from './pdfobj'
 import { quadCorners, quadsBounds } from './quads'
 import { readAnnotation } from './read'
 import { stampByName, type StampDef } from './stamps'
@@ -227,17 +228,60 @@ export function layoutFreeText(font: PDFFont, textRaw: string, width: number, si
   return { lines, lead, pad, neededHeight: lines.length * lead + 2 * pad }
 }
 
-export async function buildFreeText(pdf: PDFDocument, a: AnnotInfo, rotation: number): Promise<Built> {
-  const font = await stdFont(pdf, 'Helvetica')
+const textColor = (c: Color): TextColor => (c.length === 1 ? c[0] : c.length === 4 ? [c[0], c[1], c[2], c[3]] : [c[0] ?? 0, c[1] ?? 0, c[2] ?? 0])
+
+/** Text of a FreeText box as it is laid out (tabs as spaces, CR LF as LF). */
+const freeTextSource = (s: string): string => s.replace(/\r\n?/g, '\n').replace(/\t/g, '    ')
+
+/** Engine layout options of a FreeText box's text (used for drawing and for the auto-grow height). */
+const engineFreeText = (w: number, size: number, bw: number, color: Color, q: number) => ({
+  size,
+  width: Math.max(1, w - 2 * (2 + bw)),
+  lineHeight: size * 1.2,
+  fontStack: FREE_TEXT_STACK,
+  color: textColor(color),
+  align: q === 1 ? ('center' as const) : q === 2 ? ('right' as const) : ('start' as const)
+})
+
+/** The standard-font look of Epdf's text boxes (metric-compatible Liberation Sans), every script's font as fallback. */
+const FREE_TEXT_STACK = ['Helvetica']
+
+/**
+ * Height (points) a FreeText box needs to show all its text inside the border. Text WinAnsi can encode is measured
+ * with Helvetica as before; other text (Arabic, Hebrew, CJK ...) with the text engine, which draws it.
+ */
+export async function freeTextNeededHeight(pdf: PDFDocument, textRaw: string, width: number, size: number, borderWidth: number): Promise<number> {
+  if (isWinAnsiText(textRaw)) return layoutFreeText(await stdFont(pdf), textRaw, width, size, borderWidth).neededHeight
+  ensureTextEngine()
+  const m = await measureText(freeTextSource(textRaw), engineFreeText(width, size, borderWidth, [0, 0, 0], 0))
+  return m.height + 2 * (2 + borderWidth)
+}
+
+export async function buildFreeText(pdf: PDFDocument, a: AnnotInfo, rotation: number, quadding = 0): Promise<Built> {
   const [w, h] = uprightSize(a.rect, rotation)
   const bw = Math.max(0, a.borderWidth)
   const size = a.fontSize
   const color = sanitizeColor(a.color, [0, 0, 0])
   const fill = a.fill && a.fill.length ? sanitizeColor(a.fill) : null
-  const lay = layoutFreeText(font, a.contents, w, size, bw)
   let ops = '/GS0 gs\n'
   if (fill) ops += `${colorOp(fill, false)} 0 0 ${fmt(w)} ${fmt(h)} re f\n`
   if (bw > 0) ops += `${colorOp(color, true)} ${fmt(bw)} w ${dashOp(a.dashed, bw)} ${fmt(bw / 2)} ${fmt(bw / 2)} ${fmt(w - bw)} ${fmt(h - bw)} re S\n`
+  if (!isWinAnsiText(a.contents)) {
+    // Any script: the text engine lays the text out (shaped, right-to-left where needed, "start" = right for
+    // right-to-left text unless /Q says otherwise), as a nested form with its own subset fonts.
+    ensureTextEngine()
+    const pad = 2 + bw
+    const xo = await makeTextXObject(pdf, freeTextSource(a.contents), engineFreeText(w, size, bw, color, quadding))
+    ops += `q ${fmt(bw)} ${fmt(bw)} ${fmt(w - 2 * bw)} ${fmt(h - 2 * bw)} re W n\n/Tx BMC\nq 1 0 0 1 ${fmt(pad)} ${fmt(h - pad - xo.height)} cm /EpdfTx0 Do Q\nEMC\nQ\n`
+    return {
+      ops,
+      bbox: [0, 0, w, h],
+      matrix: uprightMatrix(rotation, w, h),
+      resources: { ...gsResource(a.opacity), XObject: { EpdfTx0: xo.ref } }
+    }
+  }
+  const font = await stdFont(pdf, 'Helvetica')
+  const lay = layoutFreeText(font, a.contents, w, size, bw)
   ops += `q ${fmt(bw)} ${fmt(bw)} ${fmt(w - 2 * bw)} ${fmt(h - 2 * bw)} re W n\nBT\n/Helv ${fmt(size)} Tf\n${colorOp(color, false)}\n`
   let y = h - lay.pad - size * 0.92
   for (const line of lay.lines) {
@@ -251,6 +295,39 @@ export async function buildFreeText(pdf: PDFDocument, a: AnnotInfo, rotation: nu
     matrix: uprightMatrix(rotation, w, h),
     resources: { ...gsResource(a.opacity), Font: { Helv: font.ref } }
   }
+}
+
+const xmlEscape = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+const cssHex = (c: Color): string => {
+  const rgb = c.length === 1 ? [c[0], c[0], c[0]] : c.length === 4 ? [(1 - c[0]) * (1 - c[3]), (1 - c[1]) * (1 - c[3]), (1 - c[2]) * (1 - c[3])] : c
+  return '#' + rgb.map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * /DS and /RC of an Epdf text box whose text the standard fonts cannot encode: the logical text as rich text
+ * (one `<p dir="auto|rtl|ltr">` per line, so readers that rebuild the box from /RC, like Acrobat, keep the
+ * direction), and a default style consistent with /DA (same size and colour) and /Q. Text boxes with WinAnsi text
+ * keep writing neither (as before); a stale pair is removed.
+ */
+function setFreeTextRichText(dict: PDFDict, a: AnnotInfo, q: number): void {
+  if (isWinAnsiText(a.contents)) {
+    dict.delete(PDFName.of('RC'))
+    dict.delete(PDFName.of('DS'))
+    return
+  }
+  const color = cssHex(sanitizeColor(a.color, [0, 0, 0]))
+  const size = fmt(a.fontSize)
+  const align = q === 1 ? 'center' : q === 2 ? 'right' : 'start'
+  const family = "Helvetica,'Noto Sans','Noto Sans Arabic','Noto Sans Hebrew',sans-serif"
+  const style = `font-size:${size}pt;color:${color};text-align:${align};font-family:${family}`
+  const paras = freeTextSource(a.contents)
+    .split('\n')
+    .map((line) => `<p dir="${hasRtl(line) ? 'rtl' : 'auto'}">${xmlEscape(line)}</p>`)
+    .join('')
+  const rc = `<?xml version="1.0"?><body xmlns="http://www.w3.org/1999/xhtml" xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/" xfa:APIVersion="Acrobat:11.0.0" xfa:spec="2.0.2" style="${xmlEscape(style)}">${paras}</body>`
+  dict.set(PDFName.of('RC'), PDFHexString.fromText(rc))
+  dict.set(PDFName.of('DS'), PDFHexString.fromText(`font: ${size}pt ${family}; color: ${color}; text-align: ${align}`))
 }
 
 // ---------------------------------------------------------------- sticky note icon
@@ -361,7 +438,14 @@ export function installAppearance(pdf: PDFDocument, dict: PDFDict, built: Built)
   const oldN = ap?.get(PDFName.of('N'))
   const stream = formStream(ctx, built.ops, built.bbox, built.resources as never, built.matrix)
   const ref = ctx.register(stream)
-  if (oldN instanceof PDFRef && isOurName(getString(dict, 'NM'))) ctx.delete(oldN)
+  if (oldN instanceof PDFRef && isOurName(getString(dict, 'NM'))) {
+    // our engine text form nested in the old appearance goes with it (pictures are reused, never deleted here)
+    const old = ctx.lookup(oldN)
+    const xo = old instanceof PDFStream ? getDict(old.dict, 'Resources') : undefined
+    const tx = xo ? getDict(xo, 'XObject')?.get(PDFName.of('EpdfTx0')) : undefined
+    if (tx instanceof PDFRef) ctx.delete(tx)
+    ctx.delete(oldN)
+  }
   dict.set(PDFName.of('AP'), ctx.obj({ N: ref }))
   if (built.rect) setNumbers(ctx, dict, 'Rect', built.rect)
 }
@@ -393,9 +477,12 @@ export async function regenerateAppearance(pdf: PDFDocument, dict: PDFDict, rota
     case 'Line':
       built = buildLine(a)
       break
-    case 'FreeText':
-      built = await buildFreeText(pdf, a, rot)
+    case 'FreeText': {
+      const q = getNumber(dict, 'Q') ?? 0
+      built = await buildFreeText(pdf, a, rot, q)
+      if (a.ours) setFreeTextRichText(dict, a, q)
       break
+    }
     case 'Text':
       built = buildNote(a, rot)
       break
