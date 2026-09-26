@@ -63,7 +63,12 @@ Content of the marked pages, per mark (a mark is a set of boxes or exact rotated
 | **Everything else in the file** | the document is **rewritten from scratch** (pdf-lib full save, no incremental section) after a **garbage collection**: every object not reachable from the trailer (replaced streams, deleted annotations, old revisions' objects, orphans) is dropped, so no older revision or unreferenced object still holds the old text |
 
 Then the **overlay** (fill colour + optional text, upright on rotated pages) is drawn as ordinary page content in a
-clean graphics state.
+clean graphics state. Overlay text WinAnsi can encode ("REDACTED", Latin custom text) is drawn with Helvetica as
+before; custom text in any other script ("محجوب", "חסוי", "已删除", ...) is laid out once by the **text engine**
+(shaped, right-to-left where needed, subset fonts with `/ToUnicode`/`/ActualText`) and scaled into every mark. Its
+fonts are added under the overlay's resource prefix (`EpdfRdFont…`), so the self-check keeps ignoring the overlay.
+(Before, such characters were silently left out of the overlay.) The synchronous `redactDocument` API used by some
+tests cannot run the engine and still draws only the characters Helvetica has; the app uses `redactDocumentAsync`.
 
 ### The self-check (fail closed)
 

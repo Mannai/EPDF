@@ -95,9 +95,12 @@ keys, PageUp/PageDown, Home/End). There are no bare-letter shortcuts.
   compound broken at the same place (`well-` / `known`) is also joined.
 * Diagonal text is treated as the nearest quarter turn. Per-character positions inside a run are proportional
   estimates, so the box of a word inside a long run can be off by a fraction of a character for non-Helvetica fonts.
-* The PDF report uses Helvetica, and Noto Sans (the font bundled for forms) for Cyrillic/Greek/Vietnamese text;
-  characters neither font has (CJK, Arabic, …) print as `?` in the report (the CSV keeps them). Entries longer
-  than 700 characters are shortened in the PDF report (the CSV has the full text).
+* The PDF report uses Helvetica / Helvetica-Bold / Courier for text WinAnsi can encode (nothing embedded, as
+  before); any other text (Arabic, Hebrew, Cyrillic, Greek, Indic, Thai, CJK, …) is written by the text engine:
+  shaped, in reading order, each wrapped line of a right-to-left passage right-aligned in its column, extractable in
+  logical order. Only characters no bundled font has print as the font's missing-glyph box. If the engine cannot
+  start (it always can in the app), such characters print as `?` (`buildReportPdf(input, { engine: false })`).
+  Entries longer than 700 characters are shortened in the PDF report (the CSV has the full text).
 * The visual comparison renders at 72 dpi for the whole-document scan and 108 dpi for the overlay. Nothing is
   masked out: a different page size shows as a difference at the page edge, and annotations are compared as part of
   the rendered page. Tiny anti-aliasing shifts below the *Sensitivity* setting (and fewer than 12 differing pixels)

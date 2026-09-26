@@ -29,6 +29,7 @@ this instead.
 10. [Testing and how correctness was verified](#testing)
 11. [Known limits and what was not verified](#limits)
 12. [Development tools](#tools)
+13. [Features that write text: which path writes it](#features)
 
 <a id="quick-start"></a>
 ## 1. Quick start
@@ -119,6 +120,8 @@ All exported from `@shared/text` (`src/shared/text/index.ts`).
 | `layoutParagraph(text \| Span[], ParagraphOptions)` | the layout itself: lines, runs, positioned glyphs |
 | `caretAt`, `hitTest`, `selectionRects` | geometry for caret/selection code |
 | `embeddedFontsFor(pdf)`, `flushTextFonts(pdf)` | per-document font state (`uniformNames`, `all()`) |
+| `textContent(pdf, text, options)` | the drawing operators and the resources they use, for callers that insert text into a stream or form they build themselves (`origin: 'baseline' \| 'top'`); `renameContentResources(content, names)` renames `/EpdfF1`, `/EpdfGS…` in them |
+| `isWinAnsiText`, `nonWinAnsiChars`, `uncoveredChars`, `ensureTextEngine` | helpers for features: the path rule below, missing characters before drawing, set-up in the renderer |
 | `resolveStack`, `getCatalog`, `loadFontFromBytes`, `TextFont` | font stacks, catalogue, user fonts |
 | `shapeText`, `lineBreakOpportunities`, `resolveScripts`, `analyzeBidi` | building blocks (also tested on their own) |
 | `normalizeForSearch`, `findNormalized`, `visualToLogical` | search helpers |
@@ -406,9 +409,12 @@ Verified: everything in section 10. Not verified / not implemented:
   (Unicode 13.0 bidi classes; characters added to Unicode after 13.0 are treated as left-to-right by the bidi step).
 * **Hyphenation and soft-hyphen rendering** are not implemented (soft hyphens are break opportunities but do not draw a hyphen).
 * **Embedding into existing documents**: fonts are embedded per `PDFDocument` object; editing a document in several
-  `editPdf` steps embeds a new (small) subset each time.
+  `editPdf` steps embeds a new (small) subset each time. Each step's `PDFDocument` names its fonts `EpdfF1`, `EpdfF2`
+  … again: `drawText` / `drawParagraph` therefore never overwrite a page font entry that already names another font
+  (they use `EpdfF1_2`, … and rewrite the operators), so text drawn on the same page in an earlier step keeps its font.
 * The `text:selfTest` channel and `window.__epdfTextEngine` are diagnostics; nothing in the app calls them.
-* Nothing else in the app uses the engine yet (by design: a later stage retrofits the features).
+* Every feature that writes text into PDFs uses the engine for text the standard fonts cannot encode: see
+  [section 13](#features). (The built-in Office converter is converted separately.)
 
 <a id="tools"></a>
 ## 12. Development tools
@@ -421,3 +427,39 @@ Verified: everything in section 10. Not verified / not implemented:
 * `npx vitest run tests/unit/text-` runs the engine's unit tests; `npx playwright test tests/e2e/text-engine` the comparison
   harness and the app tests; the packaged test needs `npx electron-builder --win --dir --publish never` and
   `$env:EPDF_PACKAGED_EXE = "dist\win-unpacked\Epdf.exe"`.
+
+<a id="features"></a>
+## 13. Features that write text: which path writes it
+
+**The rule (the same everywhere):** a piece of text (one field value, one text box, one overlay text, one report
+line, one Add-text box, one edited block) whose every character **WinAnsi** can encode (the encoding of the standard
+14 fonts: Western European Latin and common punctuation) is written the way the feature always wrote it, with a
+standard font (Helvetica / Times / Courier), nothing embedded, the same bytes as before. **Any other character** sends
+that whole piece of text through the engine (`isWinAnsiText` decides). Latin-only documents therefore do not grow and
+look exactly as before; Arabic, Hebrew, Indic, Thai, CJK, Cyrillic, Greek … are shaped, ordered for display and
+extractable in logical order. Characters no bundled font has are refused before anything changes (forms, Add text,
+text editing) or drawn as the missing-glyph box (text boxes, reports, overlays), never silently dropped. The engine
+fonts follow the look of the standard font the feature would have used: `['Helvetica']` (Liberation Sans, then Noto
+Sans and every script's Noto font), `['Times']`, `['Courier']`, bold/italic as asked.
+
+| Feature | What goes through the engine | How it is written |
+|---|---|---|
+| Form filling (`forms/appearance.ts`, `values.ts`) | text fields (single line, multiline, comb, password, auto size), combo and list boxes, push-button captions | `/V` logical; `/AP /N` = widget look + clip + `/Tx BMC` + nested `makeTextXObject`; `/DA` names the engine font, which is added to `/DR` (`EpdfSans`, `EpdfSerifBd`, …); no `/NeedAppearances`; `/Q 0` = start. See docs/features/forms-signing.md for the compatibility choice. |
+| Add text, date stamp, date next to a signature (`forms/draw.ts`) | the text | `drawText` with width, `lineHeight` 1.2 × size, rotation of the page; right-to-left text right-aligned in the box |
+| Form builder (`formbuilder/logic/appearance.ts`, `create.ts`) | default values, options, captions | the forms feature's `writeEngineAppearances`; `toFontName` maps `EpdfSerifBd` back to `TiBo` etc. |
+| Markup text boxes (`markup/pdf/appearance.ts`, `ops.ts`) | the text box text | nested `makeTextXObject` inside the clip; auto-grow measured by the engine; `/RC` (`<p dir>`) and `/DS` consistent with `/DA`; `/Contents` logical |
+| Comparison report (`compare/report.ts`) | old/new passages, file names, any line | `layoutParagraph` for the line breaks, `drawText` per line with the paragraph direction; right-to-left lines right-aligned in their column |
+| Redaction overlay (`redact/logic/redact.ts`, `pageRedact.ts`) | custom overlay text | `textContent` once at size 1, scaled into each mark with `cm`; fonts under the overlay prefix `EpdfRdFont` so the self-check ignores them |
+| Text editing (`textedit/pdfcontent/textEdit.ts`) | new text needing shaping/RTL, and characters the bundled Noto Sans lacks | `textContent` inserted as `q <text matrix> cm … Q` by the replace strategy; never spliced in place. Exception to the rule: left-to-right non-WinAnsi text Noto Sans covers (Cyrillic, Greek) keeps the editor's pdf-lib Noto Sans path |
+| Headers/footers, watermarks, Bates (`headerfooter`) | all text | already on the engine (`makeTextXObject`) |
+
+Not converted (not text in the PDF or out of scope): typed signatures (a Chromium-rendered picture), the OCR invisible
+text layer (its own glyphless font sized to the scan, words stored in visual order), built-in markup stamps (fixed
+English labels in Helvetica-Bold), sticky notes (icon only), the Office converter (separate work).
+
+Verification of the retrofit: `tests/unit/forms-engine`, `forms-draw-engine`, `formbuilder-engine`, `markup-engine`,
+`compare-report`, `redact-overlay-text`, `editcontent-engine` (read back with the page text model, PDF.js for fields)
+and `tests/e2e/text-retrofit.spec.ts` (the real app; field, Add text and text box compared with Chromium's rendering
+of the same string, NCC 0.97-0.999, negative controls 0.35-0.50). Sample files for other readers:
+`test-results/text-retrofit/*.pdf`; each feature's Arabic sample was looked at in Windows' own PDF engine
+(`scripts/render-winpdf.ps1`).

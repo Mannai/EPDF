@@ -117,8 +117,13 @@ look like nested quantifiers (catastrophic backtracking) or are longer than 200 
   If the user declines the unlock, the tool says so and does nothing (message path not covered by an e2e test).
 * Required fields are announced (`aria-required`, "(required)" in the accessible name) and listed by *Check
   required fields*; Epdf does not block saving an incomplete form.
-* Non-Latin default values / captions need a font outside the 14 standard fonts and are not supported (the
-  filling overlay of the forms feature still handles Unicode values).
+* Default values, dropdown / list options and button captions in any script the bundled fonts cover (Arabic,
+  Hebrew, Cyrillic, Indic, Thai, CJK, ...) are drawn by the text engine through the forms feature's
+  `writeEngineAppearances` (see docs/features/forms-signing.md, "Right-to-left and other scripts in fields"): the
+  field's `/DA` then names the engine font (`EpdfSans`, `EpdfSerifBd`, ...) which is added to `/DR`, and the
+  properties panel maps it back to the chosen standard font (Helvetica / Times / Courier, bold). Latin-only fields
+  are unchanged (standard fonts in `/DR`, pdf-lib appearances). Options of new dropdowns and lists are set after the
+  widget is created (pdf-lib's first Helvetica appearance cannot encode Arabic); the real appearance follows.
 
 ## Manual test steps
 

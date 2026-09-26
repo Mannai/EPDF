@@ -73,9 +73,19 @@ src/shared/features/imageedit.ts       type of the channel's result
      edit changed size or colour, or joined/split lines;
    * with the closest standard font (Helvetica / Times / Courier, bold and italic variants) — *"Font not available
      in this PDF — used Helvetica"*;
-   * with the bundled **Noto Sans** (regular/bold/italic/bold italic, subset-embedded on demand) for characters
-     outside WinAnsi (Latin extended, Greek, Cyrillic, ...) — *"Font not available in this PDF — used Noto Sans"*;
-   * characters that even Noto Sans lacks (for example CJK) are **refused** with a message; the document is
+   * with the bundled **Noto Sans** (regular/bold/italic/bold italic, subset-embedded on demand) for left-to-right
+     characters outside WinAnsi that it has (Latin extended, Greek, Cyrillic, ...) — *"Font not available in this
+     PDF — used Noto Sans"*;
+   * with the **text engine** (`src/shared/text`, see `docs/text-engine.md`) for new text in a script that needs
+     shaping or right-to-left ordering (Arabic, Persian, Hebrew, Indic, Thai, ...) and for characters Noto Sans lacks
+     (CJK, ...): shaped, in display order, subset Type0 fonts with `/ToUnicode` and `/ActualText`, wrapped at the same
+     width and leading, first baseline at the block's origin, in the family of the old font (sans / serif / mono,
+     bold, italic) — *"Font not available in this PDF — used Noto Sans Arabic"* (the font that draws most of it).
+     A single right-to-left line keeps its right edge where the old text ended (when it fits there). The engine's
+     operators are inserted as a `q <text matrix> cm … Q` group in the same place the other strategies use; the
+     editor's model is otherwise unchanged. Such characters are also never spliced into an existing run by the
+     in-place strategy (they would show as isolated letters in the wrong order);
+   * characters that no bundled font has (for example Tibetan) are **refused** with a message; the document is
      unchanged.
 
    Removing an operation keeps the text position of what follows: if the next show operation continues from
@@ -118,7 +128,7 @@ signature (PNG/JPEG only, at most 40 MB) and returns `{ name, kind, bytes }`. Th
 | Rotated, skewed or mirrored text; any text on a page with `/Rotate` ≠ 0 | Shown as not editable ("rotate the page back to 0° first"). Images on rotated pages are supported. |
 | Text in a Form XObject that is drawn more than once or referenced from elsewhere | Refused (a change would alter every copy). Single-use forms are editable. Same for images in such forms. |
 | Marked content whose `/ActualText`/`/Alt` lives in a `/Properties` resource | Refused (cannot be rewritten in place). |
-| Right-to-left and complex scripts | Text is edited in the order it is stored in the content stream (visual order); no shaping. New Arabic/Hebrew text is not shaped. |
+| Right-to-left and complex scripts | Existing text is edited in the order it is stored in the content stream (visual order) — editing existing Arabic/Hebrew text properly is a separate project. **New** Arabic, Hebrew, Indic, Thai or CJK text is drawn by the text engine (shaped, correct order, extractable). Kerning/ligatures of the old font are not kept for it. |
 | Colours other than DeviceGray/RGB/CMYK (ICC, Separation, patterns) | Replaced text is drawn in the closest DeviceRGB colour. In-place edits keep the original. |
 | Per-run styling inside one block | In-place edits keep it. Replace uses the first run's font/size/colour for the whole block. |
 | Kerning inside replaced text | Not kept (the new font's own advance widths are used). |

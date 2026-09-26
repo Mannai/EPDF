@@ -62,7 +62,14 @@ All annotations have `/Type /Annot`, `/Subtype`, `/Rect`, `/F 4` (Print), `/P` (
   **Underline / StrikeOut / Squiggly**: stroked lines/zig-zag along the quads.
 * **Sticky note** `/Text` with `/Name /Note|/Comment`, `/Open false`, 24×24 pt icon appearance.
 * **Text box** `/FreeText` with `/DA` (`… rg /Helv 12 Tf`), `/Q`, `/BS`, fill in `/C`; the appearance wraps the text
-  with Helvetica metrics and clips it to the box.
+  with Helvetica metrics and clips it to the box. Text WinAnsi cannot encode (Arabic, Hebrew, Cyrillic, CJK, ...) is
+  drawn by the **text engine** instead: a nested `makeTextXObject` form inside the clip (shaped, right-to-left where
+  needed, subset fonts with `/ToUnicode` and `/ActualText`), wrapped with the engine's line breaking; `/Q 0` means
+  *start* (right-aligned for right-to-left text), 1 centre, 2 right; the box grows to fit using the engine's
+  measurement. Such boxes also get **`/RC`** (the logical text as XHTML rich text, one `<p dir="rtl|auto">` per line)
+  and **`/DS`** (`font: 12pt Helvetica,'Noto Sans','Noto Sans Arabic',...; color: #rrggbb; text-align: start`), with
+  the same size and colour as `/DA`, so readers that rebuild the box from rich text (Acrobat) keep the direction.
+  `/Contents` is always the logical plain text. Changing such a box back to WinAnsi text removes `/RC` and `/DS`.
 * **Drawing** `/Ink` with `/InkList` (smoothed), `/BS /W`.
 * **Shapes** `/Square` and `/Circle` (`/IC` fill, `/BS` width + dash), `/Line` with `/L`, `/LE [/None /OpenArrow]`
   and `/IT /LineArrow` for arrows.
@@ -83,9 +90,13 @@ unusual endings are never redrawn. Link, Widget, Popup, Redact and other non-mar
 
 * No Polygon / PolyLine / cloud tools (they can be listed, moved, deleted and have their text edited).
 * No popup annotations are created; readers show `/Contents` on hover.
-* No rich text: text is plain. Text in a text box's **appearance** uses the standard Helvetica (WinAnsi); characters
-  outside it show as `?` there (the `/Contents` text keeps the full Unicode). `/DA` refers to `/Helv` without adding
-  it to the AcroForm resources, so a reader that re-edits the text falls back to its default font.
+* No rich-text editing: text is plain (Epdf writes `/RC` only as the plain text in rich-text form for non-WinAnsi
+  boxes). Text in a text box's appearance uses the standard Helvetica when WinAnsi can encode it, otherwise the text
+  engine (every bundled script; characters no bundled font has show as the font's missing-glyph box). `/DA` refers
+  to `/Helv` without adding it to the AcroForm resources (no AcroForm is created for annotations), so a reader that
+  re-edits the text uses `/DS`/`/RC` or falls back to its default font. Not verified in Acrobat.
+* Built-in stamp labels are English and drawn with Helvetica-Bold; sticky notes draw only an icon (no text in the
+  appearance). There is no callout tool.
 * Comments in password-protected documents cannot be listed (editing is refused by the pipeline anyway).
 * Annotations are read by loading the whole document with pdf-lib after every edit while the panel or the Select
   tool is in use. On very large files (hundreds of MB) this takes noticeable time on the UI thread.
