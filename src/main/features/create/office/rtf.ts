@@ -181,6 +181,13 @@ interface CharFmt {
   scaps: boolean
   hidden: boolean
   spacing: number
+  /** Associated (complex-script) properties: \af \afs \ab \ai (af -1 = not set). */
+  af: number
+  afs?: number
+  ab?: boolean
+  ai?: boolean
+  /** \fcs1: the following \f \fs \b \i describe the complex-script font (\fcs0: the Latin one). */
+  fcs: number
 }
 
 interface BorderDraft {
@@ -277,6 +284,8 @@ interface RowDef {
   padL?: number
   padR?: number
   bdr: Sides & { h?: BorderDraft; v?: BorderDraft }
+  /** \rtlrow: right-to-left row (first cell on the right). */
+  rtl?: boolean
 }
 
 interface RawCell {
@@ -351,13 +360,15 @@ interface SectionDraft {
   pgnstart?: number
   header: HeaderFooterSet
   footer: HeaderFooterSet
+  /** \rtlsect: columns from right to left. */
+  rtl?: boolean
 }
 
 const newCellDef = (): CellDef => ({ right: 0, hmerge: 0, vmerge: 0, shade: 0, vAlign: 'top', bdr: {} })
 const newRowDef = (): RowDef => ({ left: 0, gaph: 108, cells: [], cur: newCellDef(), header: false, height: 0, keep: false, align: 'left', bdr: {} })
 const newSink = (): Sink => ({ blocks: [], inlines: [], cellBlocks: [], rowCells: [], rows: [], rowDef: newRowDef() })
 
-const defaultChar = (): CharFmt => ({ f: -1, fs: 24, b: false, i: false, ul: false, strike: false, cf: 0, hl: 0, sup: false, sub: false, caps: false, scaps: false, hidden: false, spacing: 0 })
+const defaultChar = (): CharFmt => ({ f: -1, fs: 24, b: false, i: false, ul: false, strike: false, cf: 0, hl: 0, sup: false, sub: false, caps: false, scaps: false, hidden: false, spacing: 0, af: -1, fcs: 0 })
 const defaultPara = (): ParaFmt => ({ qa: 'left', sb: 0, sa: 0, sl: 0, slmult: 0, keep: false, keepn: false, pagebb: false, widow: true, tabs: [], nextTabAlign: 'left', bdr: {}, shade: 0, intbl: false, ls: 0, ilvl: 0, rtl: false })
 
 const DEST_SKIP = new Set([
@@ -432,6 +443,8 @@ export function readRtf(bytes: Uint8Array, env: ConvertEnv): FlowDocument {
   const sections: Section[] = []
   let defaultTab = 720
   let deff = 0
+  /** \adeff: default associated (complex-script) font, -1 = none. */
+  let adeff = -1
   let docCp = 1252
   let facing = false
   let sectdSeen = false
@@ -467,10 +480,15 @@ export function readRtf(bytes: Uint8Array, env: ConvertEnv): FlowDocument {
 
   function textStyle(c: CharFmt): TextStyle {
     const font = fontOf(c.f)
-    const key = `${font.family}|${c.fs}|${c.b}|${c.i}|${c.ul}|${c.strike}|${c.cf}|${c.hl}|${c.sup}|${c.sub}|${c.caps}|${c.scaps}|${c.spacing}`
+    // complex-script (Arabic, Hebrew...) characters use the associated font/size/bold/italic
+    const afIdx = c.af >= 0 ? c.af : adeff
+    const cfont = afIdx >= 0 ? fontOf(afIdx) : undefined
+    const hasCs = cfont !== undefined || c.afs !== undefined || c.ab !== undefined || c.ai !== undefined
+    const key = `${font.family}|${c.fs}|${c.b}|${c.i}|${c.ul}|${c.strike}|${c.cf}|${c.hl}|${c.sup}|${c.sub}|${c.caps}|${c.scaps}|${c.spacing}|${hasCs ? `${cfont?.family}|${c.afs}|${c.ab}|${c.ai}` : ''}`
     let s = styleCache.get(key)
     if (!s) {
       s = {
+        ...(hasCs ? { cs: { family: cfont?.family, size: c.afs !== undefined ? Math.max(1, c.afs / 2) : undefined, bold: c.ab, italic: c.ai } } : {}),
         family: font.family,
         size: Math.max(1, c.fs / 2),
         bold: c.b,
@@ -776,8 +794,10 @@ export function readRtf(bytes: Uint8Array, env: ConvertEnv): FlowDocument {
       rows: built,
       borders: { top: one(tb.t), bottom: one(tb.b), left: one(tb.l), right: one(tb.r), insideH: one(tb.h), insideV: one(tb.v) },
       padding: { top: 0, bottom: 0, left: padL, right: padR },
+      // for right-to-left rows (\rtlrow) the default/\trql position is read as the start (right) edge
       align: first.align,
-      indent: tw(first.left)
+      indent: tw(first.left),
+      rtl: first.rtl || undefined
     }
   }
 
@@ -810,7 +830,8 @@ export function readRtf(bytes: Uint8Array, env: ConvertEnv): FlowDocument {
       footer,
       titlePg: sec.titlepg || undefined,
       evenAndOdd: facing || undefined,
-      pageNumberStart: sec.pgnstart
+      pageNumberStart: sec.pgnstart,
+      rtl: sec.rtl || undefined
     }
     if (sec.cols > 1) s.columns = { count: sec.cols, gap: tw(sec.colsx) }
     sections.push(s)
@@ -823,10 +844,33 @@ export function readRtf(bytes: Uint8Array, env: ConvertEnv): FlowDocument {
         Object.assign(c, defaultChar(), { f: -1 })
         return true
       case 'b':
-        c.b = p !== 0
+        if (c.fcs === 1) c.ab = p !== 0
+        else c.b = p !== 0
         return true
       case 'i':
-        c.i = p !== 0
+        if (c.fcs === 1) c.ai = p !== 0
+        else c.i = p !== 0
+        return true
+      case 'ab':
+        c.ab = p !== 0
+        return true
+      case 'ai':
+        c.ai = p !== 0
+        return true
+      case 'af':
+        if (p !== undefined) c.af = p
+        return true
+      case 'afs':
+        if (p !== undefined && p > 0) c.afs = p
+        return true
+      case 'fcs':
+        c.fcs = p ?? 0
+        return true
+      case 'rtlch':
+      case 'ltrch':
+      case 'hich':
+      case 'loch':
+      case 'dbch':
         return true
       case 'ul':
       case 'uldb':
@@ -846,10 +890,16 @@ export function readRtf(bytes: Uint8Array, env: ConvertEnv): FlowDocument {
         c.strike = p !== 0
         return true
       case 'fs':
-        if (p !== undefined && p > 0) c.fs = p
+        if (p !== undefined && p > 0) {
+          if (c.fcs === 1) c.afs = p
+          else c.fs = p
+        }
         return true
       case 'f':
-        if (p !== undefined) c.f = p
+        if (p !== undefined) {
+          if (c.fcs === 1) c.af = p
+          else c.f = p
+        }
         return true
       case 'cf':
         c.cf = p ?? 0
@@ -1661,6 +1711,21 @@ export function readRtf(bytes: Uint8Array, env: ConvertEnv): FlowDocument {
         return
       case 'deff':
         deff = p ?? 0
+        return
+      case 'adeff':
+        adeff = p ?? -1
+        return
+      case 'rtlrow':
+        gs.sink.rowDef.rtl = true
+        return
+      case 'ltrrow':
+        gs.sink.rowDef.rtl = false
+        return
+      case 'rtlsect':
+        sec.rtl = true
+        return
+      case 'ltrsect':
+        sec.rtl = false
         return
       case 'uc':
         g.uc = p ?? 1

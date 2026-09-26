@@ -855,8 +855,10 @@ function buildParagraphs(ctx: Ctx, tree: Tree, txBody: XNode, chain: XNode[], ba
           underline = true
         }
       }
+      const csFamily = layered.csFamily ?? cc.theme.minorCs
       return {
         st: {
+          ...(csFamily ? { cs: { family: csFamily } } : {}),
           family: layered.family ?? cc.theme.minor,
           size: Math.max(1, size),
           bold: !!layered.b,
@@ -917,7 +919,9 @@ function buildParagraphs(ctx: Ctx, tree: Tree, txBody: XNode, chain: XNode[], ba
     const line: ParaProps['line'] = pp.lnSpc?.pts !== undefined ? { rule: 'exact', value: pp.lnSpc.pts * scale } : { rule: 'auto', value: (pp.lnSpc?.pct ?? 1) * (1 - lnRed) }
     const props: ParaProps = {
       ...DEFAULT_PARA_PROPS,
-      align: ALGN[pp.algn ?? 'l'] ?? 'left',
+      // DrawingML algn is physical (PowerPoint and LibreOffice draw algn="r" at the right in any direction);
+      // ParaProps.align is logical, so it is swapped for right-to-left paragraphs. marL/indent are logical (start).
+      align: logicalAlign(ALGN[pp.algn ?? (pp.rtl ? 'r' : 'l')] ?? 'left', !!pp.rtl),
       spaceBefore: pi === 0 ? 0 : sp(pp.spcBef),
       spaceAfter: sp(pp.spcAft),
       line,
@@ -931,6 +935,11 @@ function buildParagraphs(ctx: Ctx, tree: Tree, txBody: XNode, chain: XNode[], ba
     blocks.push({ k: 'p', props, inlines, markStyle })
   })
   return blocks
+}
+
+/** Physical alignment -> logical (start/end) for a right-to-left paragraph. */
+export function logicalAlign(a: ParaProps['align'], rtl: boolean): ParaProps['align'] {
+  return rtl ? (a === 'left' ? 'right' : a === 'right' ? 'left' : a) : a
 }
 
 function applyRPrInto(target: RPr, src: RPr): void {
@@ -1205,8 +1214,9 @@ function renderTable(ctx: Ctx, tbl: XNode, box: Box, xf: Xf, ops: Op[]): void {
     }
     rows.push({ cells, height: { value: (numAttr(tr, 'h') ?? 0) * xf.ay, rule: 'atLeast' }, header: false, cantSplit: true })
   })
-  const table: Table = { k: 'table', colWidths: cols, rows, borders: {}, padding: { top: 3.6, right: 7.2, bottom: 3.6, left: 7.2 }, align: 'left', indent: 0 }
-  const frags = tableFragments({ catalog: ctx.env.catalog, warnings: ctx.env.warnings, defaultTabStop: 72, maxBlockHeight: 100000 }, table, cols.reduce((s, w) => s + w, 0) + 1)
+  // a:tblPr rtl="1": right-to-left table (first column on the right)
+  const table: Table = { k: 'table', colWidths: cols, rows, borders: {}, padding: { top: 3.6, right: 7.2, bottom: 3.6, left: 7.2 }, align: 'left', indent: 0, rtl: isTrue(attr(tblPr, 'rtl')) || undefined }
+  const frags = tableFragments({ catalog: ctx.env.catalog, warnings: ctx.env.warnings, defaultTabStop: 72, maxBlockHeight: 100000 }, table, cols.reduce((s, w) => s + w, 0) + (table.rtl ? 0 : 1))
   const st = stackFragments(frags)
   const body = shiftOps(st.ops, box.x, box.y)
   rotateWrap(ops, box, body)

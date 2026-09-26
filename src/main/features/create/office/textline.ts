@@ -167,7 +167,34 @@ export function shapeLine(cat: FontCatalog, items: LineItem[], dir: 'ltr' | 'rtl
     outItems[p.item]!.pieces.push({ x: pen, w: p.width })
     pen += p.width
   }
-  return { text, runs, width: pen, items: outItems, rtl: direction === 'rtl' }
+  return { text, runs: mergeRuns(runs), width: pen, items: outItems, rtl: direction === 'rtl' }
+}
+
+/**
+ * Visually adjacent runs in the same font, size, colour, level and baseline become one run (one text object in the
+ * PDF). PDF.js reorders right-to-left text only inside one run, so a line of per-word runs would extract with its
+ * words in visual order.
+ */
+function mergeRuns(runs: GlyphRun[]): GlyphRun[] {
+  const out: GlyphRun[] = []
+  for (const r of runs) {
+    const last = out[out.length - 1]
+    const same =
+      last &&
+      last.font === r.font &&
+      last.size === r.size &&
+      last.level === r.level &&
+      last.script === r.script &&
+      last.style.rise === r.style.rise &&
+      last.style.synthBold === r.style.synthBold &&
+      last.style.synthItalic === r.style.synthItalic &&
+      String(last.style.color) === String(r.style.color) &&
+      Math.abs(last.x + last.width - r.x) < 0.01
+    if (same) {
+      out[out.length - 1] = { ...last, glyphs: [...last.glyphs, ...r.glyphs], width: last.width + r.width, textStart: Math.min(last.textStart, r.textStart), textEnd: Math.max(last.textEnd, r.textEnd) }
+    } else out.push(r)
+  }
+  return out
 }
 
 function shapePiece(cat: FontCatalog, it: LineItem, idx: number, text: string, sg: { s: number; e: number; entry: Parameters<FontCatalog['fontOf']>[0]; script: string; level: number }): Piece {

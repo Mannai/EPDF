@@ -174,6 +174,8 @@ class OdtReader {
     const reg = this.stylesReg
     const layout = el ? reg.pageLayouts.get(el.attrs['style:page-layout-name'] ?? '') : undefined
     const lp = child(layout, 'page-layout-properties')?.attrs ?? {}
+    // paragraphs whose writing mode is "page" (or unset) follow the page layout's direction
+    if (lp['style:writing-mode']) this.pageRtl = lp['style:writing-mode'].startsWith('rl')
     const w = parseLength(lp['fo:page-width']) ?? PAGE_A4.width
     const h = parseLength(lp['fo:page-height']) ?? PAGE_A4.height
     const mm = (k: string, dflt: number): number => parseLength(lp[`fo:margin-${k}`]) ?? parseLength(lp['fo:margin']) ?? dflt
@@ -564,6 +566,8 @@ class OdtReader {
   }
 
   private currentBase: TextStyle = DEFAULT_STYLE
+  /** Writing direction of the page layout (for paragraphs with writing mode "page"). */
+  private pageRtl = false
 
   private list(n: XNode, depth: number): void {
     if (depth > MAX_DEPTH) return this.tooDeep()
@@ -647,22 +651,43 @@ class OdtReader {
     if (fv !== undefined) s.smallCaps = fv === 'small-caps' || undefined
     const ls = parseLength(p['fo:letter-spacing'])
     if (ls) s.spacing = ls
+    // complex-script (Arabic, Hebrew...) font, size, weight and posture
+    const cfam = this.reg.fontFamily(p['style:font-name-complex'], p['style:font-family-complex'])
+    const cfs = p['style:font-size-complex']
+    const cfw = p['style:font-weight-complex']
+    const cst = p['style:font-style-complex']
+    if (cfam || cfs || cfw || cst) {
+      const cs = { ...(base.cs ?? {}) }
+      if (cfam) cs.family = cfam
+      if (cfs) {
+        const v = parseLength(cfs, base.cs?.size ?? base.size)
+        if (v && v > 0) cs.size = v
+      }
+      if (cfw) cs.bold = cfw === 'bold' || (/^\d+$/.test(cfw) && parseInt(cfw, 10) >= 600)
+      if (cst) cs.italic = cst === 'italic' || cst === 'oblique'
+      s.cs = cs
+    }
     return s
   }
 
   private paraProps(styleName: string | undefined, base: TextStyle): ParaProps {
     const p = this.reg.props('paragraph', styleName, 'paragraph')
     const W = this.contentWidth
-    const rtl = (p['style:writing-mode'] ?? '').startsWith('rl')
+    const wm = p['style:writing-mode'] ?? 'page'
+    const rtl = wm === 'page' || wm === 'inherit' ? this.pageRtl : wm.startsWith('rl')
+    // ParaProps alignment is logical ('left' = start). ODF start/end are logical; left/right are physical.
     const ta = p['fo:text-align']
-    const align: ParaProps['align'] = ta === 'center' ? 'center' : ta === 'justify' ? 'justify' : ta === 'right' ? 'right' : ta === 'end' ? (rtl ? 'left' : 'right') : ta === 'left' ? 'left' : rtl ? 'right' : 'left'
+    const align: ParaProps['align'] =
+      ta === 'center' ? 'center' : ta === 'justify' ? 'justify' : ta === 'end' ? 'right' : ta === 'right' ? (rtl ? 'left' : 'right') : ta === 'left' ? (rtl ? 'right' : 'left') : 'left'
     const sh = p['fo:margin']
     const side = (k: string): number => parseLength(p[`fo:margin-${k}`], W) ?? parseLength(sh, W) ?? 0
     const props: ParaProps = {
       ...DEFAULT_PARA_PROPS,
-      align: ta === 'start' && rtl ? 'right' : align,
+      align,
       spaceBefore: Math.max(0, side('top')),
       spaceAfter: Math.max(0, side('bottom')),
+      // LibreOffice reads fo:margin-left/right as the start/end indents of a right-to-left paragraph (checked:
+      // margin-right does not indent an rl-tb paragraph on the right), so they are used as they are
       indentLeft: side('left'),
       indentRight: side('right'),
       firstLine: parseLength(p['fo:text-indent'], W) ?? 0,
@@ -994,7 +1019,15 @@ class OdtReader {
     const ml = parseLength(tp['fo:margin-left'], W) ?? 0
     const cellPad = { top: 2.8, bottom: 2.8, left: 2.8, right: 2.8 }
     if (tp['fo:break-before'] === 'page') this.breakNext = true
-    return { k: 'table', colWidths: widths, rows, borders: {}, padding: cellPad, align: al === 'center' ? 'center' : al === 'right' ? 'right' : 'left', indent: al === 'margins' || al === 'left' || !al ? ml : 0 }
+    // A right-to-left table (writing mode rl-tb, or "page" on a right-to-left page) has its first column on the right.
+    // table:align and the margins are physical in ODF; Table.align/indent are logical for right-to-left tables.
+    const twm = tp['style:writing-mode'] ?? 'page'
+    const rtl = twm === 'page' || twm === 'inherit' ? this.pageRtl : twm.startsWith('rl')
+    const phys: Table['align'] = al === 'center' ? 'center' : al === 'right' ? 'right' : 'left'
+    const align: Table['align'] = rtl && phys !== 'center' ? (phys === 'right' ? 'left' : 'right') : phys
+    const mr = parseLength(tp['fo:margin-right'], W) ?? 0
+    const indent = rtl ? (al === 'margins' || al === 'right' || !al ? mr : 0) : al === 'margins' || al === 'left' || !al ? ml : 0
+    return { k: 'table', colWidths: widths, rows, borders: {}, padding: cellPad, align: rtl && (al === 'margins' || !al) ? 'left' : align, indent, rtl: rtl || undefined }
   }
 
   private row(r: XNode, header: boolean, depth: number): Row {

@@ -72,9 +72,10 @@ const normName = (name: string | undefined | null): string => {
 
 /**
  * Arabic-script fonts named by Office documents, and how Epdf draws them. `latin`: the family for the Latin characters
- * of a font that is itself an Arabic font. `scale`: size factor of the bundled Arabic face, the geometric mean of the
- * width ratio and the letter-height ratio measured against the Microsoft font (tests/unit/officeArabicFontMetrics.test.ts;
- * table in docs/features/office-rtl.md). 1 where the Microsoft font was not available to measure.
+ * of a font that is itself an Arabic font. `scale`: size factor of the bundled Arabic face so that Arabic text takes
+ * the same WIDTH as in the Microsoft font (so lines break at the same words): the ratio of the advance widths of a
+ * fixed Arabic sample, measured with HarfBuzz against the Microsoft font (tests/unit/officeArabicFontMetrics.test.ts;
+ * table and the resulting letter heights in docs/features/office-rtl.md). 1 where the font was not available to measure.
  */
 interface ArabicMapping {
   re: RegExp
@@ -86,11 +87,11 @@ interface ArabicMapping {
 }
 const ARABIC_FONTS: ArabicMapping[] = [
   // Latin fonts that contain Arabic glyphs (Word uses them as the complex-script font: w:rFonts w:cs="Arial")
-  { re: /^(arial|helvetica|liberation ?sans|arimo)/, complex: 'NotoNaskhArabic', scale: 0.975, arabicFont: false },
-  { re: /^(times|liberation ?serif|tinos)/, complex: 'NotoNaskhArabic', scale: 0.964, arabicFont: false },
-  { re: /^(calibri|carlito)/, complex: 'NotoNaskhArabic', scale: 0.996, arabicFont: false },
+  { re: /^(arial|helvetica|liberation ?sans|arimo)/, complex: 'NotoNaskhArabic', scale: 0.92, arabicFont: false },
+  { re: /^(times|liberation ?serif|tinos)/, complex: 'NotoNaskhArabic', scale: 0.907, arabicFont: false },
+  { re: /^(calibri|carlito)/, complex: 'NotoNaskhArabic', scale: 0.935, arabicFont: false },
   { re: /^(tahoma|verdana|microsoft sans serif|ms sans serif)/, complex: 'NotoSansArabic', scale: 1.063, arabicFont: false },
-  { re: /^(segoe ui)/, complex: 'NotoSansArabic', scale: 1.065, arabicFont: false },
+  { re: /^(segoe ui)/, complex: 'NotoSansArabic', scale: 1.036, arabicFont: false },
   { re: /^(courier)/, complex: 'NotoNaskhArabic', scale: 1, arabicFont: false },
   // Arabic fonts
   { re: /^(simplified arabic|traditional arabic|arabic typesetting|sakkal majalla|arabic transparent|andalus|aldhabi|microsoft uighur|urdu typesetting|noto naskh|amiri|scheherazade|lateef|kfgqpc|uthman|me quran|al qalam|lotus|mitra|nazanin|b nazanin|b lotus|b mitra|zar|b zar|yagut|badr|traditional naskh|naskh|al bayan|geeza pro|baghdad|nadeem|damascus|mishafi|diwani|decotype|arabic)/, complex: 'NotoNaskhArabic', scale: 1, arabicFont: true, latin: 'LiberationSerif' },
@@ -316,12 +317,9 @@ export class FontCatalog {
   fontRuns(face: Face, text: string, from = 0, to = text.length, scripts?: { ids: Uint8Array; tags: readonly string[] }): FontRun[] {
     const stack = this.stack(face)
     const sc = scripts ?? resolveScripts(text)
-    const out: FontRun[] = []
-    let cur: FontRun | null = null
-    let prevEntry: StackEntry | undefined
-    let i = from
-    while (i < to) {
-      // one cluster: a base character with following combining marks / joiners / variation selectors
+    // clusters: a base character with following combining marks / joiners / variation selectors
+    const clusters: { s: number; e: number; needed: number[]; neutral: boolean; entry?: StackEntry }[] = []
+    for (let i = from; i < to; ) {
       let j = i
       const needed: number[] = []
       const first = text.codePointAt(j)!
@@ -333,23 +331,57 @@ export class FontCatalog {
         if (!isDefaultIgnorable(cp)) needed.push(cp)
         j += cp > 0xffff ? 2 : 1
       }
-      let entry: StackEntry | undefined
-      if (needed.length === 0) entry = prevEntry ?? stack[0]
-      else {
-        entry = stack.find((e) => needed.every((cp) => e.coverage.has(cp)))
-        if (!entry) {
-          entry = stack.find((e) => e.coverage.has(needed[0]!)) ?? prevEntry ?? stack[0]
-          for (const cp of needed) if (!entry || !entry.coverage.has(cp)) this.missing.add(String.fromCodePoint(cp))
-        }
+      clusters.push({ s: i, e: j, needed, neutral: needed.length === 0 || !/\p{L}/u.test(String.fromCodePoint(needed[0]!)) })
+      i = j
+    }
+    const pick = (needed: number[]): StackEntry | undefined => stack.find((e) => needed.every((cp) => e.coverage.has(cp)))
+    // Letters: first font of the stack that covers the cluster (CSS font-family semantics).
+    for (const c of clusters) {
+      if (c.neutral) continue
+      c.entry = pick(c.needed)
+      if (!c.entry) {
+        c.entry = stack.find((e) => e.coverage.has(c.needed[0]!)) ?? stack[0]
+        for (const cp of c.needed) if (!c.entry || !c.entry.coverage.has(cp)) this.missing.add(String.fromCodePoint(cp))
       }
-      prevEntry = entry
-      const script = SCRIPT_TAGS[sc.ids[i]!] ?? 'Zyyy'
-      if (cur && cur.entry === entry && cur.script === script) cur.e = j
+    }
+    // Neutral characters (spaces, punctuation, digits) take the font of the letters around them when it has them, as
+    // Word sets the spaces of an Arabic run in the Arabic font. This keeps an Arabic line in one font (one text object:
+    // PDF.js reorders right-to-left text only within one) and the spacing of the Arabic font. Letters outside the
+    // range [from, to) (the neighbouring runs of a line) count too.
+    const letterEntry = (k: number, dir: 1 | -1): StackEntry | undefined => {
+      for (let n = k + dir; n >= 0 && n < clusters.length; n += dir) if (!clusters[n]!.neutral) return clusters[n]!.entry
+      // look outside the range: nearest letter in the rest of the line
+      for (let p = dir > 0 ? to : from - 1; p >= 0 && p < text.length; p += dir) {
+        const cp = text.codePointAt(p)!
+        if (/\p{L}/u.test(String.fromCodePoint(cp))) return pick([cp])
+        if (cp >= 0xdc00 && cp <= 0xdfff) continue
+      }
+      return undefined
+    }
+    clusters.forEach((c, k) => {
+      if (!c.neutral) return
+      if (c.needed.length === 0) {
+        c.entry = letterEntry(k, -1) ?? letterEntry(k, 1) ?? stack[0]
+        return
+      }
+      const before = letterEntry(k, -1)
+      const after = letterEntry(k, 1)
+      const covers = (e: StackEntry | undefined): boolean => !!e && c.needed.every((cp) => e.coverage.has(cp))
+      c.entry = covers(before) ? before : covers(after) ? after : pick(c.needed)
+      if (!c.entry) {
+        c.entry = stack.find((e) => e.coverage.has(c.needed[0]!)) ?? stack[0]
+        for (const cp of c.needed) if (!c.entry || !c.entry.coverage.has(cp)) this.missing.add(String.fromCodePoint(cp))
+      }
+    })
+    const out: FontRun[] = []
+    let cur: FontRun | null = null
+    for (const c of clusters) {
+      const script = SCRIPT_TAGS[sc.ids[c.s]!] ?? 'Zyyy'
+      if (cur && cur.entry === c.entry && cur.script === script) cur.e = c.e
       else {
-        cur = { s: i, e: j, entry: entry!, script }
+        cur = { s: c.s, e: c.e, entry: c.entry!, script }
         out.push(cur)
       }
-      i = j
     }
     return out
   }
@@ -396,5 +428,5 @@ export class FontCatalog {
 }
 
 function defaultScale(family: BundledFamily): number {
-  return family === 'LiberationSerif' ? 0.964 : family === 'Carlito' ? 0.996 : family === 'LiberationMono' || family === 'Caladea' || family === 'NotoSans' ? 1 : 0.975
+  return family === 'LiberationSerif' ? 0.907 : family === 'Carlito' ? 0.935 : family === 'LiberationMono' || family === 'Caladea' || family === 'NotoSans' ? 1 : 0.92
 }

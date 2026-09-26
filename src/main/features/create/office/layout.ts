@@ -1,4 +1,5 @@
 import type { BorderSpec, Block, Cell, FloatSpec, Inline, ParaProps, Paragraph, Table, TabStop, TextStyle } from './flow'
+import { complexStyleOf, splitByScript } from './flow'
 import type { Face, FontCatalog } from './fonts'
 import type { Op, Stroke, Warnings } from './ops'
 import { joinSegments, shapeLine, type DrawStyle, type LineItem, type ShapedLine } from './textline'
@@ -242,7 +243,16 @@ function metricsOf(ctx: LayoutContext, style: TextStyle): { asc: number; desc: n
 }
 
 function toAtoms(ctx: LayoutContext, inlines: Inline[], atoms: Atom[], floats: FloatSpec[]): void {
-  for (const il of inlines) {
+  for (const il0 of inlines) {
+    if (il0.k === 'text' && il0.style.cs) {
+      // complex-script characters take the style's complex font/size/weight/posture
+      const pieces = splitByScript(il0.text, { ...il0.style, cs: undefined }, complexStyleOf(il0.style))
+      if (pieces.length > 1 || pieces[0]?.style !== il0.style) {
+        toAtoms(ctx, pieces.map((p) => ({ ...il0, text: p.text, style: p.style })), atoms, floats)
+        continue
+      }
+    }
+    const il = il0
     switch (il.k) {
       case 'text': {
         const { asc, desc } = metricsOf(ctx, il.style)

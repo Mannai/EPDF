@@ -735,10 +735,11 @@ function drawBlock(env: ConvertEnv, sheet: SheetModel, geo: Geometry, block: Blo
     let sizeScale = 1
     let lines: TLine[]
     // Text direction of the cell, and "General" alignment: text goes to the start side of its own direction (Arabic
-    // right, English left), numbers to the end side of the sheet. Alignments are physical; in a right-to-left sheet the
-    // block is drawn mirrored (see mirrorOps), so they are swapped here to come out on the intended side.
+    // right, English left, also in a right-to-left sheet), numbers to the right (LibreOffice does the same in
+    // right-to-left sheets). Alignments are physical; in a right-to-left sheet the block is drawn mirrored (see
+    // mirrorOps), so they are swapped here to come out on the intended side.
     const cellRtl = st.readingOrder ? st.readingOrder === 'rtl' : cell.kind === 'text' ? firstStrongRtl(cell.text) ?? !!sheet.rtl : !!sheet.rtl
-    const physical = st.h === 'general' ? (cell.kind === 'number' ? (sheet.rtl ? 'left' : 'right') : cell.kind === 'bool' || cell.kind === 'error' ? 'center' : cellRtl ? 'right' : 'left') : st.h
+    const physical = st.h === 'general' ? (cell.kind === 'number' ? 'right' : cell.kind === 'bool' || cell.kind === 'error' ? 'center' : cellRtl ? 'right' : 'left') : st.h
     const align = sheet.rtl ? (physical === 'left' ? 'right' : physical === 'right' ? 'left' : physical) : physical
     if (st.wrap) lines = layoutRuns(env, runs, Math.max(4, inner), true)
     else {
