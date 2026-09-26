@@ -73,7 +73,9 @@ detail from Word/Excel/PowerPoint/LibreOffice. The UI says so; whatever is not r
 
 Pipeline: format reader → `FlowDocument` (docx, odt, rtf, txt: styles resolved by the reader) → layout/pagination
 (`layout.ts`, `paginate.ts`), or → display-list pages directly (xlsx/ods/csv sheets, pptx/odp slides) → one PDF writer
-(`ops.ts`, pdf-lib + `@pdf-lib/fontkit`, **fonts embedded and subset**).
+(`ops.ts`, pdf-lib for graphics; **all text through the text engine** `src/shared/text`: HarfBuzz shaping, bidi, font
+fallback, subset Type0 fonts with ToUnicode and ActualText). Arabic, right-to-left and complex scripts:
+[office-rtl.md](office-rtl.md).
 
 ### Bundled fonts (`resources/fonts`, shipped through `extraResources`, licences included)
 
@@ -83,11 +85,13 @@ Pipeline: format reader → `FlowDocument` (docx, odt, rtf, txt: styles resolved
 | Carlito | Calibri (and Aptos, Candara, Corbel) | SIL OFL 1.1 (`LICENSE-Carlito.txt`) |
 | Caladea | Cambria | SIL OFL 1.1 (`LICENSE-Caladea.txt`) |
 | Noto Sans (Regular, Bold) | characters the others lack (Greek, Cyrillic, symbols…) | SIL OFL 1.1 (`LICENSE-NotoSans.txt`) |
+| Noto Naskh Arabic, Noto Sans Arabic, Noto Nastaliq Urdu and the text engine's other fonts (`resources/textfonts`) | Arabic-script text of every document font (Arial, Times New Roman, Tahoma, Simplified Arabic… — table in [office-rtl.md](office-rtl.md) §3); Hebrew, Thai, Indic, CJK, symbols, emoji | SIL OFL 1.1 |
 
-Document font names are mapped to the closest family (`fonts.ts: mapFontFamily`); italic/bold faces exist for all but Noto.
-Characters no bundled font has (CJK, emoji, Arabic/Indic shaping…) become “?” and produce a warning. Hinting programs are
-stripped in memory before embedding (fontkit’s subsetter corrupts hinted glyphs in FreeType-based viewers – see
-`office/fontHinting.ts`); PDF embedding of OFL fonts is permitted, the font files themselves are not modified on disk.
+Document font names are mapped to a font stack (`fonts.ts`: `mapFontFamily` for the Latin face, `mapComplexFamily` for the
+Arabic one); the text engine picks, per character, the first font that has it. Characters no bundled font has are drawn
+as the font's empty box and produce a warning. PDF embedding of OFL fonts is permitted; subsets are made by HarfBuzz
+(`hb-subset`), the font files are not modified. (`office/fontHinting.ts` is kept for its own test; the engine's subsetter
+does not need it.)
 
 ### Coverage
 
@@ -115,8 +119,11 @@ stripped in memory before embedding (fontkit’s subsetter corrupts hinted glyph
   tables (merges, header rows), lists, sections/headers/footers, fields, pictures (PNG/JPEG), footnotes.
 * **odt** – style chains, master pages with headers/footers/fields, lists, tables, images, hyperlinks, footnotes.
 
+Right-to-left and complex scripts (Arabic first): shaped, bidi-ordered, mirrored paragraphs/lists/tables/sheets in every
+format — see [office-rtl.md](office-rtl.md) for what is read per format and what is not handled.
+
 Known limits: no charts/SmartArt/OLE/equations rendering, no text wrapping *around* floating images (they get their own
-band), no RTL/complex-script shaping, no gradients (flat colour), no page borders/watermarks, footnotes at the end of the
+band), no vertical text, no gradients (flat colour), no page borders/watermarks, footnotes at the end of the
 document, comments not printed, formulas without cached values show empty (with a warning), en-US number formats only.
 
 ### Verification (be aware what this does and does not prove)

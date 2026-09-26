@@ -162,7 +162,8 @@ function cellStyleOf(book: StyleBook, name: string | undefined): CellStyle {
     v: va === 'top' ? 'top' : va === 'middle' ? 'center' : 'bottom',
     wrap: cp['wrap-option'] === 'wrap',
     indent: Math.round((parseLength(pp['margin-left']) ?? 0) / 6.75),
-    shrink: cp['shrink-to-fit'] === 'true'
+    shrink: cp['shrink-to-fit'] === 'true',
+    readingOrder: pp['writing-mode']?.startsWith('rl') ? 'rtl' : pp['writing-mode']?.startsWith('lr') ? 'ltr' : undefined
   }
 }
 
@@ -315,6 +316,9 @@ export async function convertOds(bytes: Uint8Array, env: ConvertEnv): Promise<Pa
     sheet.defaultRowHeight = 12.8
     sheet.defaultColWidth = 64
     sheet.defaultFont = { ...DEFAULT_FONT, family: 'Liberation Sans', size: 10 }
+    // right-to-left sheet: the table style's writing mode (LibreOffice writes style:writing-mode="rl-tb")
+    const wm = book.props('table', attr(table, 'style-name'))['table-properties']?.['writing-mode']
+    sheet.rtl = !!wm && wm.startsWith('rl')
 
     // columns
     const colStyles: (string | undefined)[] = []

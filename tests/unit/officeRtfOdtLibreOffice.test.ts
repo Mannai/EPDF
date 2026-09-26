@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { convertOffice } from '../../src/main/features/create/office'
 import { odtPackage, p } from '../support/odt'
 import { flattenText, readPdf } from '../support/pdfText'
+import { logFidelity } from '../support/fidelity'
 
 /**
  * Comparison of our built-in RTF/ODT conversion with real LibreOffice (page count and text should broadly match).
@@ -89,6 +90,7 @@ describe.skipIf(!HAVE)('built-in RTF/ODT conversion compared with real LibreOffi
     const lo = await libreOfficeToPdf('cmp.rtf', bytes)
     const a = await readPdf(ours.bytes)
     const b = await readPdf(lo)
+    logFidelity('rtf', a.pages, b.pages, jaccard(words(flattenText(a.pages)), words(flattenText(b.pages))))
     expect(Math.abs(a.pages.length - b.pages.length)).toBeLessThanOrEqual(1)
     expect(jaccard(words(flattenText(a.pages)), words(flattenText(b.pages)))).toBeGreaterThan(0.95)
     expect(flattenText(a.pages)).toContain('The end.')
@@ -105,6 +107,7 @@ describe.skipIf(!HAVE)('built-in RTF/ODT conversion compared with real LibreOffi
     const lo = await libreOfficeToPdf('cmp.odt', bytes)
     const a = await readPdf(ours.bytes)
     const b = await readPdf(lo)
+    logFidelity('odt', a.pages, b.pages, jaccard(words(flattenText(a.pages)), words(flattenText(b.pages))))
     expect(Math.abs(a.pages.length - b.pages.length)).toBeLessThanOrEqual(1)
     expect(jaccard(words(flattenText(a.pages)), words(flattenText(b.pages)))).toBeGreaterThan(0.95)
     // page size follows the document
@@ -159,6 +162,7 @@ ${Array.from({ length: 40 }, (_, i) => `<p>${sentence(i + 1)}</p>`).join('\n')}
       const a = await readPdf(ours.bytes)
       const b = await readPdf(lo)
       const ta = flattenText(a.pages)
+      logFidelity(`${target} (written by LibreOffice)`, a.pages, b.pages, jaccard(words(ta), words(flattenText(b.pages))))
       expect(ta).toContain('Genuine LibreOffice output')
       expect(ta).toContain('Nested bullet')
       expect(ta).toMatch(/Step two/)

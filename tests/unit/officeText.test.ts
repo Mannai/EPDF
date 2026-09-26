@@ -74,7 +74,8 @@ describe('plain text conversion', () => {
     expect(flattenText(pages)).toContain('col1 col2 next')
   })
 
-  it('draws non-Latin text from the fallback fonts and warns about characters no bundled font has', async () => {
+  it('draws non-Latin text (including CJK) from the fallback fonts and warns about characters no bundled font has', async () => {
+    // CJK comes from the text engine's bundled Noto CJK fonts (it used to be replaced with "?")
     const r = await convert('uni.txt', 'Grüße — Ελληνικά — Кириллица — € — 日本語')
     const { pages } = await readPdf(r.bytes)
     const t = pages[0].text
@@ -82,8 +83,11 @@ describe('plain text conversion', () => {
     expect(t).toContain('Ελληνικά')
     expect(t).toContain('Кириллица')
     expect(t).toContain('€')
-    expect(t).toContain('???')
-    expect(r.warnings.join(' ')).toMatch(/not available in Epdf’s built-in fonts/)
+    expect(t).toContain('日本語')
+    expect(r.warnings).toEqual([])
+    // a character no bundled font has (Tibetan) is reported
+    const t2 = await convert('tibetan.txt', 'Tibetan ཀཁག')
+    expect(t2.warnings.join(' ')).toMatch(/not available in Epdf’s built-in fonts/)
   })
 
   it('an empty file still yields one blank page', async () => {

@@ -11,8 +11,11 @@ import {
   parseTblPr,
   readStyles,
   readTheme,
+  splitComplex,
+  toComplexStyle,
   toTextStyle,
   twips,
+  type ComplexBase,
   type PPr,
   type RPr,
   type StyleDef,
@@ -53,7 +56,6 @@ interface TableCtx {
 }
 
 const EMU_PER_PT = 12700
-const RTL_CHARS = /[֐-ࣿיִ-﷿ﹰ-﻿]/
 
 export async function readDocx(bytes: Uint8Array, env: ConvertEnv): Promise<FlowDocument> {
   const pkg = openPackage(bytes, 'Word document')
@@ -78,9 +80,9 @@ class DocxReader {
   private usedEndnotes: { label: string; blocks: Block[] }[] = []
   private fields: FieldState[] = []
   private base: TextStyle
+  private csBase: ComplexBase
   private defaultTab = 36
   private evenAndOdd = false
-  private hasRtl = false
   private mainRels: Map<string, Relationship>
 
   constructor(
@@ -96,6 +98,9 @@ class DocxReader {
     this.numbering = new Numbering(pkg, theme)
     this.base = toTextStyle(mergeRPr(this.styles.docRPr), { ...DEFAULT_TEXT_STYLE, family: 'Times New Roman', size: 10 })
     if (!this.styles.docRPr.font) this.base.family = theme.minor ?? 'Times New Roman'
+    const d = this.styles.docRPr
+    // (no szCs in the defaults: the Latin default size, which is what documents written without it mean)
+    this.csBase = { family: d.csFont ?? theme.minorCs ?? 'Times New Roman', size: d.sizeCs ?? this.base.size, bold: d.boldCs ?? false, italic: d.italicCs ?? false }
     const settings = pkg.xml('word/settings.xml')?.children.find((c) => c.name === 'settings')
     const dts = numAttr(child(settings, 'defaultTabStop'), 'val')
     if (dts) this.defaultTab = twips(dts)
@@ -137,7 +142,6 @@ class DocxReader {
       last.blocks.push(this.noteRule(), ...this.noteBlocks(this.usedFootnotes))
     }
     if (this.usedEndnotes.length) last.blocks.push(this.noteRule(), ...this.noteBlocks(this.usedEndnotes))
-    if (this.hasRtl) this.warn('Right-to-left or complex-script text may not be shaped or ordered correctly by the built-in engine.')
     return { sections, defaultTabStop: this.defaultTab }
   }
 
@@ -224,6 +228,7 @@ class DocxReader {
       header: copy(inherit.header),
       footer: copy(inherit.footer),
       titlePg,
+      rtl: child(sect, 'bidi') !== undefined && attr(child(sect, 'bidi'), 'val') !== '0' && attr(child(sect, 'bidi'), 'val') !== 'false',
       evenAndOdd: this.evenAndOdd,
       pageNumberStart: startAttr
     }
@@ -332,7 +337,8 @@ class DocxReader {
 
     const baseR = mergeRPr(this.styles.docRPr, tctx?.rpr, ...chain.map((s) => s.rpr))
     const markR = mergeRPr(baseR, parseRPr(path(pPrEl, 'rPr'), this.styles.theme))
-    const markStyle = toTextStyle(markR, this.base)
+    const complexMark = !!(markR.rtl || markR.cs || merged.rtl)
+    const markStyle = complexMark ? toComplexStyle(markR, this.base, this.csBase) : toTextStyle(markR, this.base)
 
     const extra: Block[] = []
     const inlines: Inline[] = []
@@ -341,7 +347,9 @@ class DocxReader {
 
     const props = this.paraProps(merged)
     if (marker) {
-      const ms = toTextStyle(mergeRPr(markR, marker.rpr), this.base)
+      // the label of a right-to-left paragraph is set in the complex-script font and size (as Word does)
+      const labelR = mergeRPr(markR, marker.rpr)
+      const ms = props.rtl ? toComplexStyle(labelR, this.base, this.csBase) : toTextStyle(labelR, this.base)
       if (marker.isBullet) {
         const cands = bulletCandidates(marker.text, marker.fontHint ?? marker.rpr.font)
         const face = this.env.catalog.face(ms.family === 'Symbol' || /wingdings|webdings/i.test(ms.family) ? this.base.family : ms.family, false, false)
@@ -360,17 +368,10 @@ class DocxReader {
       props.indentLeft = 36
       props.firstLine = -18
     }
-    if (RTL_CHARS.test(this.textOf(merged2))) this.hasRtl = true
     const block: Paragraph = { k: 'p', props, inlines: merged2, markStyle }
     ;(block as Paragraph & { _style?: string; _ctx?: boolean })._style = styleId
     ;(block as Paragraph & { _ctx?: boolean })._ctx = merged.contextualSpacing
     return { block, extra }
-  }
-
-  private textOf(inlines: Inline[]): string {
-    let s = ''
-    for (const i of inlines) if (i.k === 'text') s += i.text
-    return s
   }
 
   private paraProps(m: PPr): ParaProps {
@@ -397,7 +398,8 @@ class DocxReader {
       widowControl: m.widowControl !== false,
       shading: m.shading,
       borders: Object.keys(borders).length ? borders : undefined,
-      rtl: m.rtl
+      rtl: m.rtl,
+      kashida: m.kashida || undefined
     }
   }
 
@@ -495,6 +497,10 @@ class DocxReader {
     return toTextStyle(rpr, this.base)
   }
 
+  private complexOf(rpr: RPr): TextStyle {
+    return toComplexStyle(rpr, this.base, this.csBase)
+  }
+
   private runRPr(run: XNode, baseR: RPr): RPr {
     const direct = parseRPr(child(run, 'rPr'), this.styles.theme)
     let r = baseR
@@ -538,7 +544,7 @@ class DocxReader {
         }
         case 't': {
           const text = textContent(c)
-          if (text) emit({ k: 'text', text, style, link: this.currentLink(link) })
+          if (text) for (const piece of splitComplex(text, rpr, style, this.complexOf(rpr))) emit({ k: 'text', text: piece.text, style: piece.style, link: this.currentLink(link) })
           break
         }
         case 'tab':
@@ -927,7 +933,8 @@ class DocxReader {
       borders: { top: bd('top'), bottom: bd('bottom'), left: bd('left'), right: bd('right'), insideH: bd('insideH'), insideV: bd('insideV') },
       padding: mar,
       align: direct.align ?? layers.tblPr.align ?? 'left',
-      indent: direct.indent ?? layers.tblPr.indent ?? 0
+      indent: direct.indent ?? layers.tblPr.indent ?? 0,
+      rtl: direct.rtl ?? layers.tblPr.rtl
     }
     return [table]
   }

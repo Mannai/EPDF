@@ -432,6 +432,7 @@ export function layoutTextBlock(env: ConvertEnv, blocks: Block[], width: number,
   let extent = 0
   for (const op of st.ops) {
     if (op.t === 'text') extent = Math.max(extent, op.x + env.catalog.measure(op.face, op.text) * op.size)
+    else if (op.t === 'glyphs') extent = Math.max(extent, op.x + op.w)
     else if (op.t === 'rect') extent = Math.max(extent, op.x + op.w)
   }
   return { height: st.height, ops: st.ops, extent }

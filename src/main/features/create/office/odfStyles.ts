@@ -228,6 +228,8 @@ export interface TextProps {
   vertAlign?: 'super' | 'sub'
   caps: boolean
   spacing?: number
+  /** Complex-script font/size/weight/posture (style:*-complex). */
+  cs?: TextStyle['cs']
 }
 
 export const baseTextProps = (): TextProps => ({ size: 18, bold: false, italic: false, underline: false, strike: false, caps: false })
@@ -270,6 +272,20 @@ export function applyTextProps(t: TextProps, p: Record<string, string>, fonts: M
   if (tt) out.caps = tt === 'uppercase'
   const sp = p['letter-spacing']
   if (sp && sp !== 'normal') out.spacing = odfLength(sp)
+  const cfn = p['font-name-complex']
+  const cff = p['font-family-complex']
+  const cfs = p['font-size-complex']
+  const cfw = p['font-weight-complex']
+  const cst = p['font-style-complex']
+  if (cfn || cff || cfs || cfw || cst) {
+    const cs = { ...(t.cs ?? {}) }
+    if (cff) cs.family = cff.replace(/^['"]|['"]$/g, '')
+    else if (cfn) cs.family = fonts.get(cfn) ?? cfn
+    if (cfs) cs.size = cfs.endsWith('%') ? (t.cs?.size ?? t.size) * (parseFloat(cfs) / 100) : odfLength(cfs, t.cs?.size ?? t.size)
+    if (cfw) cs.bold = cfw === 'bold' || (/^\d+$/.test(cfw) && parseInt(cfw, 10) >= 600)
+    if (cst) cs.italic = cst === 'italic' || cst === 'oblique'
+    out.cs = cs
+  } else if (fs && fs.endsWith('%') && t.cs?.size) out.cs = { ...t.cs, size: t.cs.size * (parseFloat(fs) / 100) }
   return out
 }
 
@@ -285,7 +301,8 @@ export function toTextStyle(t: TextProps, defaultFamily: string): TextStyle {
     highlight: t.highlight,
     vertAlign: t.vertAlign,
     caps: t.caps || undefined,
-    spacing: t.spacing
+    spacing: t.spacing,
+    ...(t.cs ? { cs: t.cs } : {})
   }
 }
 
@@ -293,6 +310,10 @@ const ALIGN: Record<string, ParaProps['align']> = { start: 'left', left: 'left',
 
 export interface ParaBase {
   align: ParaProps['align']
+  /** fo:text-align as written (start/end are logical, left/right physical): see `logicalParaAlign`. */
+  textAlign?: string
+  /** style:writing-mode rl-*: right-to-left paragraph. */
+  rtl?: boolean
   marginLeft: number
   marginRight: number
   indent: number
@@ -303,10 +324,27 @@ export interface ParaBase {
 
 export const baseParaProps = (): ParaBase => ({ align: 'left', marginLeft: 0, marginRight: 0, indent: 0, before: 0, after: 0, line: { rule: 'auto', value: 1 } })
 
+/** Logical ParaProps alignment ('left' = start) of an ODF paragraph: start/end are logical, left/right physical. */
+export function logicalParaAlign(b: ParaBase): ParaProps['align'] {
+  const ta = b.textAlign
+  if (!ta) return b.align
+  if (ta === 'center' || ta === 'justify') return ta
+  if (ta === 'start') return 'left'
+  if (ta === 'end') return 'right'
+  if (ta === 'left') return b.rtl ? 'right' : 'left'
+  if (ta === 'right') return b.rtl ? 'left' : 'right'
+  return b.align
+}
+
 export function applyParaProps(b: ParaBase, p: Record<string, string>): ParaBase {
   const out = { ...b, line: { ...b.line } }
   const ta = p['text-align']
-  if (ta && ALIGN[ta]) out.align = ALIGN[ta]
+  if (ta && ALIGN[ta]) {
+    out.align = ALIGN[ta]
+    out.textAlign = ta
+  }
+  const wm = p['writing-mode']
+  if (wm && wm !== 'page' && wm !== 'inherit') out.rtl = wm.startsWith('rl')
   if (p['margin-left'] !== undefined) out.marginLeft = odfLength(p['margin-left'])
   if (p['margin-right'] !== undefined) out.marginRight = odfLength(p['margin-right'])
   if (p['text-indent'] !== undefined) out.indent = odfLength(p['text-indent'])

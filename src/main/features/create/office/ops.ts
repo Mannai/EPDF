@@ -1,18 +1,14 @@
-import fontkit from '@pdf-lib/fontkit'
 import {
   PDFDocument,
-  PDFFont,
   PDFImage,
   PDFName,
   PDFPage,
   PDFString,
   appendBezierCurve,
-  beginText,
   clip,
   closePath,
   concatTransformationMatrix,
   endPath,
-  endText,
   fill,
   fillAndStroke,
   PDFOperator,
@@ -24,21 +20,25 @@ import {
   rectangle,
   setDashPattern,
   setFillingRgbColor,
-  setFontAndSize,
   setGraphicsState,
   setLineWidth,
   setStrokingRgbColor,
-  setTextMatrix,
-  showText,
   stroke as strokeOp,
   drawObject
 } from 'pdf-lib'
+import { embeddedFontsFor } from '../../../../shared/text/pdf/embed'
+import { emitLayout } from '../../../../shared/text/pdf/emit'
+import type { ParagraphLayout } from '../../../../shared/text/types'
 import type { Face, FontCatalog } from './fonts'
+import { hasRtlText, shapeLine, type GlyphOp } from './textline'
 
 /**
  * The display list every converter produces and the single PDF writer consumes. Coordinates are in points
- * with the origin at the TOP-LEFT of the page and y growing downwards; the writer flips them. Text ops carry
- * a face that can draw every character in them (see FontCatalog.segment) and a BASELINE y.
+ * with the origin at the TOP-LEFT of the page and y growing downwards; the writer flips them.
+ *
+ * Text is written by the text engine (src/shared/text): `glyphs` ops are lines already shaped and ordered by
+ * textline.ts; a `text` op is a single string in one face whose left edge is `x` (shaped and bidi-ordered here).
+ * Both carry a BASELINE y.
  */
 
 export type Hex = string // '#rrggbb'
@@ -57,7 +57,8 @@ export interface ImageData {
 export type PathSeg = ['M', number, number] | ['L', number, number] | ['C', number, number, number, number, number, number] | ['Z']
 
 export type Op =
-  | { t: 'text'; x: number; y: number; text: string; face: Face; size: number; color: Hex; rot?: number }
+  | { t: 'text'; x: number; y: number; text: string; face: Face; size: number; color: Hex }
+  | GlyphOp
   | { t: 'rect'; x: number; y: number; w: number; h: number; fill?: Hex; stroke?: Stroke; opacity?: number }
   | { t: 'line'; x1: number; y1: number; x2: number; y2: number; stroke: Stroke }
   | { t: 'image'; x: number; y: number; w: number; h: number; image: ImageData; crop?: { l: number; t: number; r: number; b: number }; opacity?: number }
@@ -96,6 +97,7 @@ const fillColor = (hex: string): ReturnType<typeof setFillingRgbColor> => setFil
 const strokeColor = (hex: string): ReturnType<typeof setStrokingRgbColor> => setStrokingRgbColor(...hexToRgb(hex))
 
 const SAFE_URL = /^(https?:\/\/|mailto:)/i
+const num = (v: number): string => String(Math.round(v * 1000) / 1000)
 
 export interface RenderOptions {
   title?: string
@@ -108,19 +110,14 @@ export interface RenderOptions {
 /** Writes display-list pages to a PDF with embedded, subset fonts. */
 export async function renderPagesToPdf(pages: Page[], catalog: FontCatalog, opts: RenderOptions = {}): Promise<Uint8Array> {
   const pdf = await PDFDocument.create()
-  pdf.registerFontkit(fontkit)
-  const fonts = new Map<string, PDFFont>()
+  const docText = embeddedFontsFor(pdf)
+  // Font names: PDF.js keeps a line together (and reorders it logically) only while the font name stays the same, so
+  // documents with right-to-left text get the engine's uniform BaseFont; others keep descriptive names
+  // (`ABCDEF+LiberationSans-Bold`), which readers show in their font lists.
+  let rtlDoc = false
+  for (const p of pages) for (const op of p.ops) if ((op.t === 'glyphs' || op.t === 'text') && hasRtlText(op.text)) rtlDoc = true
+  docText.uniformNames = rtlDoc
   const images = new WeakMap<Uint8Array, PDFImage | null>()
-  const embedFace = async (face: Face): Promise<PDFFont> => {
-    let f = fonts.get(face.key)
-    if (!f) {
-      f = await pdf.embedFont(catalog.bytes(face), { subset: true })
-      fonts.set(face.key, f)
-    }
-    return f
-  }
-  // Fonts are embedded up front so drawing below is synchronous.
-  for (const p of pages) for (const op of p.ops) if (op.t === 'text') await embedFace(op.face)
   for (const p of pages) {
     for (const op of p.ops) {
       if (op.t !== 'image' || images.has(op.image.bytes)) continue
@@ -139,15 +136,23 @@ export async function renderPagesToPdf(pages: Page[], catalog: FontCatalog, opts
     const src = pages[pi]
     const page = pdf.addPage([src.width, src.height])
     const H = src.height
-    const fontKeys = new Map<string, PDFName>()
-    const nameFor = (face: Face): PDFName => {
-      let k = fontKeys.get(face.key)
-      if (!k) {
-        const f = fonts.get(face.key)!
-        k = page.node.newFontDictionary(f.name, f.ref)
-        fontKeys.set(face.key, k)
+    const drawGlyphs = (g: GlyphOp): void => {
+      if (!g.runs.length) return
+      const layout: ParagraphLayout = {
+        text: g.text,
+        lines: [{ runs: g.runs, y: 0, x: 0, width: g.w, height: 0, baseline: 0, ascent: 0, descent: 0, textStart: 0, textEnd: g.text.length, rtl: g.rtl, last: true, paragraph: 0 }],
+        width: g.w,
+        height: 0,
+        missing: [],
+        directions: [g.rtl ? 'rtl' : 'ltr'],
+        truncated: false
       }
-      return k
+      const em = emitLayout({ docText, layout, originBaseline: true })
+      if (!em.content) return
+      for (const ef of em.fonts) page.node.setFontDictionary(PDFName.of(ef.resourceName), ef.ref)
+      for (const st of em.states.values()) page.node.setExtGState(PDFName.of(st.name), st.ref)
+      // y-down display space here: flip back to y-up with the origin on the baseline
+      page.pushOperators(PDFOperator.of(`q\n1 0 0 -1 ${num(g.x)} ${num(g.y)} cm\n${em.content}\nQ` as never))
     }
     const alpha = (a: number): PDFName => {
       const key = a.toFixed(3)
@@ -174,20 +179,13 @@ export async function renderPagesToPdf(pages: Page[], catalog: FontCatalog, opts
       switch (op.t) {
         case 'text': {
           if (!op.text) break
-          const font = fonts.get(op.face.key)!
-          const th = ((op.rot ?? 0) * Math.PI) / 180
-          const c = Math.cos(th)
-          const s = Math.sin(th)
-          page.pushOperators(
-            fillColor(op.color),
-            beginText(),
-            setFontAndSize(nameFor(op.face), op.size),
-            setTextMatrix(c, s, s, -c, op.x, op.y),
-            showText(font.encodeText(op.text)),
-            endText()
-          )
+          const line = shapeLine(catalog, [{ text: op.text, style: { face: op.face, size: op.size, color: op.color } }], 'auto')
+          drawGlyphs({ t: 'glyphs', x: op.x, y: op.y, w: line.width, text: line.text, runs: line.runs, rtl: line.rtl })
           break
         }
+        case 'glyphs':
+          drawGlyphs(op)
+          break
         case 'rect': {
           const ops = [pushGraphicsState()]
           if (op.opacity !== undefined && op.opacity < 1) ops.push(setGraphicsState(alpha(op.opacity)))
