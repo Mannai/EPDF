@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { convertOffice } from '../../src/main/features/create/office'
 import { flattenText, readPdf } from '../support/pdfText'
+import { logFidelity } from '../support/fidelity'
 
 /**
  * Real-world check of the DOCX reader: documents WRITTEN BY REAL LibreOffice (HTML -> docx) are converted by our
@@ -91,6 +92,7 @@ describe.skipIf(!HAVE)('DOCX written by real LibreOffice, converted by the built
     const b = await readPdf(lo)
     const ta = flattenText(a.pages)
     const tb = flattenText(b.pages)
+    logFidelity('docx (written by LibreOffice)', a.pages, b.pages, jaccard(words(ta), words(tb)))
     expect(Math.abs(a.pages.length - b.pages.length)).toBeLessThanOrEqual(1)
     expect(jaccard(words(ta), words(tb))).toBeGreaterThan(0.95)
     for (const needle of ['Quarterly Report', 'Highlights', 'First bullet', 'Nested bullet', 'Step three', 'Region', 'South', 'Centered paragraph', 'The end.']) {

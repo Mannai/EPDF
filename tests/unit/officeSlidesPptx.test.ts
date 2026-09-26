@@ -293,6 +293,7 @@ describe.skipIf(!existsSync(SOFFICE))('pptx: comparison with real LibreOffice', 
       for (const s of ['Quarterly Review', 'Highlights', 'Name', 'Apple']) {
         const a = ours.pages[0].items.find((i) => i.str.includes(s))!
         const b = lo.pages[0].items.find((i) => i.str.includes(s))!
+        console.log(`[fidelity] pptx "${s}": dx=${(a.x - b.x).toFixed(2)} dy=${(a.y - b.y).toFixed(2)} dsize=${(a.size - b.size).toFixed(2)}`)
         expect(Math.abs(a.x - b.x), `x of ${s}`).toBeLessThan(10)
         expect(Math.abs(a.y - b.y), `y of ${s}`).toBeLessThan(12)
         expect(Math.abs(a.size - b.size), `size of ${s}`).toBeLessThan(1.5)
