@@ -126,11 +126,23 @@ PDF.js on the same fixtures finds, verbatim, 3/16 LibreOffice lines, 2/16 Chromi
 <a id="performance"></a>
 ## Performance
 
-Measured on the development machine (Node, `pagetext-perf.test.ts`): a 500-page Latin document (45 lines × 13 words
-per page) builds at ~3.7 ms/page (the links/bookmarks reader it replaced: ~2.3 ms/page); LibreOffice Arabic pages at
-~12 ms/page. In the viewer Latin pages never build a model: the only added work is a regex scan of the PDF.js text
-(the text content is fetched once, as before). App timings for the 500-page Latin fixture are in the report of the
-branch (open, scroll 60 pages, whole-document search, compared with main).
+Measured on the development machine.
+
+| Measurement | This branch | main (same machine, same test) |
+|---|---|---|
+| 500-page Latin `large.pdf`: launch → first page painted | 721 / 732 / 733 ms | 714 / 717 / 776 ms |
+| … scroll 60 pages (one page per frame) until page 61's text layer | 1071 / 1074 / 1076 ms | 1072 / 1074 / 1076 ms |
+| … whole-document search | 829 / 831 / 839 ms | 832 / 833 / 835 ms |
+| 300-page Arabic PDF (LibreOffice pages, 17.7 MB): page 1 painted | ~1.25 s after launch | (no logical layer) |
+| … its logical text layer ready (pdf-lib parses the file in the worker) | ~1.6 s after launch | |
+| … page 200: logical layer after going there | ~0.2 s | |
+| Node, model build, Latin (45 lines × 13 words) | ~3.7 ms/page (the links/bookmarks reader it replaced: ~2.3) | |
+| Node, model build, LibreOffice Arabic pages | ~12 ms/page | |
+
+(`tests/e2e/pagetext.spec.ts` logs the app timings; the main column was measured by building this branch with
+main's `PageView.tsx` and `pdf/search.ts` swapped in.) In the viewer Latin pages never build a model: the only added
+work is a regex scan of the PDF.js text, which is fetched once as before. The worker keeps at most three parsed
+documents.
 
 <a id="limits"></a>
 ## Limits and what is not verified
