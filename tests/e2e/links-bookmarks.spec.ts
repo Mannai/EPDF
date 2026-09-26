@@ -1,13 +1,13 @@
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { PDFDict, PDFDocument, PDFName } from 'pdf-lib'
+import { PDFDocument, PDFName } from 'pdf-lib'
 import { readBookmarks } from '../../src/renderer/src/features/bookmarks/pdf/read'
 import { validateOutline } from '../../src/renderer/src/features/bookmarks/pdf/validate'
 import type { BmNode } from '../../src/renderer/src/features/bookmarks/pdf/model'
-import { readLinks } from '../../src/renderer/src/features/links/pdf/read'
 import { writeLbFixtures } from '../fixtures/lbFixtures'
+import { openWith } from '../unit/helpers/securityHelpers'
 import { axeViolations, copyFixture, launch, menuClick, quitDiscarding } from './helpers'
 
 const FIXTURES = resolve('test-results/fixtures')
@@ -455,6 +455,257 @@ test.describe('bookmarks panel: editing', () => {
       await expect(dot(page)).toHaveCount(0)
       await page.getByRole('button', { name: 'Redo Rename bookmark' }).click()
       await expect(item(page, /Renamed once/)).toBeVisible()
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('Arabic and Hebrew titles survive Save and reopen: in the saved file and in the panel', async () => {
+    const { app, page, path } = await open('lb-outline.pdf')
+    const titles = ['اَلْفَصْلُ الثَّانِي: الْمَفَاهِيمُ الْأَسَاسِيَّة', 'תוכן עניינים – פרק ב׳', 'Mixed: نظام (System) 2024 — 🚀']
+    try {
+      await showBookmarks(app, page)
+      for (const t of titles) {
+        await page.getByRole('button', { name: 'Add bookmark', exact: true }).click()
+        const input = tree(page).getByLabel('Bookmark title')
+        await expect(input).toBeFocused()
+        await input.fill(t)
+        await input.press('Enter')
+        await expect(item(page, t)).toBeVisible()
+      }
+      await save(page)
+      const disk = await outlineOnDisk(path)
+      expect(disk.problems).toEqual([])
+      for (const t of titles) expect(disk.titles).toContain(t)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+    // Reopen the saved file in a fresh app: the panel shows the same titles.
+    const again = await launch({ files: [path] })
+    try {
+      await expect(again.page.locator('[data-page="1"] canvas')).toBeVisible()
+      await showBookmarks(again.app, again.page)
+      for (const t of titles) await expect(item(again.page, t)).toBeVisible()
+    } finally {
+      await quitDiscarding(again.app, again.page)
+    }
+  })
+})
+
+// ---------------------------------------------------------------- bookmarks: generate from headings
+
+const generateButton = (page: Page): Locator => page.getByRole('button', { name: 'Generate bookmarks from headings', exact: true })
+const generateDialog = (page: Page): Locator => page.getByRole('dialog', { name: 'Generate bookmarks from headings' })
+
+test.describe('bookmarks: generate from headings', () => {
+  test('English report: analysed in the background, reviewed (reject, promote), created as one undo step with correct destinations', async () => {
+    const { app, page, path } = await open('lb-report.pdf')
+    try {
+      await showBookmarks(app, page)
+      await expect(page.getByTestId('bookmarks-empty')).toBeVisible()
+      await generateButton(page).click()
+      const dlg = generateDialog(page)
+      await expect(dlg.getByTestId('generate-review')).toBeVisible({ timeout: 45_000 })
+      // The cover title is listed first but not pre-selected (low confidence); the chapters follow.
+      await expect(dlg.getByTestId('generate-item').first()).toContainText('Annual Report 2024')
+      await expect(dlg.getByTestId('generate-item').first()).toHaveAttribute('data-accepted', 'false')
+      const introRow = dlg.getByTestId('generate-item').filter({ hasText: '1 Introduction' })
+      await expect(introRow).toHaveAttribute('data-accepted', 'true')
+      // Reasons are available for every candidate (title tooltip) and the list says how many are selected.
+      await expect(dlg.getByRole('status').filter({ hasText: 'selected' })).toContainText(/2\d of 2\d selected/)
+      await dlg.getByRole('checkbox', { name: 'Include “1.2 Objectives”' }).uncheck()
+      await dlg.getByRole('button', { name: 'Promote “1.1 Background” (less nested)' }).click()
+      await dlg.getByRole('button', { name: /^Create \d+ bookmarks$/ }).click()
+      await expect(dlg).toHaveCount(0)
+      await expect(item(page, /^1 Introduction/)).toBeVisible()
+      await expect(undoButton(page, 'Generate bookmarks')).toBeVisible()
+      await save(page)
+      const disk = await outlineOnDisk(path)
+      expect(disk.problems).toEqual([])
+      expect(disk.titles).toContain('1.1 Background') // promoted to the top level
+      expect(disk.titles).not.toContain('-1.2 Objectives')
+      expect(disk.titles.filter((t) => /^\d [A-Z]/.test(t))).toEqual(['1 Introduction', '2 System Architecture', '3 Implementation', '4 Evaluation', '5 Conclusion'])
+      expect(disk.titles).toContain('-2.1 Overview')
+      expect(disk.titles).toContain('-1.1.1 Details') // (nested under the promoted 1.1 Background)
+      expect(disk.titles).toContain('--2.1.1 Details')
+      // Destinations are /XYZ at the heading's top (page 2 = index 1, y in the upper part of the page).
+      const intro = disk.roots.find((n) => n.title === '1 Introduction')!
+      expect(intro.target).toMatchObject({ kind: 'page', dest: { pageIndex: 1, tail: ['XYZ', null, expect.any(Number), null] } })
+      if (intro.target.kind === 'page') expect(intro.target.dest.tail[2] as number).toBeGreaterThan(650)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('Arabic right-to-left report: Arabic chapter and section headings become nested bookmarks', async () => {
+    const { app, page, path } = await open('lb-arabic.pdf')
+    try {
+      await showBookmarks(app, page)
+      await generateButton(page).click()
+      const dlg = generateDialog(page)
+      await expect(dlg.getByTestId('generate-review')).toBeVisible({ timeout: 45_000 })
+      await expect(dlg.getByTestId('generate-item').nth(1)).toContainText('الفصل الأول: مقدمة عن الأمن')
+      await dlg.getByRole('button', { name: /^Create \d+ bookmarks$/ }).click()
+      await expect(dlg).toHaveCount(0)
+      await expect(item(page, /الفصل الأول/)).toBeVisible()
+      await save(page)
+      const disk = await outlineOnDisk(path)
+      expect(disk.problems).toEqual([])
+      const chapters = disk.roots.filter((n) => n.title.startsWith('الفصل'))
+      expect(chapters.map((c) => c.title)).toEqual([
+        'الفصل الأول: مقدمة عن الأمن',
+        'الفصل الثاني: المفاهيم الأساسية',
+        'الفصل الثالث: التهديدات والمخاطر',
+        'الفصل الرابع: أساليب الحماية',
+        'الفصل الخامس: الخلاصة والتوصيات'
+      ])
+      expect(chapters[0].children.map((c) => c.title)).toEqual(['1.1 نظرة عامة', '1.2 أهداف الكتاب'])
+      // The destination is at the heading, on the right-hand page area's top.
+      expect(chapters[0].target).toMatchObject({ kind: 'page', dest: { pageIndex: 1 } })
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('a document without headings says so; a long analysis can be cancelled and creates nothing', async () => {
+    const first = await open('sample.pdf')
+    try {
+      await showBookmarks(first.app, first.page)
+      await generateButton(first.page).click()
+      await expect(generateDialog(first.page).getByTestId('generate-empty')).toBeVisible({ timeout: 45_000 })
+      await expect(generateDialog(first.page)).toContainText('No headings were found')
+      await generateDialog(first.page).getByRole('button', { name: 'Close' }).click()
+      await expect(generateDialog(first.page)).toHaveCount(0)
+    } finally {
+      await quitDiscarding(first.app, first.page)
+    }
+
+    const { app, page } = await open('large.pdf') // 500 pages
+    try {
+      await showBookmarks(app, page)
+      await generateButton(page).click()
+      const dlg = generateDialog(page)
+      await expect(dlg.getByTestId('generate-working')).toBeVisible()
+      await expect(dlg.getByRole('progressbar', { name: 'Analysis progress' })).toBeVisible()
+      await dlg.getByRole('button', { name: 'Cancel' }).click()
+      await expect(dlg).toHaveCount(0)
+      await expect(page.getByTestId('bookmarks-empty')).toBeVisible()
+      await expect(dot(page)).toHaveCount(0)
+      // The background task ended as cancelled (it was a real job with a tray entry).
+      await expect(page.locator('[data-job="bookmarks:detect"]')).toContainText('Cancelled')
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('keyboard-only review: the dialog is operable with Tab, Space and Enter', async () => {
+    const { app, page } = await open('lb-report.pdf')
+    try {
+      await showBookmarks(app, page)
+      await generateButton(page).focus()
+      await page.keyboard.press('Enter')
+      const dlg = generateDialog(page)
+      await expect(dlg.getByTestId('generate-review')).toBeVisible({ timeout: 45_000 })
+      await dlg.getByRole('button', { name: 'Select none' }).focus()
+      await page.keyboard.press('Enter')
+      await expect(dlg.getByRole('button', { name: /^Create 0 bookmarks$/ })).toBeDisabled()
+      const first = dlg.getByRole('checkbox', { name: 'Include “1 Introduction”' })
+      await first.focus()
+      await page.keyboard.press('Space')
+      await expect(first).toBeChecked()
+      await page.keyboard.press('Escape') // Escape closes the dialog without creating anything
+      await expect(dlg).toHaveCount(0)
+      await expect(page.getByTestId('bookmarks-empty')).toBeVisible()
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+})
+
+// ---------------------------------------------------------------- bookmarks: protected documents and scale
+
+const SECURITY = resolve('tests/fixtures/security')
+
+test.describe('bookmarks: protected documents', () => {
+  test('a password-protected document asks to unlock; bookmarks can then be added, and Save keeps it encrypted', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'epdf-lb-enc-'))
+    const path = join(dir, 'protected.pdf')
+    writeFileSync(path, readFileSync(join(SECURITY, 'aes-256-r6.pdf')))
+    const { app, page } = await launch({ files: [path] })
+    try {
+      const prompt = page.getByRole('dialog', { name: 'Password required' })
+      await expect(prompt).toBeVisible()
+      await prompt.getByLabel('Document password').fill('user256')
+      await prompt.getByRole('button', { name: 'Open' }).click()
+      await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
+      await menuClick(app, 'View', 'Bookmarks Panel')
+      const unlockButton = page.getByRole('button', { name: 'Unlock to edit bookmarks' })
+      await expect(unlockButton).toBeVisible()
+      expect(await axeViolations(page, 'bookmarks locked')).toEqual([])
+      await unlockButton.click()
+      await expect(page.getByTestId('bookmarks-empty')).toBeVisible()
+      await page.getByRole('button', { name: 'Add bookmark for this page' }).click()
+      await tree(page).getByLabel('Bookmark title').press('Enter')
+      await expect(item(page, /Page 1/)).toBeVisible()
+      await save(page)
+      const bytes = new Uint8Array(readFileSync(path))
+      expect(Buffer.from(bytes).toString('latin1')).toContain('/Encrypt') // still protected on disk
+      await expect(PDFDocument.load(bytes)).rejects.toThrow(/encrypt/i) // and unreadable without the password
+      const plain = (await openWith(bytes, 'user256')).plain
+      const outline = readBookmarks(await PDFDocument.load(plain)).roots
+      expect(outline.map((n) => n.title)).toEqual(['Page 1'])
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+})
+
+test.describe('bookmarks: scale', () => {
+  test('5,000 bookmarks: the panel stays responsive (virtualised), navigates, filters and edits', async () => {
+    const { app, page, path } = await open('lb-many.pdf')
+    try {
+      const t0 = Date.now()
+      await menuClick(app, 'View', 'Bookmarks Panel')
+      await expect(page.getByTestId('bookmarks-panel')).toHaveAttribute('data-count', '5000', { timeout: 30_000 })
+      await expect(item(page, /^Chapter 1,/)).toBeVisible()
+      const shown = Date.now() - t0
+      expect(shown).toBeLessThan(15_000)
+      test.info().annotations.push({ type: 'timing', description: `panel shown ${shown} ms` })
+      await page.getByRole('button', { name: 'Expand', exact: true }).click()
+      await expect(item(page, /^Section 1\.1,/)).toBeVisible()
+      // Only the visible window is in the DOM, however large the tree.
+      const rows = await tree(page).getByRole('treeitem').count()
+      expect(rows).toBeGreaterThan(5)
+      expect(rows).toBeLessThan(80)
+      expect(await tree(page).evaluate((el) => el.style.height)).toBe(`${5000 * 30}px`)
+      // End jumps to the last item quickly.
+      await item(page, /^Chapter 1,/).click()
+      const t1 = Date.now()
+      await page.keyboard.press('End')
+      await expect(item(page, /^Section 50\.99,/)).toBeVisible()
+      expect(Date.now() - t1).toBeLessThan(3000)
+      test.info().annotations.push({ type: 'timing', description: `End key ${Date.now() - t1} ms` })
+      await expect(item(page, /^Section 50\.99,/)).toHaveAttribute('aria-posinset', '99')
+      await expect(item(page, /^Section 50\.99,/)).toHaveAttribute('aria-setsize', '99')
+      // Filtering searches all 5,000 titles.
+      const t2 = Date.now()
+      await page.getByLabel('Filter bookmarks').fill('section 7.42')
+      await expect.poll(() => visibleTitles(page)).toEqual(['Chapter 7', 'Section 7.42'])
+      expect(Date.now() - t2).toBeLessThan(3000)
+      test.info().annotations.push({ type: 'timing', description: `filter ${Date.now() - t2} ms` })
+      await page.getByLabel('Filter bookmarks').fill('')
+      // An edit on the big tree completes in reasonable time and keeps the outline valid.
+      await item(page, /^Section 3\.5,/).scrollIntoViewIfNeeded().catch(() => undefined)
+      const t3 = Date.now()
+      await page.getByRole('button', { name: 'Add bookmark', exact: true }).click()
+      await tree(page).getByLabel('Bookmark title').press('Enter')
+      await expect(dot(page)).toBeVisible()
+      expect(Date.now() - t3).toBeLessThan(20_000)
+      test.info().annotations.push({ type: 'timing', description: `add on 5000 ${Date.now() - t3} ms` })
+      await save(page)
+      const disk = await outlineOnDisk(path)
+      expect(disk.problems).toEqual([])
+      expect(disk.titles.length).toBe(5001)
     } finally {
       await quitDiscarding(app, page)
     }

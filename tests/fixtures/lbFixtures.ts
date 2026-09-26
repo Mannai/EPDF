@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { PDFDocument, PDFName, PDFString, StandardFonts, rgb } from 'pdf-lib'
+import { PDFDocument, PDFName, PDFString, StandardFonts, degrees, rgb } from 'pdf-lib'
 import { addBookmarkTree } from '../../src/renderer/src/features/bookmarks/pdf/ops'
 import type { NewBookmark } from '../../src/renderer/src/features/bookmarks/pdf/model'
 import { arabicBook, englishReport } from '../unit/helpers/lbHeadingDocs'
@@ -88,8 +88,24 @@ export async function manyBookmarksDoc(): Promise<Uint8Array> {
   return doc.save()
 }
 
+/**
+ * A page rotated by /Rotate 90 with a CropBox that is offset from the origin, with a known word at a known place
+ * (PDF user space, x=200..~250, baseline y=400): used to check that boxes drawn on screen map to the right PDF rect.
+ */
+export async function rotatedDoc(rotate = 90): Promise<Uint8Array> {
+  const doc = await PDFDocument.create()
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const p = doc.addPage([612, 792])
+  p.drawText('TARGET', { x: 200, y: 400, size: 24, font })
+  p.drawText('corner', { x: 60, y: 60, size: 12, font })
+  p.setRotation(degrees(rotate))
+  p.setCropBox(36, 36, 540, 720) // x 36..576, y 36..756
+  return doc.save()
+}
+
 export async function writeLbFixtures(dir: string): Promise<void> {
   mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'lb-rotated.pdf'), await rotatedDoc(90))
   writeFileSync(join(dir, 'lb-links.pdf'), await linksDoc())
   writeFileSync(join(dir, 'lb-outline.pdf'), await outlineDoc())
   writeFileSync(join(dir, 'lb-many.pdf'), await manyBookmarksDoc())
