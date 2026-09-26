@@ -32,7 +32,7 @@ export function LeftSidebar({ tab }: { tab: Tab }): JSX.Element | null {
           ))}
         </div>
       )}
-      <div role={panels.length > 1 ? 'tabpanel' : undefined} aria-label={active.label} className="w-40 min-w-0">
+      <div role={panels.length > 1 ? 'tabpanel' : undefined} aria-label={active.label} className="min-w-0" style={{ width: active.width ?? 160 }}>
         <Active tab={tab} />
       </div>
     </aside>
