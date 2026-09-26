@@ -62,11 +62,34 @@ export const MAX_HEADING_LEVELS = 6
 
 // ---------------------------------------------------------------- text helpers
 
-const ARABIC_DIACRITICS = /[ً-ٰٟۖ-ۭ]/g
+const ARABIC_DIACRITICS = /[\u064B-\u065F\u0670\u06D6-\u06ED]/g
 
 /** Western digits for Arabic-Indic and Persian digits. */
 function asciiDigits(s: string): string {
   return s.replace(/[٠-٩]/g, (c) => String(c.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/g, (c) => String(c.charCodeAt(0) - 0x06f0))
+}
+
+const PRESENTATION_FORMS = /[\uFB50-\uFDFF\uFE70-\uFEFF]/
+
+/**
+ * Arabic text from many producers (Chromium, Word) comes out of the font's /ToUnicode as shaped presentation
+ * forms (U+FE70..U+FEFF: initial, medial, final and ligature glyphs). NFKC turns them back into the base letters
+ * readers would type and search for.
+ */
+export function plainArabic(s: string): string {
+  return PRESENTATION_FORMS.test(s) ? s.normalize('NFKC') : s
+}
+
+const ARABIC_ONLY = /[\u0629\u0623\u0625\u0649\u064A\u0643]/ // teh marbuta, hamza-alefs, alef maksura, Arabic yeh and kaf
+const PERSIAN_ONLY = /[\u067E\u0686\u0698\u06AF]/ // Persian/Urdu-only: peh, tcheh, jeh, gaf
+
+/**
+ * Fonts often map a glyph to the Persian/Urdu variant of a letter (ھ U+06BE, ی U+06CC, ک U+06A9) although the
+ * text is Arabic (Tahoma in Chromium output does). In a document that shows Arabic-only letters and no Persian-only
+ * ones, those variants are folded back to the Arabic letters (ه ي ك) so titles read as they were typed.
+ */
+export function foldToArabicLetters(s: string): string {
+  return s.replace(/\u06BE/g, '\u0647').replace(/\u06CC/g, '\u064A').replace(/\u06A9/g, '\u0643')
 }
 
 /** Text with the variable parts flattened, for spotting the same header/footer on many pages. */
@@ -232,7 +255,8 @@ export function detectHeadings(pages: PageText[], options: DetectOptions = {}): 
   }
   const keyOf = (p: PageText, l: TextLine): string | null => {
     const band = bandOf(p, l)
-    return band ? `${band}|${Math.round(l.size)}|${normalizeForRepeat(l.text)}` : null
+    // A running header/footer sits at the same height on every page: the position is part of the key.
+    return band ? `${band}|${Math.round(l.size)}|${Math.round(l.y1 / 4)}|${normalizeForRepeat(l.text)}` : null
   }
   for (const p of pages) {
     for (const l of p.lines) {
@@ -243,13 +267,16 @@ export function detectHeadings(pages: PageText[], options: DetectOptions = {}): 
       repeat.set(k, set)
     }
   }
-  const repeatThreshold = Math.max(2, Math.ceil(totalPages * 0.25))
+  const repeatThreshold = Math.max(2, Math.ceil(totalPages * 0.4))
   let removedRunning = 0
   const isRunning = (p: PageText, l: TextLine): boolean => {
     const k = keyOf(p, l)
     if (!k) return false
     const norm = normalizeForRepeat(l.text)
     if (PAGE_NUMBER_LIKE.test(norm)) return true
+    // Running headers are set small. Heading-sized text that repeats (the same section title in every chapter,
+    // numbers aside) is never discarded as a header: losing a real heading is worse than listing a stray line.
+    if (l.size >= body * 1.12) return false
     return totalPages >= 2 && (repeat.get(k)?.size ?? 0) >= repeatThreshold
   }
 
@@ -264,6 +291,17 @@ export function detectHeadings(pages: PageText[], options: DetectOptions = {}): 
     }
   }
   const streamIsLogical = votesLogical > votesVisual
+  let arabicMarks = 0
+  let persianMarks = 0
+  for (const p of pages) {
+    for (const l of p.lines) {
+      if (!l.rtl) continue
+      const t = plainArabic(l.text)
+      if (ARABIC_ONLY.test(t)) arabicMarks++
+      if (PERSIAN_ONLY.test(t)) persianMarks++
+    }
+  }
+  const foldArabic = arabicMarks > 0 && persianMarks === 0
 
   // ---- per-page working set
   const works: Work[] = []
@@ -303,8 +341,12 @@ export function detectHeadings(pages: PageText[], options: DetectOptions = {}): 
       const below = idx < list.length - 1 ? list[idx + 1] : undefined
       const pageTop = p.box[3]
       const pageBottom = p.box[1]
-      const logical = (l.rtl && streamIsLogical ? l.text : l.logical).replace(/\s+/g, ' ').trim()
-      const variants = Array.from(new Set([logical, l.text.replace(/\s+/g, ' ').trim(), l.rtl ? visualToLogical(l.text).replace(/\s+/g, ' ').trim() : ''])).filter(Boolean)
+      const tidy = (s: string): string => {
+        const t = plainArabic(s.replace(/\s+/g, ' ').trim())
+        return foldArabic && l.rtl ? foldToArabicLetters(t) : t
+      }
+      const logical = tidy(l.rtl && streamIsLogical ? l.text : l.logical)
+      const variants = Array.from(new Set([logical, tidy(l.text), l.rtl ? tidy(visualToLogical(l.text)) : ''])).filter(Boolean)
       let pattern: Pattern | null = null
       let text = logical
       for (const v of variants) {

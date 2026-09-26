@@ -225,6 +225,7 @@ test.describe('bookmarks panel: editing', () => {
       const input = tree(page).getByLabel('Bookmark title')
       await expect(input).toBeFocused()
       await expect(input).toHaveValue('Page 11')
+      await expect(page.locator('[role="status"]').filter({ hasText: 'Bookmark added for page 11' })).toBeAttached()
       await input.fill('مرحبا بالعالم – 2024')
       await input.press('Enter')
       await expect(item(page, /مرحبا بالعالم/)).toBeVisible()
@@ -498,6 +499,37 @@ test.describe('bookmarks panel: editing', () => {
 const generateButton = (page: Page): Locator => page.getByRole('button', { name: 'Generate bookmarks from headings', exact: true })
 const generateDialog = (page: Page): Locator => page.getByRole('dialog', { name: 'Generate bookmarks from headings' })
 
+/**
+ * Lets Chromium (the engine inside Electron) print an HTML document to a PDF file: a real PDF producer, with its own
+ * font subsetting, ToUnicode maps, bidi ordering and header/footer templates. Returns the path of the file.
+ */
+async function chromiumPdf(html: string, headerText: string): Promise<string> {
+  const path = join(mkdtempSync(join(tmpdir(), 'epdf-lb-chromium-')), 'chromium.pdf')
+  const maker = await launch({})
+  try {
+    const b64 = await maker.app.evaluate(
+      async ({ BrowserWindow }, arg) => {
+        const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true } })
+        await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(arg.html)}`)
+        const pdf = await win.webContents.printToPDF({
+          pageSize: 'A4',
+          printBackground: true,
+          displayHeaderFooter: true,
+          headerTemplate: `<div style="font-size:9px;width:100%;text-align:center">${arg.header}</div>`,
+          footerTemplate: '<div style="font-size:9px;width:100%;text-align:center"><span class="pageNumber"></span></div>'
+        })
+        win.destroy()
+        return pdf.toString('base64')
+      },
+      { html, header: headerText }
+    )
+    writeFileSync(path, Buffer.from(b64, 'base64'))
+  } finally {
+    await quitDiscarding(maker.app, maker.page)
+  }
+  return path
+}
+
 test.describe('bookmarks: generate from headings', () => {
   test('English report: analysed in the background, reviewed (reject, promote), created as one undo step with correct destinations', async () => {
     const { app, page, path } = await open('lb-report.pdf')
@@ -563,6 +595,75 @@ test.describe('bookmarks: generate from headings', () => {
       expect(chapters[0].children.map((c) => c.title)).toEqual(['1.1 نظرة عامة', '1.2 أهداف الكتاب'])
       // The destination is at the heading, on the right-hand page area's top.
       expect(chapters[0].target).toMatchObject({ kind: 'page', dest: { pageIndex: 1 } })
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('an Arabic document made by Chromium itself (a real PDF producer, not our fixture): chapters and sections are found in logical order', async () => {
+    const chapters = ['الفصل الأول: مقدمة عن الأمن', 'الفصل الثاني: المفاهيم الأساسية', 'الفصل الثالث: أساليب الحماية']
+    const para = 'يقوم النظام على تصميم متعدد الوحدات حيث تتواصل كل وحدة عبر واجهات محددة ويتم التحقق من كل طلب قبل معالجته ثم تخزين النتيجة وإبلاغ الأطراف المعنية بالتغييرات. '.repeat(9)
+    // Step 1: let Chromium print a right-to-left HTML document to PDF (real shaping, real subset fonts, real bidi order).
+    const path = await chromiumPdf(
+      `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><style>
+        body { font-family: Tahoma, 'Segoe UI', Arial, sans-serif; font-size: 12pt; line-height: 1.7 }
+        h1 { font-size: 26pt; margin: 0 0 14pt } h2 { font-size: 17pt; margin: 18pt 0 8pt }
+        .ch { page-break-before: always } .cover { text-align: center; margin-top: 200pt }
+      </style></head><body>
+        <div class="cover"><h1>كتاب الأمن السيبراني</h1><p>دليل شامل للمبتدئين</p></div>
+        ${chapters.map((c, i) => `<div class="ch"><h1>${c}</h1><p>${para}</p><h2>${i + 1}.1 نظرة عامة</h2><p>${para}</p><h2>${i + 1}.2 أهداف الفصل</h2><p>${para}</p></div>`).join('')}
+      </body></html>`,
+      'كتاب الأمن السيبراني'
+    )
+    // Step 2: open it in Epdf and generate bookmarks from its headings.
+    const { app, page } = await launch({ files: [path] })
+    try {
+      await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
+      await menuClick(app, 'View', 'Bookmarks Panel')
+      await generateButton(page).click()
+      const dlg = generateDialog(page)
+      await expect(dlg.getByTestId('generate-review')).toBeVisible({ timeout: 60_000 })
+      const texts = await dlg.getByTestId('generate-item').locator('span[dir="auto"]').allTextContents()
+      for (const c of chapters) expect(texts, `chapter heading ${c}`).toContain(c)
+      expect(texts).toContain('1.1 نظرة عامة')
+      expect(texts).toContain('3.2 أهداف الفصل')
+      // The page numbers and the running header are not offered as headings.
+      expect(texts.filter((t) => t === 'كتاب الأمن السيبراني').length).toBeLessThanOrEqual(1) // at most the cover title
+      await dlg.getByRole('button', { name: /^Create \d+ bookmarks$/ }).click()
+      await expect(dlg).toHaveCount(0)
+      await expect(item(page, /الفصل الأول: مقدمة عن الأمن/)).toBeVisible()
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('a two-column English document made by Chromium: headings inside both columns, in reading order, running header and page numbers ignored', async () => {
+    const words = 'the system uses a modular design where each component communicates through well defined interfaces and every request is validated before it is processed. '
+    const section = (n: string, title: string): string => `<h2>${n} ${title}</h2><p>${words.repeat(12)}</p>`
+    const path = await chromiumPdf(
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><style>
+        body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; line-height: 1.35 }
+        h1 { font-size: 22pt; text-align: center; margin: 0 0 12pt } .cols { column-count: 2; column-gap: 24pt; text-align: justify }
+        h2 { font-size: 13pt; margin: 14pt 0 5pt; break-after: avoid }
+      </style></head><body>
+        <h1>A Study of Modular Systems</h1>
+        <div class="cols">
+          ${section('1', 'Introduction')}${section('2', 'Related Work')}${section('3', 'Method')}${section('4', 'Results')}${section('5', 'Conclusion')}
+        </div>
+      </body></html>`,
+      'Journal of Modular Systems'
+    )
+    const { app, page } = await launch({ files: [path] })
+    try {
+      await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
+      await menuClick(app, 'View', 'Bookmarks Panel')
+      await generateButton(page).click()
+      const dlg = generateDialog(page)
+      await expect(dlg.getByTestId('generate-review')).toBeVisible({ timeout: 60_000 })
+      const texts = await dlg.getByTestId('generate-item').locator('span[dir="auto"]').allTextContents()
+      const sections = texts.filter((t) => /^\d /.test(t))
+      expect(sections).toEqual(['1 Introduction', '2 Related Work', '3 Method', '4 Results', '5 Conclusion'])
+      expect(texts.filter((t) => /Journal of Modular Systems/.test(t))).toEqual([])
     } finally {
       await quitDiscarding(app, page)
     }
@@ -816,6 +917,8 @@ test.describe('links: add', () => {
       await expect(dlg).toHaveCount(0)
       await expect(dot(page)).toBeVisible()
       await expect(undoButton(page, 'Add link')).toBeVisible()
+      // Screen readers are told (the app's polite live region).
+      await expect(page.locator('[role="status"]').filter({ hasText: 'Link added on page 1' })).toBeAttached()
 
       // Undo removes it, Redo brings it back (one step each).
       await undoButton(page, 'Add link').click()

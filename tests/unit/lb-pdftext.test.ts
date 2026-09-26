@@ -46,7 +46,7 @@ describe('PDF text strings', () => {
     expect([ar.bytes[0], ar.bytes[1]]).toEqual([0xfe, 0xff])
     expect(ar.bytes.length).toBe(2 + 5 * 2)
     // Characters outside PDFDocEncoding (even though Latin-1) force UTF-16.
-    expect(encodePdfText('a­b').encoding).toBe('utf16be')
+    expect(encodePdfText(`a${String.fromCharCode(0xad)}b`).encoding).toBe('utf16be') // U+00AD (soft hyphen) is not in PDFDocEncoding
     expect(encodePdfText('ł').encoding).toBe('pdfdoc') // Polish l with stroke IS in PDFDocEncoding (0x9B)
     expect(encodePdfText('ő').encoding).toBe('utf16be')
   })

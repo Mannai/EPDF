@@ -1,7 +1,7 @@
 import { PDFDocument } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_ACCEPT, classify, detectHeadings, nestHeadings, normalizeForRepeat, type HeadingCandidate } from '../../src/shared/features/bookmarks/headings'
-import { visualToLogical } from '../../src/shared/features/textlines'
+import { DEFAULT_ACCEPT, classify, detectHeadings, nestHeadings, normalizeForRepeat, type HeadingCandidate, type PageText } from '../../src/shared/features/bookmarks/headings'
+import { buildLines, visualToLogical, type RunLike } from '../../src/shared/features/textlines'
 import { pageLines } from '../../src/renderer/src/features/bookmarks/pdf/pageLines'
 import { arabicBook, boldOnlyManual, capsHeadings, cjkReport, englishReport, hardReport, noHeadings, twoColumn } from './helpers/lbHeadingDocs'
 import type { Doc } from './helpers/lbDocs'
@@ -158,6 +158,55 @@ describe('heading detection: precision and recall on generated documents', () =>
     console.log(`\nHeading detection (confidence >= ${DEFAULT_ACCEPT}):\n  ${report.join('\n  ')}\n  TOTAL: precision ${(precision * 100).toFixed(1)}%  recall ${(recall * 100).toFixed(1)}%`)
     expect(precision).toBeGreaterThanOrEqual(0.93)
     expect(recall).toBeGreaterThanOrEqual(0.93)
+  })
+})
+
+describe('heading detection: text as Chromium writes Arabic', () => {
+  // Real /ToUnicode output of a Chromium "print to PDF" of an Arabic page: shaped presentation forms (U+FE70..FEFF),
+  // stored in visual order (leftmost glyph first). Taken from an actual file, not made up.
+  const VISUAL = {
+    chapter1: 'ﻦﻣﻷا ﻦﻋ ﺔﻣﺪﻘﻣ :لوﻷا ﻞﺼﻔﻟا',
+    chapter2: 'ﺔﯿﺳﺎﺳﻷا ﻢﯿھﺎﻔﻤﻟا :ﻲﻧﺎﺜﻟا ﻞﺼﻔﻟا',
+    section1: 'ﺔﻣﺎﻋ ةﺮﻈﻧ 1.1',
+    section2: 'ﻞﺼﻔﻟا فاﺪھأ 1.2',
+    header: 'ﻲﻧاﺮﺒﯿﺴﻟا ﻦﻣﻷا بﺎﺘﻛ'
+  }
+  const run = (text: string, y: number, size: number, bold: boolean): RunLike => ({
+    glyphs: Array.from(text).map((ch, i) => ({ text: ch, x0: 100 + i * size * 0.5, x1: 100 + (i + 1) * size * 0.5 })),
+    baseline: y,
+    y0: y - size * 0.2,
+    y1: y + size * 0.8,
+    size,
+    bold,
+    italic: false,
+    fontKey: bold ? 'Tahoma-Bold' : 'Tahoma'
+  })
+
+  it('turns presentation forms back into letters, and keeps heading-sized text that repeats at the page foot', () => {
+    const pages: PageText[] = []
+    for (let c = 0; c < 3; c++) {
+      const runs: RunLike[] = [run(VISUAL.header, 828, 6.7, false), run('1', 22, 6.7, false)]
+      runs.push(run(c === 0 ? VISUAL.chapter1 : VISUAL.chapter2, 780, 26, true))
+      for (let i = 0; i < 10; i++) runs.push(run('ﺐﻠط ﻞﻛ ﻦﻣ ﻖﻘﺤﺘﻟا ﻢﺘﻳو ةدﺪﺤﻣ تﺎﮫﺟاو ﺮﺒﻋ ةﺪﺣو ﻞﻛ ﻞﺻاﻮﺘﺗ ﺚﯿﺣ', 740 - i * 20, 12, false))
+      runs.push(run(VISUAL.section1, 430, 17, true))
+      for (let i = 0; i < 10; i++) runs.push(run('ﺐﻠط ﻞﻛ ﻦﻣ ﻖﻘﺤﺘﻟا ﻢﺘﻳو ةدﺪﺤﻣ تﺎﮫﺟاو ﺮﺒﻋ ةﺪﺣو ﻞﻛ ﻞﺻاﻮﺘﺗ ﺚﯿﺣ', 400 - i * 20 + (i > 6 ? -10 : 0), 12, false))
+      runs.push(run(VISUAL.section2, 64, 17, true)) // inside the bottom 10 % of an A4 page, at the same height on every page
+      pages.push({ pageIndex: c * 2 + 1, box: [0, 0, 595.92, 842.88], lines: buildLines(runs) })
+    }
+    const found = detectHeadings(pages).candidates.filter((c) => c.confidence >= 0.55)
+    expect(found.map((c) => c.text)).toEqual([
+      'الفصل الأول: مقدمة عن الأمن',
+      '1.1 نظرة عامة',
+      '1.2 أهداف الفصل',
+      'الفصل الثاني: المفاهيم الأساسية',
+      '1.1 نظرة عامة',
+      '1.2 أهداف الفصل',
+      'الفصل الثاني: المفاهيم الأساسية',
+      '1.1 نظرة عامة',
+      '1.2 أهداف الفصل'
+    ])
+    expect(found.map((c) => c.level)).toEqual([1, 2, 2, 1, 2, 2, 1, 2, 2])
+    expect(found.some((c) => c.text.includes('كتاب'))).toBe(false) // the running header is gone
   })
 })
 
