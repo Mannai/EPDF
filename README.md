@@ -41,7 +41,8 @@ npm 11+ blocks dependency install scripts by default. This repo's `package.json`
 | `npm test` | Unit tests (Vitest) |
 | `npm run test:e2e` | Build, then end-to-end tests (Playwright driving the real Electron app) |
 | `npm run test:packaged` | Smoke-test a packaged build (needs `EPDF_PACKAGED_EXE`, see below) |
-| `npm run icon` | Regenerate the placeholder icon at `build/icon.png` |
+| `npm run icon` | Regenerate the placeholder icons `build/icon.png` and `build/icon.ico` |
+| `npm run perf` / `npm run perf:huge` | Cold-start benchmark of the real app / a 147 MB, 320-page file |
 
 The E2E suite generates its own PDF fixtures (5-page sample, 500-page document, mixed page sizes) into
 `test-results/fixtures` — nothing to download.
@@ -55,6 +56,26 @@ Artifacts are written to `dist/`. Configuration lives in `electron-builder.yml`.
 ```powershell
 npm run dist:dir     # unpacked app in dist\win-unpacked (fast; good for testing)
 npm run dist:win     # NSIS installer (.exe) + MSI, x64
+```
+
+| Artifact | For | Notes |
+|---|---|---|
+| `Epdf-Setup-<version>.exe` | People | Per-user install (no admin rights), choose the folder, Start Menu + Desktop shortcuts, `.pdf` association, Explorer right-click entries (below), uninstaller. Installer text: English, Arabic (right-to-left), French, German, Spanish; it follows the language of Windows. |
+| `Epdf <version>.msi` | IT deployment | Per-user, silent (`msiexec /i ... /qn`), shortcuts and `.pdf` association. **Does not add the Explorer right-click entries** (those are NSIS-only). |
+| `latest.yml` + `.blockmap` | Auto-update | Upload next to the installer (see "Updates"). |
+
+**Explorer right-click entries.** The NSIS installer adds **Convert to PDF with Epdf** (pictures, Word/Excel/
+PowerPoint/OpenDocument, RTF, text, CSV) and **Combine files in Epdf** (the same, plus PDFs) to the context menu.
+They run the app with `--convert-to-pdf` / `--combine`; several selected files open one Combine screen. The menu text
+follows the installer's language. They live in `build/installer.nsh` and are removed by the uninstaller (as are the
+`.pdf` association leftovers and the update cache). User data (settings, library, signatures) is kept on uninstall.
+
+Silent install / uninstall, for scripts:
+
+```powershell
+.\dist\Epdf-Setup-0.1.0.exe /S                 # install for the current user
+.\dist\Epdf-Setup-0.1.0.exe /S /D=C:\Tools\Epdf # ...into a chosen folder
+& "$env:LOCALAPPDATA\Programs\Epdf\Uninstall Epdf.exe" /currentuser /S
 ```
 
 Smoke-test the packaged app:
@@ -89,8 +110,37 @@ picks them up automatically:
 | macOS notarization | `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`, and set `mac.notarize: true` |
 
 Hardened-runtime entitlements are in `build/entitlements.mac.plist`. Verify a signed Windows build with
-`Get-AuthenticodeSignature dist\win-unpacked\Epdf.exe`. Signing every bundled tool (qpdf, Tesseract, …) is part of
-Phase 5, when those tools are added.
+`Get-AuthenticodeSignature dist\win-unpacked\Epdf.exe` (status `Valid` for a trusted certificate).
+
+**Windows signing, step by step.** Without a signature Windows SmartScreen warns "unknown publisher" on every download.
+1. Get a code-signing certificate: an OV/EV certificate from a certificate authority (EV builds reputation with
+   SmartScreen immediately; OV builds it over time), or **Azure Trusted Signing** (cheaper, cloud-held key, no hardware token).
+2. Build with the certificate: `$env:CSC_LINK = 'C:\keys\epdf.pfx'; $env:CSC_KEY_PASSWORD = '...'; npm run dist:win`.
+   The app, the uninstaller and the installer are all signed. (For Azure Trusted Signing, add the `win.azureSignOptions`
+   block from the electron-builder docs instead of `CSC_*`.)
+3. Set `win.signtoolOptions.publisherName` in `electron-builder.yml` to your certificate's subject name. Then the
+   updater also refuses any update that is not signed by that publisher (today it only checks the SHA-512 in `latest.yml`).
+
+The signing pipeline was verified with a throw-away self-signed certificate: the app, `elevate.exe`, the uninstaller
+and the installer all carried the signature (`UnknownError` = signed but not from a trusted root, as expected). It has
+**not** been run with a real certificate, because none exists yet.
+
+### Updates
+
+The installed app checks for updates from **Help ▸ Check for Updates…** and, unless turned off under
+**Help ▸ Check for Updates Automatically**, once a day in the background (first check 20 s after launch, never
+during startup). It never downloads without asking, shows progress on the taskbar, and installs **when the app really
+quits**, so the usual "Save changes?" prompt can still stop it and no work is lost. Choosing *Restart* installs and
+starts the new version. Portable/unpacked runs report that updates are unavailable.
+
+- **Feed**: the `publish` URL in `electron-builder.yml` (a placeholder `https://updates.epdf.example/win` today).
+  To release, build, then upload `latest.yml`, `Epdf-Setup-<version>.exe` and its `.blockmap` to that folder on any
+  static host. Later versions download only the changed blocks. The download is verified against the SHA-512 in
+  `latest.yml`; a corrupted or tampered installer is refused.
+- **Test it** with `node scripts/update-e2e.mjs --old <old installer> --feed <folder with the newer build>`
+  (add `--tamper` to check that a corrupted download is refused). Both installers must be built with
+  `--config.extraMetadata.epdfTestBuild=true`, the only kind that honours `EPDF_UPDATE_URL`, so nothing on a user's
+  machine can redirect a release build to another server.
 
 ### File associations
 
@@ -204,9 +254,18 @@ LibreOffice) and skip cleanly without them.
 
 - **macOS and Linux are unverified**: the universal `.dmg` build, Dock menu, `open-file` handling, the macOS/Linux
   HEIC decoders and the macOS/Linux key-storage backends used for signatures are written but were not run.
-- **Installers** (`.exe`/`.msi`) are configured, but only the unpacked build (`--dir`) has been produced and tested.
-  The Explorer/Finder right-click entries ("Convert to PDF", "Combine files") need installer work (Phase 5); the app
-  side (`--convert-to-pdf`, `--combine`) is done and tested.
+- **Windows installers** were built and tested by really installing and uninstalling on one Windows 11 machine
+  (files, shortcuts, `.pdf` association, uninstall entry, Explorer verbs, full cleanup; NSIS and MSI). Not tested: an
+  all-users (admin) install, upgrading over an older *installed* version by running the installer by hand, other Windows
+  versions, and whether the Explorer menu entries look right with many other programs installed. The MSI has no
+  Explorer right-click entries. The installer's Arabic/French/German/Spanish wording for the menu entries is a machine
+  draft that needs native review. In a silent Arabic-only build the Arabic menu text was written to the registry
+  correctly, but the installer's own wizard windows were never looked at in any language other than by silent runs.
+- **Auto-update** was tested end to end (real 0.1.0 to 0.1.1 update from a local server, relaunch, and a tampered
+  download refused), but not against a real host, not with a signed build, and not the "Later" path across a restart.
+  The update feed URL is a placeholder until you have a host.
+- **Code signing** has not been done with a real certificate (see "Code signing"); users will see SmartScreen warnings
+  until it is.
 - **Never opened in Acrobat, Word/Excel/PowerPoint or Preview.** Output was validated structurally and rendered with
   PDF.js; Office conversion fidelity was compared against LibreOffice, not Microsoft Office.
 - **Real-world PDFs**: the text/image editing engine was tested on generated files that imitate Word, Chrome and

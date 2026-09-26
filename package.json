@@ -26,6 +26,7 @@
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",
     "better-sqlite3": "^13.0.3",
+    "electron-updater": "^6.8.9",
     "fflate": "^0.8.3",
     "jpeg-js": "^0.4.4",
     "tesseract.js": "^7.0.0",
