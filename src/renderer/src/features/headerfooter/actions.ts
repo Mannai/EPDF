@@ -69,7 +69,7 @@ export async function applyAction(r: ApplyRequest): Promise<ApplyOutcome> {
       missing = res.missing
     })
   } catch (err) {
-    if (err instanceof ApplyCancelled || (err instanceof Error && err.message === 'Cancelled.')) return { ok: false, cancelled: true, message: 'Cancelled. The document was not changed.' }
+    if (err instanceof ApplyCancelled) return { ok: false, cancelled: true, message: 'Cancelled. The document was not changed.' }
     return { ok: false, cancelled: false, message: err instanceof EditError ? err.message : errorMessage(err) }
   }
   void window.epdf.call('headerfooter:setLast', { group: r.gs.group, settings: r.gs.settings }).catch(() => undefined)

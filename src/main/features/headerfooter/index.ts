@@ -15,21 +15,13 @@ import {
 import { commandItem, contributeMenu } from '../../menu/contributions'
 import { registerFeatureChannel, type FeatureCallContext, type MainContext } from '../api'
 import { PresetStore } from './presets'
+import { sniffSource } from './sniff'
 
 /**
  * Main-process half of headers & footers, Bates numbering, watermarks and backgrounds: presets and last-used settings
  * (feature key/value store), the native picker for a watermark picture or PDF (the renderer gets bytes, never a
  * path), and the menu items. Everything that edits the PDF happens in the renderer through the edit pipeline.
  */
-
-/** What a picked file really is, by its first bytes (the extension is not trusted). */
-export function sniffSource(bytes: Uint8Array): PickedSource['kind'] | null {
-  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'png'
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'jpeg'
-  const head = new TextDecoder('latin1').decode(bytes.subarray(0, Math.min(1024, bytes.length)))
-  if (head.includes('%PDF-')) return 'pdf'
-  return null
-}
 
 async function pickSource(call: FeatureCallContext, kind: 'image' | 'pdf'): Promise<PickedSource | null> {
   const opts: Electron.OpenDialogOptions = {

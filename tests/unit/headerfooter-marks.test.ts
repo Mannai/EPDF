@@ -342,6 +342,36 @@ describe('update and remove, after saving and reopening', () => {
   })
 })
 
+describe('resources shared between pages', () => {
+  it('a mark on one page never adds names to pages that share (or inherit) its resources', async () => {
+    const pdf = await bodyDoc(3)
+    const ctx = pdf.context
+    // pages 1 and 2 share ONE indirect /Resources whose /XObject is a direct dictionary (one object in memory);
+    // page 3 inherits its resources from the page tree
+    const shared = ctx.obj({ XObject: ctx.obj({}), Font: pdf.getPage(0).node.Resources()!.get(N('Font'))! })
+    const sharedRef = ctx.register(shared)
+    pdf.getPage(0).node.set(N('Resources'), sharedRef)
+    pdf.getPage(1).node.set(N('Resources'), sharedRef)
+    const p3 = pdf.getPage(2).node
+    pdf.catalog.Pages().set(N('Resources'), p3.get(N('Resources'))!)
+    p3.delete(N('Resources'))
+    await applyOverlay(pdf, 'watermark', textWm('ONLY ONE', { pages: { range: '1', subset: 'all' } }), undefined, { fileName: 'x' })
+    expect((shared.lookup(N('XObject'), PDFDict)).keys().length).toBe(0)
+    expect(pdf.getPage(1).node.Resources()!.lookup(N('XObject'), PDFDict).keys().length).toBe(0)
+    const inheritedXo = pdf.catalog.Pages().lookup(N('Resources'), PDFDict).lookup(N('XObject'))
+    expect(inheritedXo instanceof PDFDict ? inheritedXo.keys().length : 0).toBe(0)
+    const seen = await seePages(await pdf.save())
+    expect(seen.map((p) => p.text.includes('ONLY ONE'))).toEqual([true, false, false])
+    // and page 3 (inherited resources) gets its own copy, keeping its font
+    const doc = await reload(await pdf.save())
+    await applyHeaderFooter(doc, 'headerfooter', hf({ topCenter: 'P3' }, { pages: { range: '3', subset: 'all' } }), { fileName: 'x' })
+    const seen2 = await seePages(await doc.save())
+    expect(seen2[2]!.text).toContain('P3')
+    expect(seen2[2]!.text).toContain('Body text of page 3')
+    expect(seen2[0]!.text).not.toContain('P3')
+  })
+})
+
 describe('removal and preservation of other page content', () => {
   it('removing one group never touches the others', async () => {
     const pdf = await bodyDoc(2)

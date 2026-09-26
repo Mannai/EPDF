@@ -123,7 +123,9 @@ export function HeaderFooterForm({ value, onChange, bates, rangeError }: { value
       <div role="group" aria-label="Insert into the last text box used" className="mt-2 flex flex-wrap gap-1">
         {TOKENS.map((t) => (
           <button key={t.text} type="button" className="btn h-7 px-2 text-xs" onMouseDown={(e) => e.preventDefault()} onClick={() => insert(t.text)}>
-            <span dir="auto">+ {t.label}</span>
+            <span>
+              + <bdi>{t.label}</bdi>
+            </span>
           </button>
         ))}
       </div>

@@ -198,24 +198,30 @@ export function findMarks(pdf: PDFDocument, page: PDFPage): FoundMark[] {
 export function ownXObjects(page: PDFPage): PDFDict {
   const node = page.node
   const ctx = node.context
-  const ownRaw = node.get(N('Resources'))
-  let res: PDFDict
-  if (ownRaw instanceof PDFDict) res = ownRaw
-  else {
-    const inherited = node.Resources()
-    res = inherited ? (inherited.clone(ctx) as PDFDict) : ctx.obj({})
+  // A dictionary counts as the page's own only if WE made it for this page: an inherited or indirect one is shared by
+  // definition, and even a direct one may be the same object in memory as another page's (pdf-lib's own
+  // normalisation hands inherited resources to every page as one object).
+  let owned = ownedDicts.get(node)
+  if (!owned) ownedDicts.set(node, (owned = { res: null, xo: null }))
+  let res = owned.res && node.get(N('Resources')) === owned.res ? owned.res : null
+  if (!res) {
+    const current = node.Resources()
+    res = current ? (current.clone(ctx) as PDFDict) : ctx.obj({})
     node.set(N('Resources'), res)
+    owned.res = res
+    owned.xo = null
   }
-  const xRaw = res.get(N('XObject'))
-  let xo: PDFDict
-  if (xRaw instanceof PDFDict) xo = xRaw
-  else {
-    const looked = xRaw ? ctx.lookupMaybe(xRaw, PDFDict) : undefined
-    xo = looked ? (looked.clone(ctx) as PDFDict) : ctx.obj({})
+  let xo = owned.xo && res.get(N('XObject')) === owned.xo ? owned.xo : null
+  if (!xo) {
+    const current = res.lookup(N('XObject'))
+    xo = current instanceof PDFDict ? (current.clone(ctx) as PDFDict) : ctx.obj({})
     res.set(N('XObject'), xo)
+    owned.xo = xo
   }
   return xo
 }
+
+const ownedDicts = new WeakMap<object, { res: PDFDict | null; xo: PDFDict | null }>()
 
 /** A resource name not used on the page yet. */
 export function freeName(xo: PDFDict, prefix: string): string {
@@ -269,9 +275,21 @@ const latin1 = (s: string): Uint8Array => {
   return b
 }
 
-/** A small uncompressed content stream written by Epdf, tagged with `/EpdfMark /<mark>`. */
+const streamCache = new WeakMap<PDFDocument, Map<string, PDFRef>>()
+
+/**
+ * A small uncompressed content stream written by Epdf, tagged with `/EpdfMark /<mark>`. Identical streams (the same
+ * mark name on pages of the same size, the q/Q wrappers) are one shared object, as content streams may be.
+ */
 export function markStream(pdf: PDFDocument, content: string, mark: string): PDFRef {
-  return pdf.context.register(pdf.context.stream(latin1(content), { [MARK_KEY]: N(mark) }))
+  let cache = streamCache.get(pdf)
+  if (!cache) streamCache.set(pdf, (cache = new Map()))
+  const key = `${mark}\n${content}`
+  const hit = cache.get(key)
+  if (hit && pdf.context.lookup(hit)) return hit
+  const ref = pdf.context.register(pdf.context.stream(latin1(content), { [MARK_KEY]: N(mark) }))
+  cache.set(key, ref)
+  return ref
 }
 
 /**

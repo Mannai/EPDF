@@ -2,6 +2,7 @@ import { PDFArray, PDFDict, PDFName, PDFRef, PDFStream, type PDFDocument, type P
 import { parseGroupSettings, type GroupSettings, type MarkGroup } from '../../../../../shared/features/headerfooter'
 import { mkOp, parseContent, serializeContent, type Op } from '../../textedit/pdfcontent/content'
 import { streamBytes } from '../../textedit/pdfcontent/pdfutil'
+import { ApplyCancelled } from './cancel'
 import { GROUP_NAME, MARK_KEY, classifyXObject, contentRefs, findMarks, ownXObjects, pruneOcgs, readSettings, setContents, streamMark, xobjectsOf, type FoundMark } from './marks'
 
 /**
@@ -204,7 +205,7 @@ export async function removeMarks(pdf: PDFDocument, o: RemoveOptions): Promise<R
   const ctx = pdf.context
   const pages = pdf.getPages()
   for (let pi = 0; pi < pages.length; pi++) {
-    if (o.isCancelled?.()) throw new Error('Cancelled.')
+    if (o.isCancelled?.()) throw new ApplyCancelled()
     if (o.yieldEvery && pi > 0 && pi % o.yieldEvery === 0) await new Promise((r) => setTimeout(r, 0))
     const page = pages[pi]!
     const marks = findMarks(pdf, page).filter((m) => groups.has(m.group) && (foreignToo || !m.foreign))

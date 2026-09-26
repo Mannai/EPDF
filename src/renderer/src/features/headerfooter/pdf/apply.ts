@@ -5,6 +5,7 @@ import type { MissingChar } from '../../../../../shared/text/types'
 import { geometryFor, geometryKey, geometryOf, invert, placeOverlay, readerMatrix, selectPages, visibleBox, normalizeRotation, type Matrix, type PageGeometry } from './geometry'
 import { fmt, freeName, insertMarkStream, markContent, markStream, ocgFor, ownXObjects, pdfDate, pieceInfo, writeSettings, type Band } from './marks'
 import { expandTokens, tokenValues } from './tokens'
+import { ApplyCancelled } from './cancel'
 
 /**
  * Writes headers/footers (and Bates numbers), watermarks and backgrounds into a pdf-lib document. All text goes
@@ -13,12 +14,7 @@ import { expandTokens, tokenValues } from './tokens'
  * ./marks. Callers wrap this in `editPdf` so an application is one undo step.
  */
 
-export class ApplyCancelled extends Error {
-  constructor() {
-    super('Cancelled.')
-    this.name = 'ApplyCancelled'
-  }
-}
+export { ApplyCancelled }
 
 export interface ApplyOptions {
   /** Document file name, for {file}. */
