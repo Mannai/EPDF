@@ -98,7 +98,21 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
-  deleteAppDataOnUninstall: false
+  deleteAppDataOnUninstall: false # user data (settings, library index, signatures) survives an uninstall
+  include: build/installer.nsh # Explorer right-click entries ("Convert to PDF", "Combine files")
+  # One installer in several languages: it starts in the language of Windows (no picker), Arabic is right-to-left.
+  multiLanguageInstaller: true
+  installerLanguages: [en_US, ar_SA, fr_FR, de_DE, es_ES]
+  displayLanguageSelector: false
+  runAfterFinish: true
+  artifactName: Epdf-Setup-${version}.${ext} # no spaces: friendlier in update URLs and download links
+
+# Where the installed app looks for updates (Help > Check for Updates). Publishing a release means uploading
+# dist/latest.yml, the installer and its .blockmap to this folder. PLACEHOLDER: replace with the real host before
+# shipping (the app can't update until then, it just reports that the check failed). See README ("Updates").
+publish:
+  provider: generic
+  url: https://updates.epdf.example/win
 
 linux:
   target: [AppImage, deb]

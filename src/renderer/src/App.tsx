@@ -65,6 +65,7 @@ function useAppBootstrap(): void {
       useUi.getState().setDarkMode(info.darkMode)
       // Only now can main safely deliver queued documents.
       await api.ready()
+      performance.mark('epdf:interactive') // read by scripts/perf.mjs (launch-time measurement)
     })()
     return () => offs.forEach((off) => off())
   }, [])
