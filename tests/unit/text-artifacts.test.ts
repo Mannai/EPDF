@@ -20,14 +20,14 @@ const fontUrl = (dir: string, file: string): string => 'file:///' + resolve('res
 
 async function make(item: CorpusItem, name: string, override: { direction?: 'ltr' | 'rtl' | 'auto' } = {}): Promise<void> {
   const size = item.size ?? 20
-  const opts = { size, fontStack: item.fonts, lang: item.lang, direction: override.direction ?? item.direction, width: item.width, align: item.align }
+  const opts = { size, fontStack: item.fonts, lang: item.lang, direction: override.direction ?? item.direction, width: item.width, align: item.align, weight: item.weight }
   const layout = await layoutParagraph(item.text, opts)
   const pdf = await PDFDocument.create()
   const boxW = layout.boxWidth ?? layout.width
   const page = pdf.addPage([Math.ceil(boxW) + 40, Math.ceil(layout.height) + 40])
   await drawParagraph(page, item.text, { ...opts, x: 20, y: page.getHeight() - 20 })
   writeFileSync(resolve(OUT, `${name}.pdf`), await pdf.save())
-  const stack = await resolveStack({ fontStack: item.fonts, lang: item.lang })
+  const stack = await resolveStack({ fontStack: item.fonts, lang: item.lang, weight: item.weight })
   // Chromium picks the first covering font of its list per character. The engine additionally prefers the emoji font for
   // emoji-presentation characters, so the reference lists the emoji font before the symbol fonts (still after every text font).
   const files = stack.filter((c) => c.file)

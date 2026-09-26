@@ -320,7 +320,7 @@ within the 60 MB budget. `dist/win-unpacked/resources/textfonts` measured 29.3 M
 <a id="testing"></a>
 ## 10. Testing and how correctness was verified
 
-Unit (`npm test`, files `tests/unit/text-*.test.ts`: 162 tests in 11 files) and end-to-end (`tests/e2e/text-engine*.spec.ts`: 35
+Unit (`npm test`, files `tests/unit/text-*.test.ts`: 162 tests in 11 files) and end-to-end (`tests/e2e/text-engine*.spec.ts`: 37
 comparison tests + 1 real-app test + 1 packaged-build test).
 
 | What | How |
@@ -341,7 +341,7 @@ comparison tests + 1 real-app test + 1 packaged-build test).
 
 ### The Chromium comparison harness (`tests/e2e/text-engine.spec.ts`)
 
-For every corpus item (`tests/support/textCorpus.ts`, 32 items: Arabic Naskh/Sans, lam-alef, tashkeel, wrapped RTL
+For every corpus item (`tests/support/textCorpus.ts`, 34 items: Arabic Naskh/Sans/bold, lam-alef, tashkeel, wrapped RTL
 paragraphs at three widths, Persian, Urdu Naskh and Nastaliq, Hebrew (plain/niqqud), mixed Arabic+Latin+numbers both
 directions, Arabic-Indic and Western digits, mirrored brackets/quotes/guillemets, Hebrew mixed wrap, Thai, Hindi, Bengali,
 Tamil, Chinese, Japanese, Korean, emoji, Latin ligatures/kerning):
@@ -358,7 +358,7 @@ Thresholds: NCC >= **0.80**, ink width within 4 % (+2 px), height within 12 % (+
 | Item | NCC | | Item | NCC |
 |---|---|---|---|---|
 | Arabic Naskh | 0.991 | | Persian | 0.990 |
-| Arabic Sans | 0.987 | | Urdu Naskh / Nastaliq | 0.991 / 0.941 |
+| Arabic Sans / bold / bold mixed | 0.987 / 0.990 / 0.993 | | Urdu Naskh / Nastaliq | 0.991 / 0.941 |
 | lam-alef | 0.990 | | Hebrew / niqqud | 0.982 / 0.990 |
 | tashkeel (Naskh / Sans) | 0.991 / 0.992 | | mixed RTL (Latin, digits, %) | 0.986 |
 | wrapped 300 / 220 / 150 | 0.967 / 0.966 / 0.972 | | Arabic-Indic + Western digits | 0.986 |

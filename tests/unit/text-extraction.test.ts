@@ -24,7 +24,7 @@ const letters = (s: string): string => s.normalize('NFKC').replace(/[\p{Mn}\s]/g
 async function build(item: CorpusItem): Promise<{ pdf: PDFDocument; bytes: Uint8Array }> {
   const pdf = await PDFDocument.create()
   const page = pdf.addPage([Math.max(item.width ?? 700, 200) + 40, 700])
-  await drawParagraph(page, item.text, { x: 20, y: 680, size: item.size ?? 20, fontStack: item.fonts, lang: item.lang, direction: item.direction, width: item.width, align: item.align })
+  await drawParagraph(page, item.text, { x: 20, y: 680, size: item.size ?? 20, fontStack: item.fonts, lang: item.lang, direction: item.direction, width: item.width, align: item.align, weight: item.weight })
   return { pdf, bytes: await pdf.save() }
 }
 

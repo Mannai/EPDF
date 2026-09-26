@@ -14,6 +14,7 @@ export interface CorpusItem {
   /** Wrap width in points (multi-line items). */
   width?: number
   align?: 'start' | 'end' | 'center' | 'justify'
+  weight?: 'bold'
   /** Chromium cannot produce this layout (kashida justification): only sanity-checked, not compared. */
   noReference?: boolean
   /** PDF.js is known to misplace parts of these (see docs/text-engine.md "PDF.js quirks"). */
@@ -35,6 +36,8 @@ export const CORPUS: CorpusItem[] = [
   { id: 'ar-justify', label: 'Arabic justified with kashida', text: arLong, fonts: ['Noto Naskh Arabic'], width: 260, size: 16, align: 'justify', noReference: true },
   { id: 'ar-justify-sans', label: 'Arabic justified with kashida (Sans)', text: arLong, fonts: ['Noto Sans Arabic'], width: 260, size: 16, align: 'justify', noReference: true },
   { id: 'en-justify', label: 'English justified', text: 'The quick brown fox jumps over the lazy dog while the five boxing wizards jump quickly and the sphinx of black quartz judges my vow.', fonts: ['Noto Sans'], width: 240, size: 14, align: 'justify', noReference: true },
+  { id: 'ar-bold', label: 'Arabic bold (Naskh)', text: 'مرحبا بالعالم، هذا نص عريض للاختبار', fonts: ['Noto Naskh Arabic'], weight: 'bold' },
+  { id: 'ar-bold-mixed', label: 'Arabic bold with English and digits (Sans)', text: 'الإصدار 2.5 من Epdf متوفر الآن — ١٢٣', fonts: ['Noto Sans Arabic', 'Noto Sans'], weight: 'bold' },
   { id: 'fa', label: 'Persian', text: 'سلام دنیا، این یک متن فارسی است ۱۲۳ گچپژ', fonts: ['Noto Naskh Arabic'], lang: 'fa' },
   { id: 'ur', label: 'Urdu (Naskh)', text: 'یہ ایک اردو جملہ ہے۔ ٹھیک ہے، شکریہ', fonts: ['Noto Naskh Arabic'], lang: 'ur' },
   { id: 'ur-nastaliq', label: 'Urdu (Nastaliq)', text: 'یہ ایک اردو جملہ ہے', fonts: ['Noto Nastaliq Urdu'], lang: 'ur', size: 28 },
