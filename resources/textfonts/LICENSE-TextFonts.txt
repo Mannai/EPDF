@@ -1,0 +1,50 @@
+Fonts bundled for the Epdf text engine (src/shared/text)
+
+All fonts are licensed under the SIL Open Font License 1.1 (full text: OFL-1.1.txt in this folder, and the license files
+in resources/fonts next to the older fonts) except Homemade Apple (Apache License 2.0, resources/fonts/LICENSE-Apache-2.0-HomemadeApple.txt).
+Fonts are embedded in PDFs only as subsets of the glyphs used, which the OFL permits; the subset keeps the
+font name and copyright notice. The fonts are not sold on their own.
+
+Copyright notices (from the name tables of the fonts):
+
+* Allura: Copyright 2010 The Allura Project Authors (https://github.com/googlefonts/allura)
+* Caladea: Copyright 2012 The Caladea Project Authors (https://github.com/huertatipografica/Caladea)
+* Carlito: Copyright 2013 The Carlito Project Authors (https://github.com/googlefonts/carlito)
+* Great Vibes: Copyright 2010 The Great Vibes Pro Project Authors (https://github.com/googlefonts/great-vibes)
+* Homemade Apple: Copyright (c) 2010 by Font Diner, Inc. All rights reserved.
+* Liberation Mono: Digitized data copyright (c) 2010 Google Corporation. Copyright (c) 2012 Red Hat, Inc.
+* Liberation Sans: Digitized data copyright (c) 2010 Google Corporation. Copyright (c) 2012 Red Hat, Inc.
+* Liberation Serif: Digitized data copyright (c) 2010 Google Corporation. Copyright (c) 2012 Red Hat, Inc.
+* Noto Emoji: Copyright 2013 Google LLC
+* Noto Naskh Arabic: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/arabic)
+* Noto Nastaliq Urdu: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/nastaliq)
+* Noto Sans: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic)
+* Noto Sans Arabic: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/arabic)
+* Noto Sans Armenian: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/armenian)
+* Noto Sans Bengali: Copyright 2025 The Noto Project Authors (https://github.com/notofonts/bengali)
+* Noto Sans Devanagari: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/devanagari)
+* Noto Sans Ethiopic: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/ethiopic)
+* Noto Sans Georgian: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/georgian)
+* Noto Sans Gujarati: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/gujarati)
+* Noto Sans Gurmukhi: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/gurmukhi)
+* Noto Sans Hebrew: Copyright 2024 The Noto Project Authors (https://github.com/notofonts/hebrew)
+* Noto Sans JP: © 2014-2021 Adobe (http://www.adobe.com/).
+* Noto Sans Kannada: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/kannada)
+* Noto Sans Khmer: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/khmer)
+* Noto Sans KR: © 2014-2021 Adobe (http://www.adobe.com/).
+* Noto Sans Lao: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/lao)
+* Noto Sans Malayalam: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/malayalam)
+* Noto Sans Math: Copyright 2022 Google LLC. All Rights Reserved.
+* Noto Sans Myanmar: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/myanmar)
+* Noto Sans Oriya: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/oriya)
+* Noto Sans SC: © 2014-2021 Adobe (http://www.adobe.com/).
+* Noto Sans Sinhala: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/sinhala)
+* Noto Sans Symbols: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/symbols)
+* Noto Sans Symbols 2: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/symbols)
+* Noto Sans Syriac: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/syriac)
+* Noto Sans Tamil: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/tamil)
+* Noto Sans TC: © 2014-2021 Adobe (http://www.adobe.com/).
+* Noto Sans Telugu: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/telugu)
+* Noto Sans Thaana: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/thaana)
+* Noto Sans Thai: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/thai)
+* Sacramento: Copyright (c) 2012 by Brian J. Bonislawsky DBA Astigmatic (AOETI) (astigma@astigmatic.com), with Reserved Font Name "Sacramento"
