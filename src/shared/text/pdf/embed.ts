@@ -39,6 +39,7 @@ const round2 = (n: number): number => Math.round(n * 100) / 100
 
 export class EmbeddedFont {
   readonly ref: PDFRef
+  private readonly pdf: PDFDocument
   private readonly descendantRef: PDFRef
   private readonly descriptorRef: PDFRef
   private readonly fileRef: PDFRef
@@ -53,10 +54,12 @@ export class EmbeddedFont {
   conflicts = 0
 
   constructor(
-    private readonly pdf: PDFDocument,
+    private readonly doc: DocText,
     readonly font: TextFont,
     readonly resourceName: string
   ) {
+    const pdf = doc.pdf
+    this.pdf = pdf
     const ctx = pdf.context
     this.ref = ctx.nextRef()
     this.descendantRef = ctx.nextRef()
@@ -143,15 +146,23 @@ export class EmbeddedFont {
     }
     const isCff = font.outline === 'cff'
     const program = isCff ? (sfntTable(sub, 'CFF ') ?? sub) : sub
-    let h = 0
-    for (const c of [...this.glyphs.keys()].sort((a, b) => a - b)) h = (Math.imul(h, 31) + c + 7) | 0
-    h = (Math.imul(h, 31) + font.postScriptName.length) >>> 0
-    let tag = ''
-    for (let i = 0; i < 6; i++) {
-      tag += String.fromCharCode(65 + (h % 26))
-      h = Math.floor(h / 26) + i * 7919
+    // Font names. PDF.js starts a new text run whenever the font's BaseFont changes, and then reads right-to-left lines
+    // run by run in visual order: an Arabic sentence with an English word comes out in the wrong order. Giving every
+    // embedded font of a document the same BaseFont keeps such a line one run, and PDF.js's own visual-to-logical
+    // reordering then returns the text in reading order. Readers identify fonts by their object, not their name, so this
+    // is harmless; `uniformNames = false` restores descriptive names (subset tag + PostScript name).
+    let baseFont = 'EPDFTX+EpdfText'
+    if (!this.doc.uniformNames) {
+      let h = 0
+      for (const c of [...this.glyphs.keys()].sort((a, b) => a - b)) h = (Math.imul(h, 31) + c + 7) | 0
+      h = (Math.imul(h, 31) + font.postScriptName.length) >>> 0
+      let tag = ''
+      for (let i = 0; i < 6; i++) {
+        tag += String.fromCharCode(65 + (h % 26))
+        h = Math.floor(h / 26) + i * 7919
+      }
+      baseFont = `${tag}+${font.postScriptName}`
     }
-    const baseFont = `${tag}+${font.postScriptName}`
 
     const streamDict = isCff ? { Subtype: 'CIDFontType0C' } : { Length1: program.length }
     ctx.assign(this.fileRef, ctx.flateStream(program, streamDict))
@@ -216,6 +227,8 @@ export class DocText {
   private readonly fonts = new Map<TextFont, EmbeddedFont>()
   private readonly gstates = new Map<number, { name: string; ref: PDFRef }>()
   private counter = 0
+  /** Give all fonts of the document one BaseFont name (default, see EmbeddedFont.flush); false = descriptive names. */
+  uniformNames = true
 
   constructor(readonly pdf: PDFDocument) {
     // pdf-lib calls `embed()` on everything in `pdf.fonts` when saving.
@@ -226,7 +239,7 @@ export class DocText {
   fontFor(font: TextFont): EmbeddedFont {
     let e = this.fonts.get(font)
     if (!e) {
-      e = new EmbeddedFont(this.pdf, font, `EpdfF${++this.counter}`)
+      e = new EmbeddedFont(this, font, `EpdfF${++this.counter}`)
       this.fonts.set(font, e)
     }
     return e

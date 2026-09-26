@@ -2,8 +2,17 @@ import type { FontRef, TextFont } from './fonts'
 import type { WordBreak } from './linebreak'
 import type { FeatureSettings } from './shape'
 
-/** RGB in 0..1, or a single gray value, or CMYK (4 numbers 0..1). */
-export type TextColor = [number, number, number] | [number, number, number, number] | number
+/**
+ * RGB in 0..1, or a single gray value, or CMYK (4 numbers 0..1). pdf-lib colour objects (`rgb(1,0,0)`,
+ * `grayscale(0.5)`, `cmyk(...)`) are accepted too, so `color: rgb(...)` keeps working when migrating.
+ */
+export type TextColor =
+  | [number, number, number]
+  | [number, number, number, number]
+  | number
+  | { type: 'RGB'; red: number; green: number; blue: number }
+  | { type: 'Grayscale'; gray: number }
+  | { type: 'CMYK'; cyan: number; magenta: number; yellow: number; key: number }
 
 export type Align = 'start' | 'end' | 'left' | 'right' | 'center' | 'justify'
 export type Direction = 'ltr' | 'rtl' | 'auto'

@@ -210,7 +210,7 @@ export function visualToLogical(visual: string, options: VisualToLogicalOptions 
     .split(/(\r\n|\n|\r)/)
     .map((line, i) => {
       if (i % 2 === 1 || !hasRtl(line)) return normalize ? line.normalize('NFKC') : line
-      const l = normalize ? line.normalize('NFKC') : line
+      const l = line
       let dir = options.direction ?? 'auto'
       if (dir === 'auto') {
         const rtl = (l.match(/[֐-ࣿיִ-﷿ﹰ-﻿]/gu) ?? []).length
@@ -218,7 +218,9 @@ export function visualToLogical(visual: string, options: VisualToLogicalOptions 
         dir = rtl >= ltr ? 'rtl' : 'ltr'
       }
       const info = analyzeBidi(l, dir)
-      return reorderedString(info)
+      // Reorder first (each presentation-form character is one visual glyph), expand to base letters afterwards.
+      const logical = reorderedString(info)
+      return normalize ? logical.normalize('NFKC') : logical
     })
     .join('')
 }

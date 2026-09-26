@@ -16,8 +16,8 @@ export interface CorpusItem {
   align?: 'start' | 'end' | 'center' | 'justify'
   /** Chromium cannot produce this layout (kashida justification): only sanity-checked, not compared. */
   noReference?: boolean
-  /** PDF.js is known to insert stray spaces/text items for these (see docs/text-engine.md "PDF.js quirks"). */
-  pdfjsQuirk?: 'combining-marks'
+  /** PDF.js is known to misplace parts of these (see docs/text-engine.md "PDF.js quirks"). */
+  pdfjsQuirk?: 'combining-marks' | 'neutral-bidi'
 }
 
 const arLong =
@@ -50,7 +50,7 @@ export const CORPUS: CorpusItem[] = [
   { id: 'zh', label: 'Chinese (Simplified)', text: '你好，世界！这是一个中文测试。', lang: 'zh-Hans', size: 24 },
   { id: 'ja', label: 'Japanese', text: 'こんにちは世界。日本語のテストです。', lang: 'ja', size: 24 },
   { id: 'ko', label: 'Korean', text: '안녕하세요 세계. 한국어 테스트입니다.', lang: 'ko', size: 24 },
-  { id: 'emoji', label: 'Emoji next to text', text: 'Hello 😀 مرحبا ⭐ 123', fonts: ['Noto Sans', 'Noto Naskh Arabic'], direction: 'ltr' },
+  { id: 'emoji', label: 'Emoji next to text', text: 'Hello 😀 مرحبا ⭐ 123', fonts: ['Noto Sans', 'Noto Naskh Arabic'], direction: 'ltr', pdfjsQuirk: 'neutral-bidi' },
   { id: 'latin', label: 'Latin with ligatures and kerning', text: 'Waffle office AVATAR To. The quick brown fox — “quotes”', fonts: ['Noto Sans'] }
 ]
 

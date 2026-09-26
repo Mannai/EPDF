@@ -46,13 +46,25 @@ const num = (v: number): string => {
   return Object.is(r, -0) || r === 0 ? '0' : String(r)
 }
 
-export function colorOps(color: TextColor, stroke: boolean): string {
+/** Plain array/number form of a colour (accepts pdf-lib colour objects). */
+export function plainColor(c: TextColor): number | [number, number, number] | [number, number, number, number] {
+  if (typeof c === 'number' || Array.isArray(c)) return c
+  if (c.type === 'RGB') return [c.red, c.green, c.blue]
+  if (c.type === 'Grayscale') return c.gray
+  return [c.cyan, c.magenta, c.yellow, c.key]
+}
+
+export function colorOps(input: TextColor, stroke: boolean): string {
+  const color = plainColor(input)
   if (typeof color === 'number') return `${num(color)} ${stroke ? 'G' : 'g'}`
   if (color.length === 3) return `${num(color[0])} ${num(color[1])} ${num(color[2])} ${stroke ? 'RG' : 'rg'}`
   return `${num(color[0])} ${num(color[1])} ${num(color[2])} ${num(color[3]!)} ${stroke ? 'K' : 'k'}`
 }
 
-const colorKey = (c: TextColor): string => (typeof c === 'number' ? `g${c}` : c.join(','))
+const colorKey = (c: TextColor): string => {
+  const p = plainColor(c)
+  return typeof p === 'number' ? `g${p}` : p.join(',')
+}
 
 /** ActualText payload: UTF-16BE with byte order mark, as a PDF hex string. */
 export function actualTextHex(text: string): string {
