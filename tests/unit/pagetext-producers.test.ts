@@ -49,6 +49,9 @@ describe('LibreOffice (writer_web_pdf_Export)', () => {
   it('two right-to-left columns: the right column first', async () => {
     await expectText(fixtureBytes('lo-columns.pdf'), columns, 'lo-columns')
   })
+  it('an independent check document (Arial): date, time, (BHD 45.500), e-mail, phone, tashkeel, Arabic-Indic years', async () => {
+    await expectLines(fixtureBytes('lo-fresh.pdf'), corpus.fresh, 'lo-fresh')
+  })
   it('the same page shown with /Rotate 270', async () => {
     await expectLines(fixtureBytes('lo-rotated-page.pdf'), lineTexts, 'lo-rotated-page')
   })

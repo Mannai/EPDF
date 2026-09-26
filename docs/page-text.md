@@ -72,7 +72,9 @@ with an in-thread fallback when no worker is available (Node tests).
    and two other starting points, each verified by running the UBA forwards and refined to a fixed point, plus a
    neighbourhood search over neutral runs, bracket pairs and digit runs. A reading is accepted only if it displays
    exactly like the page. Several readings can display identically (the UBA is not injective): they are ranked by
-   bracket balance, intact numbers, stream order (when informative) and simplicity. Brackets stored as typed
+   bracket balance, then Latin+digit clusters (Latin words and numbers with the separators and spaces between them,
+   e.g. `BHD 45.500`, `PDF 42`, `ISO 9001`, `info@example.com`) in the left-to-right order a reader sees them, so
+   copying gives what a person reads, then intact numbers, stream order (when informative) and simplicity. Brackets stored as typed
    characters (LibreOffice, Skia, our engine) and as drawn shapes (legacy producers) are both handled. A line that no
    logical text can display (a producer that ignored the UBA) falls back to "reverse, keep left-to-right runs" and is
    flagged `exact: false`. Indic pre-base vowel signs found before their consonant move after it.
@@ -112,7 +114,7 @@ CSS-rotated text, plus Chromium's own box of every word), the text engine (lines
 | Test | What |
 |---|---|
 | `pagetext-producers.test.ts` | every fixture: extracted lines equal the source lines exactly (after NFC + whitespace), every line inverted exactly, no undecoded glyphs; what PDF.js makes of the same files is printed |
-| `pagetext-bidi.test.ts` | the official BidiCharacterTest sample read backwards (2,619 cases, all valid, 96.8 % original recovered); 6,000 generated mixed sentences (all valid; original recovered 92 % RTL, 75 % LTR-with-Arabic; the rest are genuine UBA ambiguities); the bug-report cases |
+| `pagetext-bidi.test.ts` | the official BidiCharacterTest sample read backwards (2,619 cases, all valid, 96.8 % original recovered); 6,000 generated mixed sentences (all valid; original recovered 91 % RTL, 75 % LTR-with-Arabic; of the sentences typed in reader order 99.7 % / 99.6 % / 90.8 %; the rest are genuine UBA ambiguities); the bug-report cases; Latin+digit clusters in Arabic and English sentences |
 | `pagetext-geometry.test.ts` | the model's box of all 191 words vs Chromium's own layout boxes: within 0.01 pt; display space = PDF.js viewport for every rotation |
 | `pagetext-fonts.test.ts` | glyph names, Type 3, Unicode/predefined CMaps, vertical writing, nested and `/Properties` ActualText, ActualText across a form, marks by geometry, gaps → spaces, invisible text, fake bold |
 | `pagetext-search.test.ts` | search normalisation (Latin unchanged; Arabic, Persian, Hebrew variants) and every corpus query on three producers, hit boxes inside Chromium's word boxes |
@@ -153,9 +155,10 @@ documents.
   stream jump), spaces from gaps (0.16 em), block grouping and XY-cut reading order, paragraph direction by
   strong-letter majority, mark attachment without a font program, the ranking of ambiguous bidi readings. Tables,
   sidebars and complex magazine layouts may be read in a different order than a human would.
-- **Ambiguity**: when several logical texts display identically, the chosen one can differ from what was typed
-  (e.g. `42 PDF` vs `PDF 42` next to Arabic in a visual-order file). Files with `/ActualText` (our engine,
-  LibreOffice, Skia per cluster) avoid most of it.
+- **Ambiguity**: when several logical texts display identically, the model returns the reader's order, which can
+  differ from what was typed: `42 PDF` typed in an Arabic sentence is displayed, and copied, as `PDF 42`; a phone
+  number typed right after Arabic words inside an English sentence is displayed `4567 1723 973+` and copied that
+  way. Files with `/ActualText` (our engine, LibreOffice, Skia per cluster) avoid most of it.
 - **Fonts without `/ToUnicode`** whose glyphs are pieces of letters (a shaper decomposed them into dotless skeletons
   and dots, as pdf-lib/fontkit does with Noto) cannot be read: the pieces have no Unicode. Subset fonts without
   cmap or glyph names are unreadable and reported (`stats.unknown`); such pages keep PDF.js text. A glyph shared by

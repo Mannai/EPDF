@@ -1,4 +1,4 @@
-import { analyzeBidi, bracketPartner, lineLevels, reorderVisual } from '../text/bidi'
+import { analyzeBidi, bidiClassOf, bracketPartner, lineLevels, reorderVisual } from '../text/bidi'
 
 /**
  * Recovering the logical order of a line from its visual order.
@@ -21,8 +21,10 @@ import { analyzeBidi, bracketPartner, lineLevels, reorderVisual } from '../text/
  *     `2026-09-26`, which the UBA displays as `26-09-2026` (the digits become Arabic numbers, rule W2, and the hyphens
  *     between them resolve to right-to-left, rule N1).
  *  4. Several logical strings can display identically (the UBA is not injective). Exact readings are ranked: brackets
- *     that pair up (and enclose something), numbers kept whole, then the order the producer drew the glyphs in when
- *     that carries information (most producers draw runs in logical order), else the fewest direction runs.
+ *     that pair up (and enclose something); Latin+digit clusters ("BHD 45.500", "PDF 42", "ISO 9001") in the
+ *     left-to-right order a reader sees them, so copying gives what a person reads; numbers kept whole with their
+ *     symbols; then the order the producer drew the glyphs in when that carries information, else the fewest
+ *     direction runs.
  *  5. Paired brackets: producers either map a mirrored glyph to the character typed (LibreOffice, Skia, our engine) or
  *     to the shape drawn. Both are tried; the variant whose brackets pair up in the logical text wins.
  *
@@ -31,8 +33,8 @@ import { analyzeBidi, bracketPartner, lineLevels, reorderVisual } from '../text/
  *
  * Measured (tests/unit/pagetext-bidi.test.ts): every case of the vendored BidiCharacterTest sample and of 6,000
  * generated mixed sentences is inverted to a reading that displays identically; the typed original is recovered for
- * ~97% of the conformance cases and ~92% (right-to-left) / ~75% (left-to-right with Arabic) of the generated ones,
- * the rest being genuine ambiguities.
+ * ~97% of the conformance cases and ~91% (right-to-left) / ~75% (left-to-right with Arabic) of the generated ones
+ * (99.7% / 91% of those typed in reader order), the rest being genuine ambiguities.
  */
 
 export interface VisualUnit {
@@ -59,11 +61,23 @@ const LTR_CHAR = /\p{L}/u
 const RTL_OR_CONTROL = /[֐-ࣿיִ-﷿ﹰ-ﻼ‏‪-‮⁦-⁩؜\u{10800}-\u{10fff}\u{1e800}-\u{1efff}]/u
 const DIGIT = /[\p{Nd}]/u
 
+/**
+ * Class of a unit from the bidi classes of its characters (the first strong or number character decides):
+ * R/AL -> 'R', L -> 'L', EN/AN -> 'D' (Western, Arabic-Indic and Persian digits, Arabic decimal separators), else 'N'.
+ */
 function classOf(text: string): Cls {
   for (const ch of text) {
-    if (RTL_CHAR.test(ch)) return 'R'
-    if (LTR_CHAR.test(ch)) return 'L'
-    if (DIGIT.test(ch)) return 'D'
+    if (ch.length > 1) {
+      // astral: block knowledge
+      if (RTL_CHAR.test(ch)) return 'R'
+      if (LTR_CHAR.test(ch)) return 'L'
+      if (DIGIT.test(ch)) return 'D'
+      continue
+    }
+    const t = bidiClassOf(ch, 0)
+    if (t === 'R' || t === 'AL') return 'R'
+    if (t === 'L') return 'L'
+    if (t === 'EN' || t === 'AN') return 'D'
   }
   return 'N'
 }
@@ -337,25 +351,56 @@ function alternativeStarts(texts: string[], cls: Cls[], para: 0 | 1): number[][]
 }
 
 /**
- * Among readings that all display exactly like the page: brackets that pair up, numbers kept whole ("95%", "$5",
- * "+966", "12:30" read as drawn), then the order the producer drew the runs in when that carries information
- * (producers that draw runs in logical order, e.g. LibreOffice), else the simplest structure (fewest direction runs).
+ * Among readings that all display exactly like the page: brackets that pair up; Latin+digit clusters read in the
+ * left-to-right order a reader sees them ("BHD 45.500", not "45.500 BHD": copying gives what a person reads); numbers
+ * kept whole with the symbols touching them ("95%", "$5", "+966"); then the order the producer drew the runs in when
+ * that carries information, else the simplest structure (fewest direction runs).
  */
 function rankExact(units: VisualUnit[], texts: string[], exacts: Solution[]): Solution {
   const n = units.length
   let monotonic = true
   for (let i = 1; i < n && monotonic; i++) if (units[i].seq < units[i - 1].seq) monotonic = false
-  // groups of units drawn touching each other (no space) that contain a digit: "966+", "95%", "$5", "12:30"
+  const cls = texts.map(classOf)
+  const ld = (i: number): boolean => cls[i] === 'L' || cls[i] === 'D'
+  // Latin+digit clusters, in visual order: maximal runs of Latin words and numbers together with the separators and
+  // spaces between them ("BHD 45.500", "PDF 42", "ISO 9001", "info@example.com"); brackets and right-to-left letters
+  // end a cluster, and a cluster starts and ends with a Latin letter or digit.
+  const clusters: number[][] = []
+  for (let i = 0; i < n; ) {
+    if (!ld(i)) {
+      i++
+      continue
+    }
+    let end = i // last L/D unit of the cluster
+    let j = i + 1
+    while (j < n && cls[j] !== 'R' && !isBracketish(texts[j])) {
+      if (ld(j)) end = j
+      j++
+    }
+    if (end > i) clusters.push(Array.from({ length: end - i + 1 }, (_, k) => i + k))
+    i = end + 1
+  }
+  // groups of units drawn touching each other (no space) that contain a digit and a symbol: "966+", "95%", "$5"
   const groups: number[][] = []
   for (let i = 0; i < n; ) {
     let j = i
-    while (j < n && TIGHT.test(texts[j]) && classOf(texts[j]) !== 'R' && classOf(texts[j]) !== 'L') j++
+    while (j < n && TIGHT.test(texts[j]) && cls[j] !== 'R' && cls[j] !== 'L' && !isBracketish(texts[j])) j++
     if (j - i > 1 && texts.slice(i, j).some((t) => classOf(t) === 'D') && texts.slice(i, j).some((t) => classOf(t) === 'N')) groups.push(Array.from({ length: j - i }, (_, k) => i + k))
     i = Math.max(j, i + 1)
   }
   const scored = exacts.map((s) => {
     const pos = new Array<number>(n)
     s.order.forEach((vi, k) => (pos[vi] = k))
+    // a cluster whose units are not, in the logical text, one piece in the left-to-right order a reader sees
+    let reordered = 0
+    for (const c of clusters) {
+      for (let k = 1; k < c.length; k++) {
+        if (pos[c[k]] !== pos[c[k - 1]] + 1) {
+          reordered++
+          break
+        }
+      }
+    }
     // a number group that is not one contiguous piece of the logical text was torn apart
     let broken = 0
     for (const g of groups) {
@@ -366,9 +411,9 @@ function rankExact(units: VisualUnit[], texts: string[], exacts: Solution[]): So
     for (let i = 1; i < n; i++) if (s.levels[i] !== s.levels[i - 1]) runs++
     const logical = s.order.map((i) => texts[i]).join('')
     const emptyPairs = (logical.match(/[([{«‹]\s*[)\]}»›]/gu) ?? []).length
-    return { s, imbalance: bracketImbalance(logical) + emptyPairs, broken, runs, dis: monotonic ? 0 : streamDisagreement(units, s.order) }
+    return { s, imbalance: bracketImbalance(logical) + emptyPairs, reordered, broken, runs, dis: monotonic ? 0 : streamDisagreement(units, s.order) }
   })
-  scored.sort((a, b) => a.imbalance - b.imbalance || a.broken - b.broken || a.dis - b.dis || a.runs - b.runs)
+  scored.sort((a, b) => a.imbalance - b.imbalance || a.reordered - b.reordered || a.broken - b.broken || a.dis - b.dis || a.runs - b.runs)
   return scored[0].s
 }
 

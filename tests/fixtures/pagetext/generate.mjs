@@ -1,6 +1,7 @@
 // Regenerates the page text fixtures in tests/fixtures/pagetext (developer tool; the outputs are committed so that
 // no test needs LibreOffice):
 //   node tests/fixtures/pagetext/generate.mjs [--lo] [--chromium] [--engine]      (default: all that are available)
+//   node tests/fixtures/pagetext/generate.mjs --lo --only=fresh                   (only some LibreOffice documents)
 //
 //   lo-*.pdf         LibreOffice (writer_web_pdf_Export from HTML)        - needs LibreOffice on this machine
 //   chromium-*.pdf   Chromium printToPDF (Skia) + *.boxes.json word boxes   - runs Electron from node_modules
@@ -30,7 +31,9 @@ if (all || args.has('--lo')) {
     const html = require('./html.cjs')
     const dir = mkdtempSync(join(tmpdir(), 'epdf-pagetext-lo-'))
     try {
-      for (const [name, doc] of [['lines', html.lines(false)], ['para', html.paragraphs(false)], ['columns', html.columns(false)]]) {
+      const only = process.argv.find((a) => a.startsWith('--only='))?.slice(7).split(',')
+      const jobs = [['lines', html.lines(false)], ['para', html.paragraphs(false)], ['columns', html.columns(false)], ['fresh', html.fresh()]]
+      for (const [name, doc] of jobs.filter(([n]) => !only || only.includes(n))) {
         writeFileSync(join(dir, `${name}.html`), doc)
         execFileSync(SOFFICE, ['--headless', '--norestore', '--nolockcheck', `-env:UserInstallation=${pathToFileURL(join(dir, 'profile')).href}`, '--convert-to', 'pdf:writer_web_pdf_Export', '--outdir', join(dir, 'out'), join(dir, `${name}.html`)], { stdio: 'inherit', timeout: 180_000 })
         write(`lo-${name}.pdf`, readFileSync(join(dir, 'out', `${name}.pdf`)))
