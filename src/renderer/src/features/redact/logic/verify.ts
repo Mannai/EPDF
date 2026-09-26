@@ -1,4 +1,5 @@
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFStream, PDFString, type PDFObject } from 'pdf-lib'
+import type { PageTextModel } from '@shared/pagetext'
 import { analyzePage } from '../../textedit/pdfcontent/analyze'
 import { bytesToLatin1, parseContent } from '../../textedit/pdfcontent/content'
 import { N, darr, dget, dname, nameText, numbers, refTag, streamBytes } from '../../textedit/pdfcontent/pdfutil'
@@ -42,11 +43,52 @@ export interface VerifyInput {
   secrets: readonly string[]
   /** Text of every page as PDF.js extracts it (optional; supplied by the app). */
   pdfjsPages?: (bytes: Uint8Array) => Promise<string[]>
+  /**
+   * Page text models (logical order, glyph geometry) of the pages PDF.js may garble (right-to-left, complex
+   * scripts); optional, given PDF.js's texts; null for pages it does not read.
+   */
+  modelPages?: (bytes: Uint8Array, pdfjsTexts: readonly string[]) => Promise<(PageTextModel | null)[]>
   /** Anything the caller knows is expected to remain (overlay text, ...): not scanned for. */
   ignoreSecrets?: readonly string[]
 }
 
 const squeeze = (s: string): string => s.replace(/\s+/g, '').toLowerCase()
+
+/** An occurrence of a (squeezed) secret in the model's logical text whose characters lie mostly under the marks. */
+function logicalLeak(m: PageTextModel, secrets: readonly string[], shapes: readonly Quad[]): boolean {
+  let sq = ''
+  const idx: number[] = []
+  for (let i = 0; i < m.text.length; i++) {
+    const ch = m.text[i]
+    if (/\s/.test(ch)) continue
+    for (const c of ch.toLowerCase()) {
+      sq += c
+      idx.push(i)
+    }
+  }
+  const t = m.transform
+  const det = t[0] * t[3] - t[1] * t[2]
+  if (!det) return false
+  const toUser = (x: number, y: number): [number, number] => {
+    const dx = x - t[4]
+    const dy = y - t[5]
+    return [(dx * t[3] - dy * t[2]) / det, (dy * t[0] - dx * t[1]) / det]
+  }
+  const under = (i: number): boolean => {
+    const q = m.charQuad[i]
+    if (q < 0) return false
+    const pts: number[] = []
+    for (let k = 0; k < 8; k += 2) pts.push(...toUser(m.quads[q * 8 + k], m.quads[q * 8 + k + 1]))
+    return quadCoverage(pts as unknown as Quad, shapes) >= 0.5
+  }
+  for (const s of secrets) {
+    for (let at = sq.indexOf(s); at >= 0; at = sq.indexOf(s, at + 1)) {
+      const chars = idx.slice(at, at + s.length)
+      if (chars.filter(under).length * 2 > chars.length) return true
+    }
+  }
+  return false
+}
 
 export function countOccurrences(hay: string, needle: string): number {
   const h = squeeze(hay)
@@ -355,6 +397,15 @@ export async function verifyRedaction(input: VerifyInput): Promise<Finding[]> {
         const joined = texts.join('\n')
         for (const s of secrets) {
           if (countOccurrences(joined, s) > allowed(s)) add('text extraction', 'The redacted text can still be extracted by PDF.js.')
+        }
+        // PDF.js reads right-to-left text in visual order, so a secret could survive unnoticed there: those pages are
+        // read again in logical order, and any occurrence whose glyphs lie under a mark is a leak.
+        if (input.modelPages) {
+          const models = await input.modelPages(input.bytes, texts)
+          models.forEach((m, pi) => {
+            const shapes = input.shapesByPage?.get(pi) ?? (input.marksByPage.get(pi) ?? []).map(rectQuad)
+            if (m && shapes.length && logicalLeak(m, secrets, shapes)) add(`page ${pi + 1}`, 'The redacted text can still be extracted (read in logical order, under a mark).')
+          })
         }
       } catch (e) {
         add('text extraction', `PDF.js could not read the result to confirm the redaction (${e instanceof Error ? e.message : String(e)}).`)

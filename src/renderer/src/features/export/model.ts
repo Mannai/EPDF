@@ -25,6 +25,8 @@ export interface TextItem {
   color: string
   /** External hyperlink target, when a Link annotation covers this text. */
   url?: string
+  /** The text is a right-to-left line in logical order (from the page text model). */
+  rtl?: boolean
 }
 
 export interface ImageItem {
@@ -94,6 +96,8 @@ export interface Run {
   italic: boolean
   color: string
   url?: string
+  /** Right-to-left text (logical order): written with bidi run/paragraph properties. */
+  rtl?: boolean
 }
 
 export type Align = 'left' | 'center' | 'right' | 'both'

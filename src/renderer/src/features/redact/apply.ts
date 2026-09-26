@@ -4,7 +4,7 @@ import { useTabs } from '../../state/tabs'
 import { pdfFor } from './doc'
 import { RedactRefused, redactDocumentAsync, summarize, type MarkInput, type RedactOutcome, type RedactReport } from './logic/redact'
 import { verifyRedaction, type Finding } from './logic/verify'
-import { pdfjsPageTexts } from './pdfjsText'
+import { modelPageTexts, pdfjsPageTexts } from './pdfjsText'
 import { settingsToOptions, useRedact, type UiMark } from './store'
 
 export const APPLY_LABEL = 'Apply redactions'
@@ -33,7 +33,8 @@ const verifyInput = (outcome: RedactOutcome, bytes: Uint8Array): Parameters<type
   marksByPage: outcome.marksByPage,
   shapesByPage: outcome.shapesByPage,
   secrets: outcome.secrets,
-  pdfjsPages: pdfjsPageTexts
+  pdfjsPages: pdfjsPageTexts,
+  modelPages: modelPageTexts
 })
 
 /**

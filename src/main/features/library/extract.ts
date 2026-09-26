@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto'
 import { open, readFile } from 'node:fs/promises'
+import { PDFDocument } from 'pdf-lib'
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
 import * as pdfjsWorker from 'pdfjs-dist/legacy/build/pdf.worker.mjs'
 import { prepareIndexText } from '../../../shared/features/library/text'
+import { buildPageText, modelIsUsable, needsPageModel } from '../../../shared/pagetext'
 
 /**
  * Text extraction for the index: reads one PDF from disk and returns the text of every page. Runs inside the
@@ -139,6 +141,9 @@ export async function extractText(req: ExtractRequest): Promise<ExtractResult> {
     let words = 0
     let failedPages = 0
     let chars = 0
+    // Right-to-left and complex-script pages are read with the page text model (logical order): pdf-lib parses the
+    // file once, lazily, the first time such a page is found. Encrypted or damaged files keep PDF.js's text.
+    let lib: Promise<PDFDocument | null> | null = null
     for (let p = 1; p <= limit; p++) {
       try {
         const page = await doc.getPage(p)
@@ -149,6 +154,21 @@ export async function extractText(req: ExtractRequest): Promise<ExtractResult> {
           if (!('str' in item)) continue
           raw += item.str
           if (item.hasEOL) raw += '\n'
+        }
+        if (needsPageModel(raw)) {
+          // (PDF.js may have taken ownership of `bytes`, so the file is read again for pdf-lib)
+          lib ??= readFile(req.path)
+            .then((b) => PDFDocument.load(new Uint8Array(b.buffer, b.byteOffset, b.byteLength), { updateMetadata: false, throwOnInvalidObject: false }))
+            .catch(() => null)
+          const pdf = await lib
+          if (pdf && p <= pdf.getPageCount()) {
+            try {
+              const model = buildPageText(pdf, p - 1)
+              if (modelIsUsable(model, raw)) raw = model.text
+            } catch {
+              /* keep PDF.js's text */
+            }
+          }
         }
         const text = prepareIndexText(raw.slice(0, 400_000))
         if (text) {

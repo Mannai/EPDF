@@ -59,7 +59,8 @@ function runXml(r: Run, ctx: Ctx): string {
     (r.bold ? '<w:b/><w:bCs/>' : '') +
     (r.italic ? '<w:i/><w:iCs/>' : '') +
     (!r.url && r.color !== '000000' ? `<w:color w:val="${r.color}"/>` : '') +
-    `<w:sz w:val="${Math.max(2, Math.round(r.size * 2))}"/><w:szCs w:val="${Math.max(2, Math.round(r.size * 2))}"/>`
+    `<w:sz w:val="${Math.max(2, Math.round(r.size * 2))}"/><w:szCs w:val="${Math.max(2, Math.round(r.size * 2))}"/>` +
+    (r.rtl ? '<w:rtl/>' : '')
   const parts = r.text.split('\t')
   const body = parts.map((t, i) => (i > 0 ? '<w:tab/>' : '') + (t ? textEl('w:t', t) : '')).join('')
   const xml = `<w:r><w:rPr>${rPr}</w:rPr>${body}</w:r>`
@@ -79,6 +80,10 @@ function paragraphXml(b: ParagraphBlock, ctx: Ctx, opts: { pageBreak: boolean; l
     ind = `<w:ind w:left="${twips(left)}"${b.firstLine < -0.5 ? ` w:hanging="${twips(-b.firstLine)}"` : b.firstLine > 0.5 ? ` w:firstLine="${twips(b.firstLine)}"` : ''}/>`
   }
   const runs = b.runs.map((r) => runXml(r, ctx)).join('')
+  // A right-to-left paragraph (most of its text): bidi paragraph, whose natural (start) alignment is the right edge.
+  const rtlChars = b.runs.reduce((s, r) => s + (r.rtl ? r.text.length : 0), 0)
+  const rtl = rtlChars * 2 > b.runs.reduce((s, r) => s + r.text.length, 0)
+  if (rtl) return `<w:p><w:pPr>${style}<w:bidi/>${spacing}${b.align === 'right' ? '' : jcOf(b.align === 'left' ? 'right' : b.align)}</w:pPr>${opts.pageBreak ? PAGE_BREAK : ''}${runs}</w:p>`
   return `<w:p><w:pPr>${style}${spacing}${ind}${jcOf(b.align)}</w:pPr>${opts.pageBreak ? PAGE_BREAK : ''}${runs}</w:p>`
 }
 

@@ -1,9 +1,12 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { RenderingCancelledException, TextLayer, setLayerDimensions } from 'pdfjs-dist'
 import type { PageViewport, RenderTask } from 'pdfjs-dist'
+import { rangeBoxes, needsPageModel } from '@shared/pagetext'
 import { getPageOverlays } from '../features/api'
 import type { LoadedDoc } from '../pdf/docCache'
-import { getPageText, itemIndexAt } from '../pdf/search'
+import { pageText, rememberPdfjs } from '../pdf/pagetext'
+import { disposeModelTextLayer, renderModelTextLayer } from '../pdf/pagetext/textLayer'
+import { itemIndexAt } from '../pdf/search'
 import { consumeFocus, useSearch } from '../state/search'
 import { useViewerOptions } from '../state/viewerOptions'
 import { outputScaleFor } from './layout'
@@ -121,16 +124,36 @@ function PageViewImpl({ loaded, pageIndex, scale, width, height, onGoToPage }: P
         }
 
         const td = textDiv.current
+        let content: Awaited<ReturnType<typeof page.getTextContent>> | null = null
         if (td) {
+          content = await page.getTextContent()
+          if (cancelled) return
+          disposeModelTextLayer(td)
           td.replaceChildren()
           setLayerDimensions(td, viewport)
-          textLayer = new TextLayer({ textContentSource: page.streamTextContent(), container: td, viewport })
+          textLayer = new TextLayer({ textContentSource: content, container: td, viewport })
           textLayerRef.current = textLayer
           await textLayer.render()
           if (cancelled) return
         }
         setViewport(viewport)
         setRendered((v) => v + 1)
+        // Right-to-left and complex-script pages: once the page text model is ready, it replaces PDF.js's layer, so
+        // selection and copy give the logical text (pdf/pagetext). Other pages keep PDF.js's layer.
+        if (td && content) {
+          const pj = rememberPdfjs(loaded.doc, pageNo, content.items as { str?: string; hasEOL?: boolean }[])
+          if (needsPageModel(pj.text)) {
+            void pageText(loaded.doc, pageNo).then((pt) => {
+              if (cancelled || pt.kind !== 'model' || !td.isConnected) return
+              textLayer?.cancel()
+              textLayerRef.current = null
+              td.replaceChildren()
+              setLayerDimensions(td, viewport)
+              renderModelTextLayer(td, pt.model)
+              setRendered((v) => v + 1)
+            })
+          }
+        }
 
         const annots = (await page.getAnnotations({ intent: 'display' })) as {
           subtype: string
@@ -169,6 +192,11 @@ function PageViewImpl({ loaded, pageIndex, scale, width, height, onGoToPage }: P
     }
   }, [loaded, pageIndex, pageNo, scale, annotationMode])
 
+  useEffect(() => {
+    const td = textDiv.current
+    return () => disposeModelTextLayer(td)
+  }, [])
+
   // Free the canvas memory when the page scrolls far out of view (component unmounts).
   useEffect(() => {
     const host = canvasHost.current
@@ -179,17 +207,29 @@ function PageViewImpl({ loaded, pageIndex, scale, width, height, onGoToPage }: P
     }
   }, [loaded, pageNo])
 
-  // Compute search-hit rectangles from the text layer's DOM.
+  // Compute search-hit rectangles: from the page text model's glyph geometry on model pages, else from the text
+  // layer's DOM.
   useEffect(() => {
-    if (matches.length === 0 || !textLayerRef.current) {
+    if (matches.length === 0) {
       setRects((r) => (r.length ? [] : r))
       return
     }
     let cancelled = false
-    void getPageText(loaded.doc, pageNo).then((pt) => {
+    void pageText(loaded.doc, pageNo).then((pt) => {
+      if (cancelled) return
+      if (pt.kind === 'model') {
+        const out: Rect[] = []
+        matches.forEach((m, mi) => {
+          for (const b of rangeBoxes(pt.model, m.start, m.end)) {
+            out.push({ left: b.x0 * scale, top: b.y0 * scale, width: (b.x1 - b.x0) * scale, height: (b.y1 - b.y0) * scale, active: mi === activeIdx })
+          }
+        })
+        setRects(out)
+        return
+      }
       const layer = textLayerRef.current
       const page = pageRef.current
-      if (cancelled || !layer || !page) return
+      if (!layer || !page) return
       const divs = layer.textDivs
       const strs = layer.textContentItemsStr
       const box = page.getBoundingClientRect()
@@ -217,7 +257,7 @@ function PageViewImpl({ loaded, pageIndex, scale, width, height, onGoToPage }: P
     return () => {
       cancelled = true
     }
-  }, [loaded, pageNo, matches, activeIdx, rendered])
+  }, [loaded, pageNo, matches, activeIdx, rendered, scale])
 
   // Bring the selected hit into view once per navigation request.
   useEffect(() => {

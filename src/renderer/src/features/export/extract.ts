@@ -1,4 +1,5 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist'
+import { pageText, rememberPdfjs } from '../../pdf/pagetext'
 import { describeFont } from './fonts'
 import { assignTextColors, compose, interpretOperators, type OpsTable, type PaintedImage } from './graphics'
 import type { ImageItem, LinkItem, PageModel, PdfModel, TextItem } from './model'
@@ -167,6 +168,38 @@ export async function extractPdf(doc: PDFDocumentProxy, opts: ExtractOptions): P
           color: colors[i] ?? '000000'
         })
       })
+      // Right-to-left and complex-script pages: PDF.js's items are in visual order (and garbled around marks); the
+      // page text model gives each line in logical order. One item per line, styled like the PDF.js text under it.
+      rememberPdfjs(doc, p, content.items as { str?: string; hasEOL?: boolean }[])
+      const pt = await pageText(doc, p).catch(() => null)
+      if (pt?.kind === 'model') {
+        const styled = items.splice(0, items.length)
+        for (const line of pt.model.lines) {
+          if (line.angle !== 0) {
+            rotatedSkipped++
+            continue
+          }
+          const text = pt.model.text.slice(line.start, line.end)
+          if (!text.trim()) continue
+          const under = styled.find((s) => Math.abs(s.y - line.baseline) < line.size * 0.5 && s.x < line.x1 && s.x + s.width > line.x0)
+          const f = under ?? { fontName: line.font, family: describeFont(line.font, undefined).family, mono: false, serif: false, color: '000000' }
+          items.push({
+            text,
+            x: line.x0,
+            y: line.baseline,
+            width: line.x1 - line.x0,
+            size: line.size,
+            fontName: f.fontName,
+            family: f.family,
+            bold: line.bold,
+            italic: line.italic,
+            mono: f.mono,
+            serif: f.serif,
+            color: f.color,
+            rtl: line.dir === 'rtl'
+          })
+        }
+      }
 
       // Links
       const links: LinkItem[] = []
