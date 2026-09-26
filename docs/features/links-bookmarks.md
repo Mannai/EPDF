@@ -106,7 +106,10 @@ quote; bold-only manual; ALL-CAPS headings; prose without headings; two-column p
 logical order; Chinese report), at the default 55 % threshold: precision 100 %, recall 98.9 % (one missed all-caps
 heading), level accuracy 100 % except the contents-page title of the harder report (75 % there). These are synthetic
 documents that this feature's author wrote: they show the algorithm does what it is designed to do, not how it does on
-every real document. Real-world Arabic PDFs from Word or Chromium were **not** available for verification.
+every real document. Two real producers are covered in the e2e suite: Chromium's own "print to PDF" of a right-to-left
+Arabic book (text stored in visual order as shaped presentation forms, with Persian letter variants; both are undone:
+NFKC, and folding of heh/yeh/kaf variants in documents that show Arabic-only letters and no Persian-only ones) and of a
+two-column English paper. PDFs from Word, LibreOffice, InDesign or scanners were **not** available for verification.
 
 ### What is written
 
@@ -141,8 +144,10 @@ read from PDFDocEncoding, UTF-16BE/LE, UTF-8 with BOM, and PDF 1.7 language esca
 | `src/renderer/src/features/bookmarks/` | panel, actions, generate dialog; `pdf/` is pure pdf-lib (model, read, write, tree ops, ops, validator, page lines) |
 | `src/renderer/src/features/links/` | tools, overlay, dialogs; `pdf/` is pure pdf-lib (address checks, model, read, ops, geometry, detection) |
 
-Outside these folders: `PanelDef.width` in `features/api.ts` and `components/SidePanels.tsx` (a left panel can now ask for
-a width; the default stays 160 px, so nothing else changes).
+Outside these folders (core files, smallest possible edits): `PanelDef.width` in `features/api.ts` and
+`components/SidePanels.tsx` (a left panel can now ask for a width; the default stays 160 px). With a second left panel the
+sidebar shows a switcher, which the core had as `role="tab"` buttons: that made the document tab bar's tests (`getByRole('tab')`)
+count them, so the switcher is now a toolbar of toggle buttons (`aria-pressed`) and the panel a labelled region.
 
 ## Tests
 
