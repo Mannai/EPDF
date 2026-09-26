@@ -66,6 +66,8 @@ function GenerateBody({ docId }: { docId: string }): JSX.Element {
           return
         }
         const bytes = await currentBytes(docId)
+        // Cancelled (dialog closed) while the document was being read: don't start a job nobody will see.
+        if (!alive) return
         const handle = startJob<DetectJobResult>(DETECT_JOB, { bytes })
         cancelRef.current = handle.cancel
         const result = await handle.promise

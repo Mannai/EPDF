@@ -693,8 +693,15 @@ test.describe('bookmarks: generate from headings', () => {
       await expect(dlg).toHaveCount(0)
       await expect(page.getByTestId('bookmarks-empty')).toBeVisible()
       await expect(dot(page)).toHaveCount(0)
-      // The background task ended as cancelled (it was a real job with a tray entry).
-      await expect(page.locator('[data-job="bookmarks:detect"]')).toContainText('Cancelled')
+      // The background task never runs to the end: either it was started and ended as cancelled (a real job with a
+      // tray entry), or Cancel came while the document was still being read and no job was started at all.
+      // (Regression: that early Cancel used to start the job anyway, which then ran to "Finished" unseen.)
+      const tray = page.locator('[data-job="bookmarks:detect"]')
+      await expect
+        .poll(async () => ((await tray.count()) === 0 ? 'none' : await tray.first().innerText()), { timeout: 15_000 })
+        .toMatch(/^none$|Cancelled/)
+      await page.waitForTimeout(2000) // long enough for a wrongly started job to report progress
+      await expect(tray.filter({ hasText: 'Finished' })).toHaveCount(0)
     } finally {
       await quitDiscarding(app, page)
     }
