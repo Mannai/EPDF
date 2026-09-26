@@ -105,7 +105,8 @@ DOCX (bidi paragraphs with start/end/centre/justify/kashida alignment, mixed Ara
 decimal, `arabicAbjad` and `hindiNumbers` lists, a `bidiVisual` table, a tab stop, a start indent, a `szCs`/`bCs` run, an
 English paragraph with an Arabic word, a plain English paragraph, a right-to-left header and a footer with a PAGE field,
 `sectPr/w:bidi`), XLSX (right-to-left sheet), ODS (rl-tb table), ODT (all alignments incl. physical left/right, an rl-tb
-table, complex font properties), RTF (`\rtlpar`, `\af`/`\afs`/`\ab`), PPTX (`rtl` + `algn` r/l/ctr, bullet, `a:cs`), TXT and CSV.
+table, complex font properties), RTF (`\rtlpar`, `\af`/`\afs`/`\ab`), PPTX (`rtl` + `algn` r/l/ctr, bullet, `a:cs`), ODP
+(rl-tb paragraphs with start/end/left/right/centre, complex font properties), TXT and CSV.
 `EPDF_WRITE_CORPUS=1 npx vitest run tests/unit/officeRtlCorpus.test.ts` writes every file, Epdf's PDF and LibreOffice's PDF
 to `test-results/office-rtl/`.
 
@@ -121,7 +122,7 @@ to `test-results/office-rtl/`.
   quirk documented in text-engine.md §4; the app's page text model and ActualText-aware readers read them logically.
 * **Alignment side** of every paragraph = the expected physical side.
 * **Against LibreOffice 26.8** (skipped without it): same side for every paragraph of every format; same column order in
-  every table and sheet; the aligned edge within **6 pt** (measured: DOCX, ODT, RTF, PPTX, XLSX, ODS ≤ 0.5 pt; TXT 5.2 pt,
+  every table and sheet; the aligned edge within **6 pt** (measured: DOCX, ODT, RTF, PPTX, ODP, XLSX, ODS ≤ 0.5 pt; TXT 5.2 pt,
   Epdf's plain-text margins are 62 pt, LibreOffice's 56.8 pt — unchanged behaviour); wrapped paragraphs within **±1 line**
   (measured: equal line counts everywhere). 6 pt covers cell-padding and margin conventions that differ between the two
   converters; alignment sides and column orders are compared exactly. Vertical positions are not compared: line heights

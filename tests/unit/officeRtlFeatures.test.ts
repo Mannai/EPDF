@@ -12,6 +12,7 @@ import { buildPageText, rangeBoxes, type PageTextModel } from '../../src/shared/
 import { docxDocument, T } from '../support/arabicCorpus'
 import { buildDocx } from '../support/docxBuilder'
 import { buildPptx, textBox } from '../support/pptxBuilder'
+import { buildOdp, frame as odpFrame, para as odpPara, span as odpSpan } from '../support/odpBuilder'
 import { pdfjsLines } from './helpers/text'
 
 /** Right-to-left and complex-script features of the built-in Office converter, one by one. */
@@ -198,6 +199,26 @@ describe('PPTX', () => {
     const { models: ms } = await models(r.bytes)
     expect(xOf(ms[0]!, 'الأول')).toBeGreaterThan(xOf(ms[0]!, 'الثاني'))
     expect(xOf(ms[0]!, 'الثاني')).toBeGreaterThan(xOf(ms[0]!, 'الثالث'))
+  })
+})
+
+describe('ODP', () => {
+  it('rl-tb paragraphs: start = right, physical left/right as written, the complex-script size for Arabic', async () => {
+    const ps = (name: string, align: string): string => `<style:style style:name="${name}" style:family="paragraph"><style:paragraph-properties style:writing-mode="rl-tb" fo:text-align="${align}"/></style:style>`
+    const auto = ps('PS', 'start') + ps('PE', 'end') + ps('PL', 'left') + ps('PR', 'right') + `<style:style style:name="TC" style:family="text"><style:text-properties style:font-size-complex="36pt"/></style:style>`
+    const body = odpFrame(1, 1, 20, 8, odpPara('بداية', 'PS') + odpPara('نهاية', 'PE') + odpPara('يسار', 'PL') + odpPara('يمين', 'PR') + odpPara('', 'PS', odpSpan('كبير', 'TC')) + odpPara('صغير', 'PS'))
+    const { models: ms, pdf } = await models((await convert('r.odp', buildOdp({ autoStyles: auto, slides: [{ body }] }))).bytes)
+    const m = ms[0]!
+    const W = pdf.getPages()[0]!.getWidth()
+    const right = (t: string) => W - m.lines.find((l) => norm(m.text.slice(l.start, l.end)) === t)!.x1
+    const left = (t: string) => m.lines.find((l) => norm(m.text.slice(l.start, l.end)) === t)!.x0
+    // frame from 1 cm to 21 cm with 0.25 cm padding: right text edge at 28 - 21 + 0.25 cm = 206 pt from the page's right
+    expect(right('بداية')).toBeLessThan(right('نهاية') - 100) // start = right
+    expect(left('نهاية')).toBeLessThan(60) // end = left
+    expect(left('يسار')).toBeLessThan(60) // physical left
+    expect(right('يمين')).toBeCloseTo(right('بداية'), 0) // physical right
+    const size = (t: string): number => m.lines.find((l) => norm(m.text.slice(l.start, l.end)) === t)!.size
+    expect(size('كبير') / size('صغير')).toBeCloseTo(2, 1) // 36 pt complex size vs the default 18 pt
   })
 })
 
