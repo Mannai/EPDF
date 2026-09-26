@@ -274,10 +274,11 @@ export function detectHeadings(pages: PageText[], options: DetectOptions = {}): 
     if (!k) return false
     const norm = normalizeForRepeat(l.text)
     if (PAGE_NUMBER_LIKE.test(norm)) return true
-    // Running headers are set small. Heading-sized text that repeats (the same section title in every chapter,
-    // numbers aside) is never discarded as a header: losing a real heading is worse than listing a stray line.
-    if (l.size >= body * 1.12) return false
-    return totalPages >= 2 && (repeat.get(k)?.size ?? 0) >= repeatThreshold
+    // Running headers are usually set small. Heading-sized text has to repeat on nearly every page to count as one:
+    // the same section title in each chapter (numbers aside) is a heading, and losing a real heading is worse than
+    // listing a stray line.
+    const needed = l.size >= body * 1.12 ? Math.max(repeatThreshold, Math.ceil(totalPages * 0.75)) : repeatThreshold
+    return totalPages >= 2 && (repeat.get(k)?.size ?? 0) >= needed
   }
 
   // ---- is right-to-left text stored in visual order (most producers) or in logical order? Vote by which reading makes known heading patterns match.

@@ -193,6 +193,13 @@ describe('heading detection: text as Chromium writes Arabic', () => {
       runs.push(run(VISUAL.section2, 64, 17, true)) // inside the bottom 10 % of an A4 page, at the same height on every page
       pages.push({ pageIndex: c * 2 + 1, box: [0, 0, 595.92, 842.88], lines: buildLines(runs) })
     }
+    // The real document has a cover and continuation pages as well: 7 pages, the section titles on 3 of them.
+    for (const idx of [0, 2, 4, 6]) {
+      const runs: RunLike[] = [run(VISUAL.header, 828, 6.7, false), run('1', 22, 6.7, false)]
+      for (let i = 0; i < 10; i++) runs.push(run('ﺐﻠط ﻞﻛ ﻦﻣ ﻖﻘﺤﺘﻟا ﻢﺘﻳو ةدﺪﺤﻣ تﺎﮫﺟاو ﺮﺒﻋ ةﺪﺣو ﻞﻛ ﻞﺻاﻮﺘﺗ ﺚﯿﺣ', 740 - i * 20, 12, false))
+      pages.push({ pageIndex: idx, box: [0, 0, 595.92, 842.88], lines: buildLines(runs) })
+    }
+    pages.sort((a, b) => a.pageIndex - b.pageIndex)
     const found = detectHeadings(pages).candidates.filter((c) => c.confidence >= 0.55)
     expect(found.map((c) => c.text)).toEqual([
       'الفصل الأول: مقدمة عن الأمن',
