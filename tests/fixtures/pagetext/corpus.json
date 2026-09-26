@@ -1,0 +1,53 @@
+{
+  "comment": "Ground truth for the page text model: logical source strings. Every producer (LibreOffice, Chromium, the text engine, pdf-lib) draws these; extraction must give them back. Fonts are the bundled ones (resources/textfonts, resources/fonts).",
+  "lines": [
+    { "id": "ar-hello", "dir": "rtl", "font": "Noto Naskh Arabic", "text": "مرحبا بالعالم" },
+    { "id": "ar-vocalised", "dir": "rtl", "font": "Noto Naskh Arabic", "text": "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ" },
+    { "id": "ar-date", "dir": "rtl", "font": "Noto Naskh Arabic", "text": "رقم الطلب 12345 بتاريخ 2026-09-26 (Epdf)" },
+    { "id": "ar-indic-digits", "dir": "rtl", "font": "Noto Naskh Arabic", "text": "السعر ١٢٣٫٥٠ دينار بحريني" },
+    { "id": "ar-punct", "dir": "rtl", "font": "Noto Naskh Arabic", "text": "هل تعلم؟ نعم، أعلم! «اقتباس» [قوس] {معقوف}" },
+    { "id": "ar-percent", "dir": "rtl", "font": "Noto Naskh Arabic", "text": "نسبة النجاح 95% في عام 2025م" },
+    { "id": "ar-latin", "dir": "rtl", "font": "Noto Naskh Arabic", "text": "برنامج Epdf لتحرير ملفات PDF بسهولة" },
+    { "id": "ar-in-ltr", "dir": "ltr", "font": "Noto Sans", "text": "The word مرحبا means hello." },
+    { "id": "ar-sans", "dir": "rtl", "font": "Noto Sans Arabic", "text": "الخط العربي جميل جدا" },
+    { "id": "fa", "dir": "rtl", "font": "Noto Naskh Arabic", "text": "سلام دنیا، این یک متن فارسی است ۱۴۰۵" },
+    { "id": "ur", "dir": "rtl", "font": "Noto Naskh Arabic", "text": "یہ اردو زبان میں ایک جملہ ہے" },
+    { "id": "he", "dir": "rtl", "font": "Noto Sans Hebrew", "text": "שלום עולם, זהו טקסט בעברית 2026." },
+    { "id": "he-niqqud", "dir": "rtl", "font": "Noto Sans Hebrew", "text": "בְּרֵאשִׁית בָּרָא אֱלֹהִים" },
+    { "id": "hi", "dir": "ltr", "font": "Noto Sans Devanagari", "text": "नमस्ते दुनिया, यह हिन्दी पाठ है।" },
+    { "id": "zh", "dir": "ltr", "font": "Noto Sans SC", "text": "你好世界，这是中文文本。" },
+    { "id": "latin", "dir": "ltr", "font": "Liberation Serif", "text": "The quick brown fox jumps over the lazy dog. Café naïve résumé fine office." }
+  ],
+  "paragraphs": [
+    {
+      "id": "ar-para",
+      "dir": "rtl",
+      "font": "Noto Naskh Arabic",
+      "text": "هذه فقرة طويلة باللغة العربية تستخدم لاختبار التفاف الأسطر من اليمين إلى اليسار، وتحتوي على كلمة English ورقم 42 في الوسط، ثم تستمر في سطر ثالث حتى نتأكد من أن ترتيب القراءة صحيح في كل سطر من الأسطر."
+    },
+    {
+      "id": "he-para",
+      "dir": "rtl",
+      "font": "Noto Sans Hebrew",
+      "text": "זוהי פסקה ארוכה בעברית שנועדה לבדוק גלישת שורות מימין לשמאל, עם המילה Epdf והמספר 1234 באמצע, והיא ממשיכה עד שהיא תופסת כמה שורות."
+    }
+  ],
+  "columns": {
+    "dir": "rtl",
+    "font": "Noto Naskh Arabic",
+    "first": "العمود الأول يقرأ أولا لأنه على اليمين. هذا نص في العمود الأول يمتد على عدة أسطر حتى يظهر التفاف النص داخل العمود.",
+    "second": "العمود الثاني يقرأ بعد الأول لأنه على اليسار. وهذا أيضا نص طويل يمتد على عدة أسطر داخل العمود الثاني."
+  },
+  "searchWords": [
+    { "line": "ar-vocalised", "query": "الرحمن", "match": "الرَّحْمَٰنِ" },
+    { "line": "ar-vocalised", "query": "بسم", "match": "بِسْمِ" },
+    { "line": "ar-hello", "query": "بالعالم", "match": "بالعالم" },
+    { "line": "ar-punct", "query": "اعلم", "match": "أعلم" },
+    { "line": "ar-indic-digits", "query": "123.50", "match": "١٢٣٫٥٠" },
+    { "line": "ar-date", "query": "12345", "match": "12345" },
+    { "line": "ar-date", "query": "2026-09-26", "match": "2026-09-26" },
+    { "line": "fa", "query": "۱۴۰۵", "match": "۱۴۰۵" },
+    { "line": "fa", "query": "فارسي", "match": "فارسی" },
+    { "line": "he-niqqud", "query": "בראשית", "match": "בְּרֵאשִׁית" }
+  ]
+}
