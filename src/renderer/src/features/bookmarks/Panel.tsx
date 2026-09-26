@@ -131,7 +131,16 @@ export function BookmarksPanel({ tab }: { tab: Tab }): JSX.Element {
 
   const onTreeKeyDown = (e: React.KeyboardEvent): void => {
     if (editing !== null || e.target !== e.currentTarget) return
-    const idx = selectedId !== null ? (rowIndex.get(selectedId) ?? -1) : -1
+    let idx = selectedId !== null ? (rowIndex.get(selectedId) ?? -1) : -1
+    if (idx < 0 && rows.length && ['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', 'F2', 'Delete'].includes(e.key)) {
+      // Nothing selected yet: start from where the reader is now (or the first row) and act on that.
+      idx = (currentId ? rowIndex.get(currentId) : undefined) ?? 0
+      select(rows[idx].node.id)
+      if (['ArrowDown', 'ArrowUp'].includes(e.key)) {
+        e.preventDefault()
+        return
+      }
+    }
     const row = idx >= 0 ? rows[idx] : undefined
     const go = (i: number): void => {
       const r = rows[Math.max(0, Math.min(rows.length - 1, i))]
@@ -330,58 +339,6 @@ export function BookmarksPanel({ tab }: { tab: Tab }): JSX.Element {
         )}
       </div>
 
-      {/* Selected bookmark's properties */}
-      {selectedNode && (
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line px-2 py-1.5 text-xs" role="group" aria-label="Selected bookmark">
-          <button
-            className="btn-icon h-7 w-7 font-bold"
-            aria-pressed={selectedNode.bold}
-            aria-label="Bold"
-            title="Bold"
-            onClick={() => void styleAction(docId, selectedNode.id, { bold: !selectedNode.bold })}
-          >
-            B
-          </button>
-          <button
-            className="btn-icon h-7 w-7 italic"
-            aria-pressed={selectedNode.italic}
-            aria-label="Italic"
-            title="Italic"
-            onClick={() => void styleAction(docId, selectedNode.id, { italic: !selectedNode.italic })}
-          >
-            I
-          </button>
-          <label className="flex items-center gap-1">
-            <span className="text-ink-muted">Colour</span>
-            <input
-              type="color"
-              aria-label="Bookmark colour"
-              value={colorToHex(selectedNode.color)}
-              onChange={(e) => void styleAction(docId, selectedNode.id, { color: hexToColor(e.target.value) })}
-              className="h-6 w-8 cursor-pointer rounded border border-line bg-transparent p-0"
-            />
-          </label>
-          {selectedNode.color && (
-            <button className="btn h-6 px-1.5 text-xs" onClick={() => void styleAction(docId, selectedNode.id, { color: null })}>
-              No colour
-            </button>
-          )}
-          {selectedNode.children.length > 0 && (
-            <label className="flex items-center gap-1">
-              <input type="checkbox" checked={selectedNode.open} onChange={(e) => void styleAction(docId, selectedNode.id, { open: e.target.checked })} />
-              <span>Open by default</span>
-            </label>
-          )}
-          <button className="btn h-7 gap-1 px-1.5 text-xs" title="Point this bookmark at the selected text or the current position" onClick={() => void pointToCurrentView(docId, selectedNode.id)}>
-            <IconTarget />
-            <span>Point to current view</span>
-          </button>
-          <span className="w-full text-ink-muted" data-testid="bookmark-destination">
-            {destDescription(selectedNode)}
-          </span>
-        </div>
-      )}
-
       {empty ? (
         <div className="flex flex-col gap-3 p-3 text-sm" data-testid="bookmarks-empty">
           <p className="text-ink-muted">This document has no bookmarks.</p>
@@ -413,9 +370,6 @@ export function BookmarksPanel({ tab }: { tab: Tab }): JSX.Element {
             tabIndex={0}
             aria-activedescendant={selectedId !== null && rowIndex.has(selectedId) ? domId(docId, selectedId) : undefined}
             onKeyDown={onTreeKeyDown}
-            onFocus={(e) => {
-              if (e.target === e.currentTarget && (selectedId === null || !rowIndex.has(selectedId)) && rows.length) select((currentId && rowIndex.has(currentId) ? currentId : rows[0].node.id))
-            }}
             className="group relative outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
             style={{ height: rows.length * ROW_H }}
           >
@@ -504,6 +458,58 @@ export function BookmarksPanel({ tab }: { tab: Tab }): JSX.Element {
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* Selected bookmark's properties */}
+      {selectedNode && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line px-2 py-1.5 text-xs" role="group" aria-label="Selected bookmark">
+          <button
+            className="btn-icon h-7 w-7 font-bold"
+            aria-pressed={selectedNode.bold}
+            aria-label="Bold"
+            title="Bold"
+            onClick={() => void styleAction(docId, selectedNode.id, { bold: !selectedNode.bold })}
+          >
+            B
+          </button>
+          <button
+            className="btn-icon h-7 w-7 italic"
+            aria-pressed={selectedNode.italic}
+            aria-label="Italic"
+            title="Italic"
+            onClick={() => void styleAction(docId, selectedNode.id, { italic: !selectedNode.italic })}
+          >
+            I
+          </button>
+          <label className="flex items-center gap-1">
+            <span className="text-ink-muted">Colour</span>
+            <input
+              type="color"
+              aria-label="Bookmark colour"
+              value={colorToHex(selectedNode.color)}
+              onChange={(e) => void styleAction(docId, selectedNode.id, { color: hexToColor(e.target.value) })}
+              className="h-6 w-8 cursor-pointer rounded border border-line bg-transparent p-0"
+            />
+          </label>
+          {selectedNode.color && (
+            <button className="btn h-6 px-1.5 text-xs" onClick={() => void styleAction(docId, selectedNode.id, { color: null })}>
+              No colour
+            </button>
+          )}
+          {selectedNode.children.length > 0 && (
+            <label className="flex items-center gap-1">
+              <input type="checkbox" checked={selectedNode.open} onChange={(e) => void styleAction(docId, selectedNode.id, { open: e.target.checked })} />
+              <span>Open by default</span>
+            </label>
+          )}
+          <button className="btn h-7 gap-1 px-1.5 text-xs" title="Point this bookmark at the selected text or the current position" onClick={() => void pointToCurrentView(docId, selectedNode.id)}>
+            <IconTarget />
+            <span>Point to current view</span>
+          </button>
+          <span className="w-full text-ink-muted" data-testid="bookmark-destination">
+            {destDescription(selectedNode)}
+          </span>
         </div>
       )}
 
