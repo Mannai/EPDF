@@ -1,4 +1,4 @@
-import createHarfBuzz from "./harfbuzz.js";
+import createHarfBuzz from "./harfbuzz.mjs";
 //#region src/helpers.ts
 let Module;
 let exports;

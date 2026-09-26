@@ -258,6 +258,8 @@ export interface FontCandidate {
   id: string
   family: string
   category: FontCategory
+  /** File name in resources/fonts for bundled fonts. */
+  file?: string
   /** Does the font have a glyph for this code point? Never loads the font. */
   covers(cp: number): boolean
   load(): Promise<TextFont>
@@ -379,6 +381,7 @@ function bundledCandidate(family: FamilyInfo, weight: number, italic: boolean): 
       id,
       family: family.name,
       category: family.category,
+      file: face.file,
       covers: (cp) => cov.has(cp),
       load: () => loadBundledFont(face.file),
       synthBold,

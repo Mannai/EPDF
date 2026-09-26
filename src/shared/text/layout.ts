@@ -207,7 +207,9 @@ function planParagraph(text: string, start: number, end: number, options: Paragr
       cand = prevStyle === styleIdx && prevCand ? prevCand : si.cands[0]
     } else {
       const common = isCommonCodePoint(needed[0]!)
-      const sticky = common && prevStyle === styleIdx && prevCand && needed.every((cp) => prevCand!.covers(cp))
+      // Spaces, digits and punctuation stay in the font of the text around them (an Arabic sentence keeps its own digits),
+      // except after a symbol/emoji font, which only covers them for keycaps and would space them out.
+      const sticky = common && prevStyle === styleIdx && prevCand && prevCand.category !== 'emoji' && prevCand.category !== 'symbol' && needed.every((cp) => prevCand!.covers(cp))
       if (sticky) cand = prevCand
       else {
         const emojiFirst = prefersEmoji(needed[0]!, hasVs16)
