@@ -59,7 +59,7 @@ export function renderModelTextLayer(container: HTMLElement, model: PageTextMode
   const W = model.width || 1
   const H = model.height || 1
   let count = 0
-  for (const line of model.lines) {
+  for (const [li, line] of model.lines.entries()) {
     const rad = (line.angle * Math.PI) / 180
     const ex = Math.cos(rad)
     const ey = Math.sin(rad)
@@ -96,6 +96,7 @@ export function renderModelTextLayer(container: HTMLElement, model: PageTextMode
       const span = document.createElement('span')
       span.textContent = seg.segment
       span.dir = dirOf(seg.segment, line.dir)
+      span.dataset.line = String(li)
       span.style.left = `${((100 * x) / W).toFixed(4)}%`
       span.style.top = `${((100 * y) / H).toFixed(4)}%`
       span.style.fontFamily = FONT_FAMILY
