@@ -2,7 +2,10 @@
 
 A desktop PDF application (Electron + TypeScript + React). Works fully offline for all local features.
 
-**Status: 1.0.0-beta.1 (Windows beta).** Phases 1–3 are complete: the secure Electron shell and PDF viewer; form
+**Status: 1.0.1-beta.1 (Windows beta).** New in this beta: the Windows design (title bar with document tabs and
+search, task tabs over a one-line ribbon, status bar, Windows 11 dialogs; see `docs/features/chrome.md`) and
+View ▸ Use Hardware Acceleration, which is off by default in a Remote Desktop session because GPU-composited windows
+flash black through the RDP client. Phases 1–3 are complete: the secure Electron shell and PDF viewer; form
 filling, signing, creating/combining/exporting, text and image editing, markup, page organization and printing; OCR,
 file-size reduction, password protection, scanning, the form builder, true redaction, file comparison and a local
 library. Phase 5 on Windows is in: headers/footers/watermarks, links and bookmarks, performance work, NSIS/MSI
