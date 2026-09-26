@@ -103,16 +103,23 @@ export function BookmarksPanel({ tab }: { tab: Tab }): JSX.Element {
   useEffect(() => {
     if (selectedId !== null) scrollToIndex(rowIndex.get(selectedId) ?? -1)
   }, [selectedId, rowIndex, scrollToIndex])
+  // Reveal requests (after adding or moving an item) are handled once: open the collapsed branches above the item,
+  // then scroll it into view. The item may not be in the tree yet while the edit is still landing, so wait for it.
+  const handledReveal = useRef(0)
   useEffect(() => {
-    if (!reveal) return
-    // A revealed item may sit inside a collapsed branch: open the branch first.
-    if (roots) {
-      const anc = ancestorsOf(roots, reveal.id)
-      if (anc.some((a) => !(expandedMap?.[a] ?? locate(roots, a)?.node.open))) ui().setManyExpanded(docId, anc, true)
+    if (!reveal || !roots || handledReveal.current === reveal.seq) return
+    if (!locate(roots, reveal.id)) return
+    const closed = ancestorsOf(roots, reveal.id).filter((a) => !(expandedMap?.[a] ?? locate(roots, a)?.node.open))
+    if (closed.length) {
+      ui().setManyExpanded(docId, closed, true)
+      return
     }
-    scrollToIndex(rowIndex.get(reveal.id) ?? -1)
+    const i = rowIndex.get(reveal.id)
+    if (i === undefined) return // hidden by the filter
+    handledReveal.current = reveal.seq
+    scrollToIndex(i)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reveal, rows])
+  }, [reveal, roots, rows, expandedMap, rowIndex, docId, scrollToIndex])
 
   const treeRef = useRef<HTMLDivElement>(null)
   const focusTree = (): void => treeRef.current?.focus({ preventScroll: true })

@@ -230,6 +230,14 @@ export async function goToBookmark(docId: string, node: BmNode): Promise<void> {
     await goToDestination(docId, node.target.dest.pageIndex, node.target.dest.tail)
     return
   }
+  if (node.target.kind === 'uri') {
+    window.open(node.target.uri, '_blank', 'noopener') // the main process only lets http(s) and mailto leave the app
+    return
+  }
+  if (node.target.kind === 'other') {
+    announce(`This bookmark runs a ${node.target.action} action, which Epdf does not follow.`)
+    return
+  }
   const p = firstPageIndex(node)
   if (p !== null) useTabs.getState().goToPage(docId, p + 1)
   else announce('This bookmark has no destination in the document.')
