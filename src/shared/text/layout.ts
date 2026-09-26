@@ -244,8 +244,7 @@ function isHangingSpace(ch: number): boolean {
   return ch === 0x20
 }
 
-function shapeRun(plan: PlanRun, info: StyleInfo, ptext: string, paraStart: number, wantLang: string | undefined): LRun {
-  void paraStart
+function shapeRun(plan: PlanRun, info: StyleInfo, ptext: string, wantLang: string | undefined): LRun {
   const font = plan.font
   const size = info.style.size
   const scale = size / font.upem
@@ -368,7 +367,7 @@ function buildLayout(text: string, plans: ParaPlan[], styleInfos: StyleInfo[], o
     const ptext = text.slice(plan.start, plan.end)
     paraTexts.push(ptext)
     const baseInfo = styleInfos[0]!
-    const lrunsAll: LRun[] = plan.runs.map((r) => shapeRun(r, styleInfos[r.styleIdx]!, ptext, plan.start, options.lang ?? wantLang))
+    const lrunsAll: LRun[] = plan.runs.map((r) => shapeRun(r, styleInfos[r.styleIdx]!, ptext, options.lang ?? wantLang))
 
     // Per-index tables for breaking.
     const n = ptext.length

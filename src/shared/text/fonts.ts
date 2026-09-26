@@ -1,5 +1,5 @@
 import { loadResource } from './env'
-import { loadHarfBuzz, hbSync } from './hb'
+import { loadHarfBuzz } from './hb'
 import type * as HB from './vendor/harfbuzz/index.mjs'
 
 /**
@@ -476,13 +476,4 @@ export async function resolveStack(opts: FontStackOptions = {}): Promise<FontCan
   for (const id of CJK_ORDER[cjkLangKey(opts.lang)]!) add(id)
   for (const id of SYMBOL_FAMILIES) add(id)
   return out
-}
-
-/** Load the font behind a candidate (shared per file). */
-export function loadCandidate(c: FontCandidate): Promise<TextFont> {
-  return c.load()
-}
-
-export function synchronousHb(): typeof HB {
-  return hbSync()
 }

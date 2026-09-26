@@ -67,10 +67,13 @@ function transformOf(o: DrawOptions): M {
   return mul(mul(K, R), T)
 }
 
+const DRAW_ONLY = new Set(['x', 'y', 'maxWidth', 'anchor', 'rotate', 'xSkew', 'ySkew', 'renderMode', 'strokeColor', 'strokeWidth', 'clip', 'extraction'])
+
+/** The layout options inside draw options (everything that is not about placing the result on the page). */
 function layoutOptions(o: DrawOptions): ParagraphOptions {
-  const { x: _x, y: _y, maxWidth, anchor: _a, rotate: _r, xSkew: _xs, ySkew: _ys, renderMode: _rm, strokeColor: _sc, strokeWidth: _sw, clip: _c, extraction: _e, ...rest } = o
-  void [_x, _y, _a, _r, _xs, _ys, _rm, _sc, _sw, _c, _e]
-  return { ...rest, width: rest.width ?? maxWidth }
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(o)) if (!DRAW_ONLY.has(k) && v !== undefined) out[k] = v
+  return { ...(out as ParagraphOptions), width: o.width ?? o.maxWidth }
 }
 
 function registerResources(page: PDFPage, res: EmitResult): void {
