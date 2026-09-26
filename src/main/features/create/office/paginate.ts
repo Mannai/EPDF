@@ -86,7 +86,7 @@ export function paginateFlow(doc: FlowDocument, catalog: FontCatalog, warnings: 
     } else startPage(cur.section, cur.indexInSection + 1)
   }
 
-  const colX = (): number => region.left + col * (region.colW + region.colGap)
+  const colX = (): number => region.left + (cur?.section.rtl ? region.cols - 1 - col : col) * (region.colW + region.colGap)
 
   const resolveFloat = (fl: FloatSpec, fragTopY: number): Op | null => {
     if (!cur) return null

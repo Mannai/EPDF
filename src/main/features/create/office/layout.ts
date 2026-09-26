@@ -1,6 +1,7 @@
 import type { BorderSpec, Block, Cell, FloatSpec, Inline, ParaProps, Paragraph, Table, TabStop, TextStyle } from './flow'
 import type { Face, FontCatalog } from './fonts'
 import type { Op, Stroke, Warnings } from './ops'
+import { joinSegments, shapeLine, type DrawStyle, type LineItem, type ShapedLine } from './textline'
 
 /**
  * Layout primitives shared by all converters: a `Fragment` is a laid-out block (paragraph, table, image band)
@@ -46,6 +47,7 @@ export function shiftOps(ops: Op[], dx: number, dy: number): Op[] {
   return ops.map((o): Op => {
     switch (o.t) {
       case 'text':
+      case 'glyphs':
         return { ...o, x: o.x + dx, y: o.y + dy }
       case 'rect':
       case 'image':
@@ -76,6 +78,7 @@ export function sliceOps(ops: Op[], from: number, to: number): Op[] {
   for (const o of ops) {
     switch (o.t) {
       case 'text':
+      case 'glyphs':
         if (o.y >= from - EPS && o.y < to - EPS) out.push({ ...o, y: o.y - from })
         break
       case 'rect': {
@@ -600,7 +603,7 @@ function buildParagraphFragment(ctx: LayoutContext, props: ParaProps, lines: Lin
   lines.forEach((ln, li) => {
     const h = heights[li]
     const baseline = y + h - ln.desc
-    emitLine(ctx, ops, ln, props, left, width, baseline, y, h)
+    emitLine(ctx, ops, ln, props, left, width, baseline)
     y += h
     if (li < lines.length - 1) breaks.push(y)
   })
@@ -627,142 +630,143 @@ function buildParagraphFragment(ctx: LayoutContext, props: ParaProps, lines: Lin
 
 const LEADER_CHAR: Record<NonNullable<TabStop['leader']>, string> = { dot: '.', hyphen: '-', underscore: '_', middleDot: '·' }
 
-function emitLine(ctx: LayoutContext, ops: Op[], ln: Line, props: ParaProps, left: number, width: number, baseline: number, top: number, height: number): void {
+/**
+ * Draws one line. Coordinates are computed from the paragraph's START edge (left for left-to-right paragraphs, right
+ * for right-to-left ones: indents, tab stops, the list marker and alignment are logical) and mirrored for
+ * right-to-left paragraphs. Each part between two tabs is shaped and reordered as a whole (textline.ts), so runs of
+ * different styles, directions and scripts end up in the right visual order; all parts of the line are written as
+ * one text object with one /ActualText span.
+ */
+function emitLine(ctx: LayoutContext, ops: Op[], ln: Line, props: ParaProps, left: number, width: number, baseline: number): void {
   const atoms = ln.atoms
   if (atoms.length === 0) return
-  // drop trailing spaces for alignment purposes
   let lastIdx = atoms.length - 1
-  while (lastIdx >= 0 && atoms[lastIdx].k === 'space') lastIdx--
-  let contentW = 0
-  if (lastIdx >= 0) contentW = (atoms[lastIdx].x ?? 0) + atoms[lastIdx].w
+  while (lastIdx >= 0 && atoms[lastIdx].k === 'space') lastIdx-- // trailing spaces hang: no alignment, no drawing
+  if (lastIdx < 0) return
+  const rtl = !!props.rtl
   const avail = ln.avail
-  let shift = 0
-  let justifyExtra = 0
-  const align = props.rtl ? (props.align === 'left' ? 'right' : props.align === 'right' ? 'left' : props.align) : props.align
-  if (align === 'center') shift = Math.max(0, (avail - contentW) / 2)
-  else if (align === 'right') shift = Math.max(0, avail - contentW)
-  else if (align === 'justify' && !ln.hard) {
-    const gaps = atoms.slice(0, lastIdx + 1).filter((a) => a.k === 'space').length
-    if (gaps > 0 && contentW < avail) justifyExtra = (avail - contentW) / gaps
-  }
-  const originX = left + ln.x0 + shift
 
-  // Position atoms (justification widens spaces).
-  let extraSoFar = 0
-  const xs: number[] = []
+  // parts between tabs, in logical order
+  interface Seg {
+    from: number
+    to: number
+    x: number
+  }
+  const segs: Seg[] = []
+  const tabs: Atom[] = []
+  let cur: Seg | null = null
   for (let i = 0; i <= lastIdx; i++) {
     const a = atoms[i]
-    xs.push(originX + (a.x ?? 0) + extraSoFar)
-    if (a.k === 'space') extraSoFar += justifyExtra
+    if (a.k === 'tab') {
+      if (cur) segs.push(cur)
+      cur = null
+      tabs.push(a)
+      continue
+    }
+    if (a.k === 'br') continue
+    if (!cur) cur = { from: i, to: i + 1, x: a.x ?? 0 }
+    else cur.to = i + 1
   }
+  if (cur) segs.push(cur)
+  const justify = props.align === 'justify' && !ln.hard
 
-  // Group consecutive text atoms with the same style into runs.
-  interface Run {
-    atoms: number[]
-    style: TextStyle
-    link?: string
+  const styleOf = (a: Atom, face: Face): DrawStyle => {
+    const st = a.style
+    const rise = st.vertAlign === 'super' ? st.size * 0.33 : st.vertAlign === 'sub' ? -st.size * 0.14 : 0
+    return { face, size: a.size, color: st.color, rise, letterSpacing: st.spacing }
   }
-  const runs: Run[] = []
-  const sameStyle = (a: TextStyle, b: TextStyle): boolean =>
-    a.family === b.family && a.size === b.size && a.bold === b.bold && a.italic === b.italic && a.color === b.color && a.underline === b.underline && a.strike === b.strike && a.highlight === b.highlight && a.vertAlign === b.vertAlign && a.caps === b.caps && a.smallCaps === b.smallCaps && a.spacing === b.spacing
-  for (let i = 0; i <= lastIdx; i++) {
-    const a = atoms[i]
-    if (a.k === 'tab' || a.k === 'br') {
-      runs.push({ atoms: [i], style: a.style })
-      continue
-    }
-    if (a.k === 'image') {
-      runs.push({ atoms: [i], style: a.style, link: a.link })
-      continue
-    }
-    const last = runs[runs.length - 1]
-    const lastAtom = last ? atoms[last.atoms[0]] : undefined
-    if (last && lastAtom && (lastAtom.k === 'word' || lastAtom.k === 'space') && sameStyle(last.style, a.style) && last.link === a.link) last.atoms.push(i)
-    else runs.push({ atoms: [i], style: a.style, link: a.link })
-  }
-
-  for (const run of runs) {
-    const first = atoms[run.atoms[0]]
-    const x = xs[run.atoms[0]]
-    const lastA = atoms[run.atoms[run.atoms.length - 1]]
-    const endX = xs[run.atoms[run.atoms.length - 1]] + lastA.w
-    const st = run.style
-    const size = first.size
-    const shiftY = st.vertAlign === 'super' ? -st.size * 0.33 : st.vertAlign === 'sub' ? st.size * 0.14 : 0
-    if (first.k === 'image') {
-      const im = first.image!
-      ops.push({ t: 'image', x, y: baseline - im.h, w: im.w, h: im.h, image: im.image, crop: im.crop })
-      if (run.link) ops.push({ t: 'link', x, y: baseline - im.h, w: im.w, h: im.h, url: run.link })
-      continue
-    }
-    if (first.k === 'tab') {
-      if (first.leader && first.w > 2) {
-        const ch = LEADER_CHAR[first.leader]
-        const face = ctx.catalog.face(st.family, false, false)
-        const seg = ctx.catalog.segment(face, ch)[0]
-        const cw = ctx.catalog.measure(seg.face, ch) * size
-        const n = Math.floor((first.w - 2) / cw)
-        if (n > 0) ops.push({ t: 'text', x: x + first.w - n * cw, y: baseline, text: ch.repeat(n), face: seg.face, size, color: st.color })
-      }
-      continue
-    }
-    if (first.k === 'br') continue
-    // background highlight
-    if (st.highlight) ops.push({ t: 'rect', x, y: baseline - ln.asc, w: endX - x, h: ln.asc + ln.desc, fill: st.highlight })
-    const justified = justifyExtra > 0
-    if (justified) {
-      // spaces are wider: place every word individually
-      for (const ai of run.atoms) {
-        const a = atoms[ai]
-        if (a.k !== 'word') continue
-        pushText(ops, a, xs[ai], baseline + shiftY, st)
-      }
-    } else {
-      // one text op per (face) piece across the run
-      let cx = x
-      let pieceFace: Face | null = null
-      let pieceText = ''
-      let pieceX = x
-      const flush = (): void => {
-        if (pieceFace && pieceText) ops.push({ t: 'text', x: pieceX, y: baseline + shiftY, text: pieceText, face: pieceFace, size, color: st.color })
-        pieceFace = null
-        pieceText = ''
-      }
-      for (const ai of run.atoms) {
-        const a = atoms[ai]
+  const shaped: { seg: Seg; line: ShapedLine; atomOf: number[]; x: number }[] = []
+  let prevEnd = 0
+  segs.forEach((seg, si) => {
+    const items: LineItem[] = []
+    const atomOf: number[] = []
+    for (let i = seg.from; i < seg.to; i++) {
+      const a = atoms[i]
+      if (a.k === 'image') {
+        items.push({ text: '', style: styleOf(a, ctx.catalog.face(a.style.family, a.style.bold, a.style.italic)), gap: a.w })
+        atomOf.push(i)
+      } else if (a.k === 'word' || a.k === 'space') {
         for (const p of a.parts ?? []) {
-          if (!pieceFace || pieceFace.key !== p.face.key) {
-            flush()
-            pieceFace = p.face
-            pieceX = cx
-          }
-          pieceText += p.text
-          cx += p.w
+          items.push({ text: p.text, style: styleOf(a, p.face) })
+          atomOf.push(i)
         }
       }
-      flush()
     }
-    if (st.underline) {
-      const uy = baseline + size * 0.12
-      ops.push({ t: 'line', x1: x, x2: endX, y1: uy, y2: uy, stroke: { color: st.color, width: Math.max(0.5, size / 18) } })
-    }
-    if (st.strike) {
-      const sy = baseline - size * 0.28
-      ops.push({ t: 'line', x1: x, x2: endX, y1: sy, y2: sy, stroke: { color: st.color, width: Math.max(0.5, size / 20) } })
-    }
-    if (run.link) ops.push({ t: 'link', x, y: baseline - ln.asc, w: endX - x, h: ln.asc + ln.desc, url: run.link })
+    const x = Math.max(seg.x, prevEnd)
+    const target = justify && si === segs.length - 1 ? Math.max(0, avail - x) : undefined
+    const line = shapeLine(ctx.catalog, items, rtl ? 'rtl' : 'ltr', target)
+    shaped.push({ seg, line, atomOf, x })
+    prevEnd = x + line.width
+  })
+  const contentW = prevEnd
+  let shift = 0
+  if (props.align === 'center') shift = Math.max(0, (avail - contentW) / 2)
+  else if (props.align === 'right') shift = Math.max(0, avail - contentW)
+  // start-relative x -> physical x of the left edge of something `w` wide
+  const phys = (xs: number, w: number): number => {
+    const l = left + ln.x0 + shift + xs
+    return rtl ? width - l - w : l
   }
-  void top
-  void height
-  void width
-}
 
-function pushText(ops: Op[], a: Atom, x: number, baseline: number, st: TextStyle): void {
-  let cx = x
-  for (const p of a.parts ?? []) {
-    ops.push({ t: 'text', x: cx, y: baseline, text: p.text, face: p.face, size: a.size, color: st.color })
-    cx += p.w
+  const behind: Op[] = []
+  const front: Op[] = []
+  const links: { x: number; w: number; url: string }[] = []
+  const parts: { line: ShapedLine; x: number }[] = []
+  for (const s of shaped) {
+    const segLeft = phys(s.x, s.line.width)
+    parts.push({ line: s.line, x: segLeft })
+    s.line.items.forEach((it, k) => {
+      const a = atoms[s.atomOf[k]!]
+      const st = a.style
+      for (const pc of it.pieces) {
+        const x = segLeft + pc.x
+        if (a.k === 'image') {
+          const im = a.image!
+          front.push({ t: 'image', x, y: baseline - im.h, w: im.w, h: im.h, image: im.image, crop: im.crop })
+          if (a.link) front.push({ t: 'link', x, y: baseline - im.h, w: im.w, h: im.h, url: a.link })
+          continue
+        }
+        if (st.highlight) behind.push({ t: 'rect', x, y: baseline - ln.asc, w: pc.w, h: ln.asc + ln.desc, fill: st.highlight })
+        if (st.underline) {
+          const uy = baseline + a.size * 0.12
+          front.push({ t: 'line', x1: x, x2: x + pc.w, y1: uy, y2: uy, stroke: { color: st.color, width: Math.max(0.5, a.size / 18) } })
+        }
+        if (st.strike) {
+          const sy = baseline - a.size * 0.28
+          front.push({ t: 'line', x1: x, x2: x + pc.w, y1: sy, y2: sy, stroke: { color: st.color, width: Math.max(0.5, a.size / 20) } })
+        }
+        if (a.link) links.push({ x, w: pc.w, url: a.link })
+      }
+    })
   }
+  // one link annotation per visually contiguous stretch of the same target
+  links.sort((p, q) => p.x - q.x)
+  for (let i = 0; i < links.length; ) {
+    let j = i + 1
+    let x2 = links[i]!.x + links[i]!.w
+    while (j < links.length && links[j]!.url === links[i]!.url && links[j]!.x <= x2 + 0.5) {
+      x2 = Math.max(x2, links[j]!.x + links[j]!.w)
+      j++
+    }
+    front.push({ t: 'link', x: links[i]!.x, y: baseline - ln.asc, w: x2 - links[i]!.x, h: ln.asc + ln.desc, url: links[i]!.url })
+    i = j
+  }
+  // tab leaders fill the gap before the text that follows the tab
+  for (const t of tabs) {
+    if (!t.leader || t.w <= 2) continue
+    const ch = LEADER_CHAR[t.leader]
+    const face = ctx.catalog.face(t.style.family, false, false)
+    const cw = ctx.catalog.measure(face, ch) * t.size
+    const n = cw > 0 ? Math.floor((t.w - 2) / cw) : 0
+    if (n <= 0) continue
+    const w = n * cw
+    const xs = (t.x ?? 0) + t.w - w
+    front.push({ t: 'text', x: phys(xs, w), y: baseline, text: ch.repeat(n), face, size: t.size, color: t.style.color })
+  }
+  ops.push(...behind)
+  const op = joinSegments(parts, baseline, rtl)
+  if (op) ops.push(op)
+  ops.push(...front)
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -804,7 +808,15 @@ export function tableFragments(ctx: LayoutContext, t: Table, avail: number): Fra
   const colX: number[] = [0]
   for (const w of widths) colX.push(colX[colX.length - 1] + w)
   const tableW = colX[nCols]
-  const startX = (t.align === 'center' ? (avail - tableW) / 2 : t.align === 'right' ? avail - tableW : t.indent) || 0
+  // Right-to-left tables (Word's bidiVisual, ODF rl-tb, RTF \rtlrow): the first column is on the right and the
+  // alignment/indent are measured from the right edge. The grid is computed left to right and mirrored by `gx`.
+  const rtl = !!t.rtl
+  const logicalStart = (t.align === 'center' ? (avail - tableW) / 2 : t.align === 'right' ? avail - tableW : t.indent) || 0
+  const startX = rtl ? avail - tableW - logicalStart : logicalStart
+  /** Physical x of the grid line at logical offset `x` (from the table's start edge). */
+  const gx = (x: number): number => (rtl ? startX + tableW - x : startX + x)
+  /** Physical left edge of the logical range [a, b]. */
+  const gl = (a: number, b: number): number => (rtl ? gx(b) : gx(a))
 
   // Lay out every cell.
   const rows = t.rows
@@ -895,14 +907,16 @@ export function tableFragments(ctx: LayoutContext, t: Table, avail: number): Fra
   const ops: Op[] = []
   const breaks: number[] = []
   const soft: number[] = []
+  const cellLeft = (cl: CellLayout): number => gl(colX[cl.col], colX[Math.min(nCols, cl.col + cl.colSpan)])
   for (const cl of layouts) {
-    const x = startX + colX[cl.col]
+    const x = cellLeft(cl)
     const y = rowY[cl.row]
     const h = rowY[cl.row + cl.rowSpan] - y
     if (cl.cell.shading) ops.push({ t: 'rect', x, y, w: cl.width, h, fill: cl.cell.shading })
   }
   for (const cl of layouts) {
-    const x = startX + colX[cl.col] + cl.pad.left
+    // cell margins are logical too: the start margin is on the right in a right-to-left table
+    const x = cellLeft(cl) + (rtl ? cl.pad.right : cl.pad.left)
     const y = rowY[cl.row]
     const h = rowY[cl.row + cl.rowSpan] - y
     const inner = h - cl.pad.top - cl.pad.bottom
@@ -943,14 +957,14 @@ export function tableFragments(ctx: LayoutContext, t: Table, avail: number): Fra
       }
       let c2 = c + 1
       while (c2 < nCols && H[r][c2] && sameBorder(H[r][c2]!, e)) c2++
-      pushEdgeLine(ops, e, startX + colX[c], rowY[r], startX + colX[c2], rowY[r])
+      pushEdgeLine(ops, e, gl(colX[c], colX[c2]), rowY[r], gl(colX[c], colX[c2]) + colX[c2] - colX[c], rowY[r])
       c = c2
     }
   }
   for (let r = 0; r < R; r++) {
     for (let c = 0; c <= nCols; c++) {
       const e = V[r][c]
-      if (e) pushEdgeLine(ops, e, startX + colX[c], rowY[r], startX + colX[c], rowY[r + 1])
+      if (e) pushEdgeLine(ops, e, gx(colX[c]), rowY[r], gx(colX[c]), rowY[r + 1])
     }
   }
   for (let r = 1; r < R; r++) breaks.push(rowY[r])

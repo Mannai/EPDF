@@ -2,6 +2,7 @@ import { throwIfCancelled, type ConvertEnv } from './env'
 import type { Face } from './fonts'
 import { generalFit, generalText } from './numfmt'
 import type { Hex, ImageData, Op, Page, Stroke } from './ops'
+import { firstStrongRtl, glyphOp, shapeLine } from './textline'
 
 /**
  * Format-neutral spreadsheet model plus the layout engine that prints it: column widths/row heights, fills,
@@ -36,6 +37,8 @@ export interface CellStyle {
   /** Indent levels (each about 6.75pt). */
   indent: number
   shrink: boolean
+  /** Text direction of the cell (Excel `readingOrder` 1/2, ODF writing mode); unset = from the first strong character. */
+  readingOrder?: 'ltr' | 'rtl'
 }
 
 export interface RichRun {
@@ -138,6 +141,8 @@ export interface SheetModel {
   images: SheetImage[]
   print: PrintSetup
   defaultFont: CellFont
+  /** Right-to-left sheet (Excel `sheetView rightToLeft`, ODF table writing mode rl-tb): column A on the right. */
+  rtl?: boolean
 }
 
 export const DEFAULT_FONT: CellFont = { family: 'Calibri', size: 11, bold: false, italic: false, underline: false, strike: false, color: '#000000' }
@@ -729,7 +734,12 @@ function drawBlock(env: ConvertEnv, sheet: SheetModel, geo: Geometry, block: Blo
     let inner = rect.w - 2 * PAD - st.indent * INDENT_PT
     let sizeScale = 1
     let lines: TLine[]
-    const align = st.h === 'general' ? (cell.kind === 'number' ? 'right' : cell.kind === 'bool' || cell.kind === 'error' ? 'center' : 'left') : st.h
+    // Text direction of the cell, and "General" alignment: text goes to the start side of its own direction (Arabic
+    // right, English left), numbers to the end side of the sheet. Alignments are physical; in a right-to-left sheet the
+    // block is drawn mirrored (see mirrorOps), so they are swapped here to come out on the intended side.
+    const cellRtl = st.readingOrder ? st.readingOrder === 'rtl' : cell.kind === 'text' ? firstStrongRtl(cell.text) ?? !!sheet.rtl : !!sheet.rtl
+    const physical = st.h === 'general' ? (cell.kind === 'number' ? (sheet.rtl ? 'left' : 'right') : cell.kind === 'bool' || cell.kind === 'error' ? 'center' : cellRtl ? 'right' : 'left') : st.h
+    const align = sheet.rtl ? (physical === 'left' ? 'right' : physical === 'right' ? 'left' : physical) : physical
     if (st.wrap) lines = layoutRuns(env, runs, Math.max(4, inner), true)
     else {
       lines = layoutRuns(env, runs, 1e9, false)
@@ -812,18 +822,21 @@ function drawBlock(env: ConvertEnv, sheet: SheetModel, geo: Geometry, block: Blo
     if (needClip) ops.push({ t: 'push', clip: { x: X(sx), y: Y(rect.y), w: sw * S, h: rect.h * S } })
     let ly = top
     for (const ln of lines) {
+      const shaped = shapeLine(env.catalog, ln.pieces.map((pc) => ({ text: pc.text, style: { face: pc.face, size: Math.max(1, pc.size * S), color: pc.font.color } })), cellRtl ? 'rtl' : 'ltr')
+      const lw = S > 0 ? shaped.width / S : ln.w
       let lx: number
-      if (align === 'right') lx = sx + sw - PAD - ln.w - (st.indent ? st.indent * INDENT_PT : 0)
-      else if (align === 'center') lx = sx + (sw - ln.w) / 2
+      if (align === 'right') lx = sx + sw - PAD - lw - (st.indent ? st.indent * INDENT_PT : 0)
+      else if (align === 'center') lx = sx + (sw - lw) / 2
       else lx = sx + PAD + st.indent * INDENT_PT
       const baseline = ly + ln.asc
-      let cx = lx
-      for (const pc of ln.pieces) {
-        ops.push({ t: 'text', x: X(cx), y: Y(baseline), text: pc.text, face: pc.face, size: Math.max(1, pc.size * S), color: pc.font.color })
-        if (pc.font.underline) ops.push({ t: 'line', x1: X(cx), x2: X(cx + pc.w), y1: Y(baseline + pc.size * 0.12), y2: Y(baseline + pc.size * 0.12), stroke: { color: pc.font.color, width: Math.max(0.3, (pc.size * S) / 18) } })
-        if (pc.font.strike) ops.push({ t: 'line', x1: X(cx), x2: X(cx + pc.w), y1: Y(baseline - pc.size * 0.28), y2: Y(baseline - pc.size * 0.28), stroke: { color: pc.font.color, width: Math.max(0.3, (pc.size * S) / 20) } })
-        cx += pc.w
-      }
+      ops.push(glyphOp(shaped, X(lx), Y(baseline)))
+      ln.pieces.forEach((pc, k) => {
+        for (const seg of shaped.items[k]!.pieces) {
+          const x1 = X(lx) + seg.x
+          if (pc.font.underline) ops.push({ t: 'line', x1, x2: x1 + seg.w, y1: Y(baseline + pc.size * 0.12), y2: Y(baseline + pc.size * 0.12), stroke: { color: pc.font.color, width: Math.max(0.3, (pc.size * S) / 18) } })
+          if (pc.font.strike) ops.push({ t: 'line', x1, x2: x1 + seg.w, y1: Y(baseline - pc.size * 0.28), y2: Y(baseline - pc.size * 0.28), stroke: { color: pc.font.color, width: Math.max(0.3, (pc.size * S) / 20) } })
+        }
+      })
       ly += ln.asc + ln.desc
     }
     if (needClip) ops.push({ t: 'pop' })
@@ -876,7 +889,40 @@ function drawBlock(env: ConvertEnv, sheet: SheetModel, geo: Geometry, block: Blo
     }
     ops.push({ t: 'pop' })
   }
+  // Right-to-left sheet: the block was drawn left to right; mirror it inside the printable width (column A on the right)
+  if (sheet.rtl) mirrorOps(ops, p.margins.left + p.paper.w - p.margins.right, (o) => env.catalog.measure(o.face, o.text) * o.size)
   return { width: p.paper.w, height: p.paper.h, ops }
+}
+
+/** Mirrors display-list ops horizontally: x -> axis - x. Text keeps its reading direction (only its box moves). */
+export function mirrorOps(ops: Op[], axis: number, textWidth: (o: Extract<Op, { t: 'text' }>) => number): void {
+  for (let i = 0; i < ops.length; i++) {
+    const o = ops[i]!
+    switch (o.t) {
+      case 'text':
+        ops[i] = { ...o, x: axis - o.x - textWidth(o) }
+        break
+      case 'glyphs':
+        ops[i] = { ...o, x: axis - o.x - o.w }
+        break
+      case 'rect':
+      case 'image':
+      case 'link':
+        ops[i] = { ...o, x: axis - o.x - o.w }
+        break
+      case 'line':
+        ops[i] = { ...o, x1: axis - o.x1, x2: axis - o.x2 }
+        break
+      case 'path':
+        ops[i] = { ...o, d: o.d.map((s) => (s[0] === 'M' || s[0] === 'L' ? [s[0], axis - s[1], s[2]] : s[0] === 'C' ? ['C', axis - s[1], s[2], axis - s[3], s[4], axis - s[5], s[6]] : s) as typeof s) }
+        break
+      case 'push':
+        if (o.clip) ops[i] = { ...o, clip: { ...o.clip, x: axis - o.clip.x - o.clip.w } }
+        break
+      default:
+        break
+    }
+  }
 }
 
 function pushEdge(ops: Op[], b: BorderLine, x1: number, y1: number, x2: number, y2: number, S: number): void {
@@ -929,13 +975,13 @@ function drawHeadersFooters(env: ConvertEnv, sheet: SheetModel, pages: Page[]): 
         const totalH = metricsOfLine.reduce((s, l) => s + l.asc + l.desc, 0)
         let y = which === 'header' ? p.margins.header : p.paper.h - p.margins.footer - totalH
         for (const ln of metricsOfLine) {
-          const x = pos === 'left' ? p.margins.left : pos === 'right' ? p.margins.left + availW - ln.w : p.margins.left + (availW - ln.w) / 2
-          let cx = x
-          for (const pc of ln.pieces) {
-            page.ops.push({ t: 'text', x: cx, y: y + ln.asc, text: pc.text, face: pc.face, size: pc.size, color: '#000000' })
-            if (pc.font.underline) page.ops.push({ t: 'line', x1: cx, x2: cx + pc.w, y1: y + ln.asc + pc.size * 0.12, y2: y + ln.asc + pc.size * 0.12, stroke: { color: '#000000', width: Math.max(0.3, pc.size / 18) } })
-            cx += pc.w
-          }
+          const shaped = shapeLine(env.catalog, ln.pieces.map((pc) => ({ text: pc.text, style: { face: pc.face, size: pc.size, color: '#000000' } })), 'auto')
+          const x = pos === 'left' ? p.margins.left : pos === 'right' ? p.margins.left + availW - shaped.width : p.margins.left + (availW - shaped.width) / 2
+          page.ops.push(glyphOp(shaped, x, y + ln.asc))
+          ln.pieces.forEach((pc, k) => {
+            if (!pc.font.underline) return
+            for (const seg of shaped.items[k]!.pieces) page.ops.push({ t: 'line', x1: x + seg.x, x2: x + seg.x + seg.w, y1: y + ln.asc + pc.size * 0.12, y2: y + ln.asc + pc.size * 0.12, stroke: { color: '#000000', width: Math.max(0.3, pc.size / 18) } })
+          })
           y += ln.asc + ln.desc
         }
       }

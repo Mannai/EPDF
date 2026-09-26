@@ -112,7 +112,8 @@ describe('pptx: slides, text and inheritance', () => {
     })
     const c = await contentOf((await convert(bytes)).bytes)
     // accent2 = C0504D
-    expect(c).toMatch(/0\.75294\d* 0\.31372\d* 0\.30196\d* rg/)
+    // (text colours are written by the text engine with 3 decimals, shapes by pdf-lib with more)
+    expect(c).toMatch(/0\.75(29\d*|3) 0\.31(37\d*|4) 0\.30(19\d*|2) rg/)
     expect(c).toMatch(/1 0 0 rg/)
     // accent1 4F81BD with lumMod 50% is darker than the original blue
     const dark = [...c.matchAll(/(0\.\d+) (0\.\d+) (0\.\d+) rg\s+0 78\.7\d* m/g)]

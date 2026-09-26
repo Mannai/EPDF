@@ -53,15 +53,45 @@ export async function convertOffice(input: { name: string; bytes: Uint8Array }, 
   const legacy = legacyMessage(input.name)
   if (legacy) throw new OfficeError(legacy)
   if (!builtinSupports(input.name)) throw new OfficeError(`“${input.name}” is not a file type Epdf can convert.`)
-  const warnings = new Warnings()
+  let warnings = new Warnings()
   const catalog = new FontCatalog(opts.fontsDir)
   const progress = opts.onProgress ?? (() => undefined)
-  const env: ConvertEnv = { catalog, warnings, signal: opts.signal, progress, page: opts.page ?? PAGE_A4 }
   const scale = (from: number, to: number) => (f: number, m?: string) => progress(from + (to - from) * f, m)
-  let pages: Page[]
+  let pages: Page[] = []
   const label = (msg: string): string => `${input.name}: ${msg}`
   try {
     progress(0.02, 'Reading document')
+    await catalog.prepare()
+    // The layout is synchronous; a fallback font it needs that is not loaded yet (CJK, Indic...) is loaded after the
+    // pass and the pass is repeated (at most a few times: each repetition only adds fonts).
+    for (let attempt = 0; attempt < 4; attempt++) {
+      warnings = new Warnings()
+      catalog.resetPass()
+      pages = await convertPass(ext, input.bytes, { catalog, warnings, signal: opts.signal, progress, page: opts.page ?? PAGE_A4 }, opts, scale)
+      if (!(await catalog.loadPending())) break
+    }
+  } catch (err) {
+    if (err instanceof OfficeError || (err instanceof Error && err.message === 'Cancelled')) throw err
+    throw new OfficeError(label(`this file could not be converted (${err instanceof Error ? err.message : String(err)}).`))
+  }
+  const env: ConvertEnv = { catalog, warnings, signal: opts.signal, progress, page: opts.page ?? PAGE_A4 }
+  if (pages.length === 0) pages = [{ width: env.page.width, height: env.page.height, ops: [] }]
+  progress(0.72, 'Writing PDF')
+  const title = input.name.replace(/\.[^.]+$/, '')
+  const bytes = await renderPagesToPdf(pages, catalog, { title, warnings, signal: opts.signal, onPage: (d, t) => progress(0.72 + 0.27 * (d / t), `Writing page ${d} of ${t}`) })
+  if (catalog.missing.size) {
+    const sample = [...catalog.missing].slice(0, 8).join(' ')
+    warnings.add(`Some characters are not available in Epdf’s built-in fonts and are shown as empty boxes (for example ${sample}). Use the LibreOffice engine for full Unicode coverage.`)
+  }
+  progress(1)
+  return { bytes, pages: pages.length, warnings: warnings.list() }
+}
+
+async function convertPass(ext: string, bytes: Uint8Array, env: ConvertEnv, opts: OfficeOptions, scale: (from: number, to: number) => (f: number, m?: string) => void): Promise<Page[]> {
+  const { catalog, warnings } = env
+  const input = { bytes }
+  let pages: Page[]
+  {
     switch (ext) {
       case 'txt':
         pages = paginateFlow(readPlainText(input.bytes, env), catalog, warnings, { signal: opts.signal, onProgress: scale(0.05, 0.7) })
@@ -91,20 +121,8 @@ export async function convertOffice(input: { name: string; bytes: Uint8Array }, 
         pages = await convertOdp(input.bytes, { ...env, progress: scale(0.05, 0.7) })
         break
       default:
-        throw new OfficeError(`“${input.name}” is not a file type Epdf can convert.`)
+        throw new OfficeError(`This is not a file type Epdf can convert.`)
     }
-  } catch (err) {
-    if (err instanceof OfficeError || (err instanceof Error && err.message === 'Cancelled')) throw err
-    throw new OfficeError(label(`this file could not be converted (${err instanceof Error ? err.message : String(err)}).`))
   }
-  if (pages.length === 0) pages = [{ width: env.page.width, height: env.page.height, ops: [] }]
-  progress(0.72, 'Writing PDF')
-  const title = input.name.replace(/\.[^.]+$/, '')
-  const bytes = await renderPagesToPdf(pages, catalog, { title, warnings, signal: opts.signal, onPage: (d, t) => progress(0.72 + 0.27 * (d / t), `Writing page ${d} of ${t}`) })
-  if (catalog.missing.size) {
-    const sample = [...catalog.missing].slice(0, 8).join(' ')
-    warnings.add(`Some characters are not available in Epdf’s built-in fonts and were replaced with “?” (for example ${sample}). Use the LibreOffice engine for full Unicode coverage.`)
-  }
-  progress(1)
-  return { bytes, pages: pages.length, warnings: warnings.list() }
+  return pages
 }

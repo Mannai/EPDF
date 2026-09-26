@@ -87,7 +87,11 @@ export interface ParaProps {
   borders?: { top?: BorderSpec; bottom?: BorderSpec; left?: BorderSpec; right?: BorderSpec }
   /** List marker (bullet or number) drawn at the start of the first line. */
   marker?: { text: string; style: TextStyle }
-  /** Right-to-left paragraph (mirrors alignment); glyph shaping for RTL scripts is not supported. */
+  /**
+   * Right-to-left paragraph: the paragraph direction for the bidi algorithm, and the start edge is the right one.
+   * `align` ('left' = start, 'right' = end), `indentLeft` (start), `indentRight` (end), `firstLine`, tab stops and the
+   * list marker are all logical and mirrored by the layout.
+   */
   rtl?: boolean
 }
 
@@ -141,6 +145,8 @@ export interface Table {
   padding: { top: number; right: number; bottom: number; left: number }
   align: 'left' | 'center' | 'right'
   indent: number
+  /** Right-to-left table: first column on the right; `align`/`indent`, cell margins and left/right borders are logical (start/end). */
+  rtl?: boolean
 }
 
 export type Block = Paragraph | Table
@@ -160,6 +166,8 @@ export interface HeaderFooterSet {
 export interface Section {
   page: PageSetup
   columns?: { count: number; gap: number }
+  /** Right-to-left section (Word sectPr/bidi, RTF \rtlsect): text columns are filled from right to left. */
+  rtl?: boolean
   /** `continuous` sections start on the current page (when the page setup is unchanged). */
   type: 'nextPage' | 'continuous'
   blocks: Block[]
