@@ -433,6 +433,45 @@ test.describe('watermarks and backgrounds', () => {
     expect(summarizeMarks(await PDFDocument.load(readFileSync(path))).background.pages).toBe(2)
   })
 
+  test('"show when printing" only: hidden in the viewer (optional content); a page of another PDF as the watermark', async () => {
+    const { app, page, path } = await open('hf-overlap.pdf')
+    try {
+      let d = await openDialog(app, page, 'Watermark…')
+      await d.getByLabel('Watermark text (any language; new lines are kept)').fill('PRINT ONLY')
+      await d.getByLabel('Color').fill('#ff0000')
+      await d.getByLabel('Opacity').fill('100')
+      await d.getByRole('checkbox', { name: 'Show on screen' }).uncheck()
+      await applyAndWait(page, d)
+      expect(inkIn(await canvasPixels(page, 1), red), 'no red on screen').toBeNull()
+
+      d = await openDialog(app, page, 'Watermark…')
+      await d.getByRole('radio', { name: 'Keep them and add another' }).check()
+      await d.getByRole('radio', { name: 'PDF page' }).check()
+      await stubOpenDialog(app, fixture('hf-basic.pdf'))
+      await d.getByRole('button', { name: 'Choose PDF…' }).click()
+      await expect(d.getByTestId('hf-source-name')).toHaveText('hf-basic.pdf')
+      await d.getByLabel('Page of that PDF').fill('2')
+      // the dialog starts from the existing watermark's settings (print only): show this one on screen
+      await expect(d.getByRole('checkbox', { name: 'Show on screen' })).not.toBeChecked()
+      await d.getByRole('checkbox', { name: 'Show on screen' }).check()
+      await d.getByLabel('Rotation').fill('0')
+      await d.getByLabel('Opacity').fill('100')
+      await d.getByLabel('Percent').fill('100')
+      await applyAndWait(page, d)
+      // the source page ("Body of page 2" at 72 pt, 400 pt from the bottom) drawn full size over the page
+      const px = await canvasPixels(page, 1)
+      const text = inkIn(px, dark, [0.05, 0.4, 0.5, 0.52])
+      expect(text, 'the other PDF page is drawn').toBeTruthy()
+      await save(page)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+    const bytes = new Uint8Array(readFileSync(path))
+    const seen = await seePages(bytes)
+    expect(seen[0]!.text).toContain('Body of page 2')
+    expect(seen[0]!.text).toContain('PRINT ONLY') // it is in the file, only hidden on screen
+  })
+
   test('a file that is not a picture is refused with a clear message', async () => {
     const { app, page } = await open('hf-basic.pdf')
     try {

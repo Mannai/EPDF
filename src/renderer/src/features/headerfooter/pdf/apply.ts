@@ -236,7 +236,14 @@ export async function prepareSource(pdf: PDFDocument, s: OverlaySettings, input:
     const enc = err instanceof Error && /encrypt/i.test(err.message)
     throw new Error(enc ? 'That PDF is password protected. Remove its protection first, or choose another file.' : `That PDF could not be read: ${err instanceof Error ? err.message : String(err)}`)
   }
-  if (src.page > srcDoc.getPageCount()) throw new Error(`That PDF has only ${srcDoc.getPageCount()} page${srcDoc.getPageCount() === 1 ? '' : 's'}.`)
+  let count = 0
+  try {
+    count = srcDoc.getPageCount()
+  } catch {
+    count = 0 // a damaged file can "load" without a usable page tree
+  }
+  if (count === 0) throw new Error('That PDF could not be read: it has no pages that can be used.')
+  if (src.page > count) throw new Error(`That PDF has only ${count} page${count === 1 ? '' : 's'}.`)
   const sp = srcDoc.getPage(src.page - 1)
   const box = visibleBox(sp)
   let embedded

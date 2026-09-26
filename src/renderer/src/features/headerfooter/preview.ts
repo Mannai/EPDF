@@ -1,13 +1,10 @@
 import * as pdfjs from 'pdfjs-dist'
-import { PDFDocument, PDFObjectCopier, PDFRef } from 'pdf-lib'
-import type { GroupSettings } from '@shared/features/headerfooter'
 import { ensureTextEngine } from './actions'
-import type { SourceInput } from './pdf/apply'
-import { applyGroup } from './pdf/ops'
+import { previewBytes as build, type PreviewRequest } from './pdf/preview'
 
 /**
- * Live preview: the chosen page is copied into a one-page document, the settings are applied to it exactly as Apply
- * would (same code, same numbering as that page of the real document), and PDF.js draws the result on a canvas.
+ * Live preview: ./pdf/preview builds a one-page PDF with the marks applied exactly as Apply would, and PDF.js draws
+ * it on a canvas here.
  */
 
 /** Same offline assets as the viewer (fonts and CMaps never come from the network). */
@@ -29,33 +26,10 @@ function previewWorker(): pdfjs.PDFWorker | undefined {
   }
 }
 
-export interface PreviewRequest {
-  base: PDFDocument
-  pageIndex: number
-  gs: GroupSettings
-  mode: 'replace' | 'add'
-  source?: SourceInput
-  fileName: string
-  /** Draw the marks (false: the page as it is, e.g. outside the page range). */
-  withMarks: boolean
-}
-
 /** Builds the one-page preview PDF. */
-export async function previewBytes(r: PreviewRequest): Promise<Uint8Array> {
+export function previewBytes(r: PreviewRequest): Promise<Uint8Array> {
   ensureTextEngine()
-  const doc = await PDFDocument.create({ updateMetadata: false })
-  const [copy] = await doc.copyPages(r.base, [r.pageIndex])
-  doc.addPage(copy)
-  if (r.withMarks) {
-    let source = r.source
-    if (source && 'ref' in source) {
-      // The earlier picture lives in the real document: copy it over.
-      const copied = PDFObjectCopier.for(r.base.context, doc.context).copy(source.ref)
-      source = copied instanceof PDFRef ? { ref: copied } : undefined
-    }
-    await applyGroup(doc, r.gs, { mode: r.mode, source, fileName: r.fileName, numPages: r.base.getPageCount(), only: [{ index: r.pageIndex, page: doc.getPage(0) }] })
-  }
-  return doc.save()
+  return build(r)
 }
 
 /** Renders page 1 of `bytes` into `canvas`, fitting `maxW` x `maxH` CSS pixels. Returns the CSS size used. */

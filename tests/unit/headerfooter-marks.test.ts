@@ -6,6 +6,7 @@ import { applyHeaderFooter, applyOverlay } from '../../src/renderer/src/features
 import { cutMarks, removeMarks, summarizeMarks } from '../../src/renderer/src/features/headerfooter/pdf/remove'
 import { applyGroup, removeGroup } from '../../src/renderer/src/features/headerfooter/pdf/ops'
 import { parseContent, serializeContent } from '../../src/renderer/src/features/textedit/pdfcontent/content'
+import { preparePrintPdf } from '../../src/shared/features/print/prepare'
 import { actualTexts, contentOf, fontDicts, fontParts, shownCodes } from '../support/pdfContent'
 import { ocVisibility, seePages } from './helpers/hfPdfjs'
 import { setupText } from './helpers/text'
@@ -221,6 +222,14 @@ describe('watermarks and backgrounds', () => {
     const d = doc.catalog.lookup(N('OCProperties'), PDFDict).lookup(N('D'), PDFDict)
     expect((d.lookup(N('AS'), PDFArray)).size()).toBe(3)
     await expect(applyOverlay(await bodyDoc(1), 'watermark', textWm('X', { print: false, screen: false }), undefined, { fileName: 'x' })).rejects.toThrow(/screen/)
+  })
+
+  it("Epdf's own print preparation keeps the optional content, so a screen-only watermark does not print", async () => {
+    const pdf = await bodyDoc(2)
+    await applyOverlay(pdf, 'watermark', textWm('SCREEN', { print: false, screen: true }), undefined, { fileName: 'x' })
+    const prepared = await preparePrintPdf(await pdf.save(), { pages: [1], annotations: false })
+    expect(await ocVisibility(prepared, 'print')).toEqual([{ name: 'Watermark', visible: false }])
+    expect(await ocVisibility(prepared, 'display')).toEqual([{ name: 'Watermark', visible: true }])
   })
 })
 
