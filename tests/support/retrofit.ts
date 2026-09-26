@@ -92,9 +92,14 @@ export function type0Fonts(pdf: PDFDocument): PDFDict[] {
 
 /** Annotations of page `n` (1-based) as PDF.js (legacy build, Node) reads them. */
 export async function pdfjsAnnotations(bytes: Uint8Array, n = 1): Promise<Record<string, unknown>[]> {
-  // (a native import: Playwright's transform would turn `import()` into `require`, which cannot load this ES module)
-  const dynImport = new Function('s', 'return import(s)') as (s: string) => Promise<typeof import('pdfjs-dist')>
-  const pdfjs = await dynImport('pdfjs-dist/legacy/build/pdf.mjs')
+  let pdfjs: typeof import('pdfjs-dist')
+  try {
+    pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs') // vitest
+  } catch {
+    // Playwright's transform turns `import()` into `require`, which cannot load this ES module: a native import
+    const dynImport = new Function('s', 'return import(s)') as (s: string) => Promise<typeof import('pdfjs-dist')>
+    pdfjs = await dynImport('pdfjs-dist/legacy/build/pdf.mjs')
+  }
   const task = pdfjs.getDocument({ data: bytes.slice(), useSystemFonts: false, verbosity: 0, disableFontFace: true })
   const doc = await task.promise
   try {
