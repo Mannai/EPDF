@@ -2,7 +2,7 @@
  * Epdf text engine: correct text in any script, in PDFs and in previews.
  *
  * Environment setup (once per process; the engine reads its WebAssembly and fonts through it):
- *   - Node, Electron main, worker threads:  `import { useNodeResources } from '@shared/text/node'` then `useNodeResources()`
+ *   - Node, Electron main, worker threads:  `import { useNodeResources } from '<main>/features/textengine/nodeResources'` then `useNodeResources()`
  *   - sandboxed renderer:                    `import { useRendererResources } from '@shared/text/renderer'` then `useRendererResources()`
  *
  * Then, instead of pdf-lib's `page.drawText(...)`:  `await drawText(page, text, { x, y, size })`.

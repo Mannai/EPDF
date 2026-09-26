@@ -5,7 +5,7 @@ in resources/fonts next to the older fonts) except Homemade Apple (Apache Licens
 Fonts are embedded in PDFs only as subsets of the glyphs used, which the OFL permits; the subset keeps the
 font name and copyright notice. The fonts are not sold on their own.
 
-Copyright notices (from the fonts’ name tables):
+Copyright notices (from the name tables of the fonts):
 
 * Allura: Copyright 2010 The Allura Project Authors (https://github.com/googlefonts/allura)
 * Caladea: Copyright 2012 The Caladea Project Authors (https://github.com/huertatipografica/Caladea)

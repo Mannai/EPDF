@@ -1,6 +1,6 @@
 import { beforeAll } from 'vitest'
 import { loadBundledFont, type TextFont } from '../../../src/shared/text/fonts'
-import { useNodeResources } from '../../../src/shared/text/node'
+import { useNodeResources } from '../../../src/main/features/textengine/nodeResources'
 import { loadHarfBuzz } from '../../../src/shared/text/hb'
 
 /** Call once at the top of a text test file: configures resource loading and warms HarfBuzz. */

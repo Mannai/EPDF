@@ -21,7 +21,7 @@ describe('worker threads', () => {
       `
 import { parentPort, workerData } from 'node:worker_threads'
 import { PDFDocument } from 'pdf-lib'
-import { useNodeResources } from '${root}/src/shared/text/node'
+import { useNodeResources } from '${root}/src/main/features/textengine/nodeResources'
 import { drawParagraph } from '${root}/src/shared/text/pdf/draw'
 import { layoutParagraph } from '${root}/src/shared/text/layout'
 

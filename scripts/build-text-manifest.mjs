@@ -134,7 +134,7 @@ const lines = [
   'Fonts are embedded in PDFs only as subsets of the glyphs used, which the OFL permits; the subset keeps the',
   'font name and copyright notice. The fonts are not sold on their own.',
   '',
-  'Copyright notices (from the fonts’ name tables):',
+  'Copyright notices (from the name tables of the fonts):',
   ''
 ]
 for (const [family, c] of [...notices].sort((a, b) => a[0].localeCompare(b[0]))) lines.push(`* ${family}: ${c}`)

@@ -78,7 +78,8 @@ export function kashidaJustify(line: Line, extra: number, text: string): number 
       word++
       continue
     }
-    const tatweel = tatweelOf(run.font)
+    // Nastaliq is not stretched with tatweel: its letters connect diagonally and have their own elongation forms.
+    const tatweel = /Nastaliq/i.test(run.font.family) ? null : tatweelOf(run.font)
     if (!tatweel) continue
     const gs = run.glyphs
     // Logical scan: glyphs carrying characters, sorted by source position.

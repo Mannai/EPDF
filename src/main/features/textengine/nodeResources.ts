@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { configureTextEngine } from './env'
+import { configureTextEngine } from '../../../shared/text/env'
 
 /**
  * Resource loading for Node-like hosts: unit tests, the Electron main process and worker threads.

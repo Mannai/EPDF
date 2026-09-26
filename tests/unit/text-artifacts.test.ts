@@ -5,7 +5,7 @@ import { PDFDocument } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import { resolveStack } from '../../src/shared/text/fonts'
 import { layoutParagraph } from '../../src/shared/text/layout'
-import { useNodeResources } from '../../src/shared/text/node'
+import { useNodeResources } from '../../src/main/features/textengine/nodeResources'
 import { drawParagraph } from '../../src/shared/text/pdf/draw'
 import { CORPUS, byId, type CorpusItem } from '../support/textCorpus'
 

@@ -3,7 +3,7 @@
  * font catalogue). The engine itself is environment-neutral (Node, renderer, worker threads), so the host says how
  * to read a resource:
  *
- *   - Node / Electron main / worker threads: `useNodeResources()` from `@shared/text/node`
+ *   - Node / Electron main / worker threads: `useNodeResources()` from `src/main/features/textengine/nodeResources`
  *   - sandboxed renderer:                     `useRendererResources()` from `@shared/text/renderer`
  *
  * Resource names are relative to the app's resources folder: `text/harfbuzz.wasm`, `text/harfbuzz-subset.wasm`,
