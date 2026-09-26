@@ -36,6 +36,9 @@ describe('PDF.js text extraction returns the logical-order Unicode text of every
       if (item.pdfjsQuirk === 'neutral-bidi') {
         // PDF.js reorders only the right-to-left letters back: the neutrals and numbers around them stay visual.
         expect(Array.from(collapse(got)).sort().join('')).toBe(Array.from(collapse(item.text)).sort().join(''))
+      } else if (item.pdfjsQuirk === 'angle-brackets') {
+        // PDF.js deletes < and > from every right-to-left text run (deliberately, in its bidi code); the PDF has them.
+        expect(collapse(got)).toBe(collapse(item.text.replace(/[<>]/g, '')))
       } else if (item.pdfjsQuirk === 'combining-marks') {
         expect(letters(got), 'letters in order').toBe(letters(item.text))
         expect(marks(got), 'no mark lost or invented').toBe(marks(item.text))
@@ -56,7 +59,7 @@ describe('/ActualText carries the logical text for readers that honour it', () =
   })
 
   it('mixed-direction lines: every ActualText span is an exact slice of the source, in order', async () => {
-    for (const id of ['mixed-rtl', 'mixed-ltr', 'mixed-auto', 'emoji']) {
+    for (const id of ['mixed-rtl', 'mixed-ltr', 'mixed-auto', 'emoji', 'ar-mirroring', 'ar-mixed-wrap', 'he-mixed-wrap', 'ar-indic-digits']) {
       const item = CORPUS.find((c) => c.id === id)!
       const { pdf } = await build(item)
       const spans = actualTexts(contentOf(pdf, pdf.getPage(0)))

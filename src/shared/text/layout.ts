@@ -2,7 +2,7 @@ import { analyzeBidi, lineLevels, reorderVisual, type BidiInfo } from './bidi'
 import { loadHarfBuzz } from './hb'
 import { resolveStack, type FontCandidate, type TextFont } from './fonts'
 import { BREAK_ALLOWED, BREAK_MANDATORY, lineBreakOpportunities } from './linebreak'
-import { CURSIVE_SCRIPTS, guessCjkLang, isDefaultIgnorable, isCommonCodePoint, prefersEmoji, resolveScripts } from './script'
+import { CURSIVE_SCRIPTS, guessCjkLang, isDefaultIgnorable, prefersEmoji, resolveScripts } from './script'
 import { shapeText, type FeatureSettings } from './shape'
 import type { Align, GlyphRun, Line, LayoutGlyph, MissingChar, ParagraphLayout, ParagraphOptions, ResolvedStyle, Span, TextStyle } from './types'
 import { kashidaJustify } from './kashida'
@@ -206,20 +206,14 @@ function planParagraph(text: string, start: number, end: number, options: Paragr
     if (needed.length === 0 || (needed.length === 1 && needed[0] === 0x09)) {
       cand = prevStyle === styleIdx && prevCand ? prevCand : si.cands[0]
     } else {
-      const common = isCommonCodePoint(needed[0]!)
-      // Spaces, digits and punctuation stay in the font of the text around them (an Arabic sentence keeps its own digits),
-      // except after a symbol/emoji font, which only covers them for keycaps and would space them out.
-      const sticky = common && prevStyle === styleIdx && prevCand && prevCand.category !== 'emoji' && prevCand.category !== 'symbol' && needed.every((cp) => prevCand!.covers(cp))
-      if (sticky) cand = prevCand
-      else {
-        const emojiFirst = prefersEmoji(needed[0]!, hasVs16)
-        const order = emojiFirst ? [...si.cands.filter((c) => c.category === 'emoji'), ...si.cands.filter((c) => c.category !== 'emoji')] : si.cands
-        cand = order.find((c) => needed.every((cp) => c.covers(cp)))
-        if (!cand) {
-          cand = order.find((c) => c.covers(needed[0]!)) ?? si.cands[0]
-          for (const cp of needed) {
-            if (!cand || !cand.covers(cp)) missing.push({ index: start + s + ptext.slice(s, e).indexOf(String.fromCodePoint(cp)), char: String.fromCodePoint(cp), codePoint: cp })
-          }
+      // First font of the stack that covers the whole cluster (per character, exactly like CSS font-family fallback).
+      const emojiFirst = prefersEmoji(needed[0]!, hasVs16)
+      const order = emojiFirst ? [...si.cands.filter((c) => c.category === 'emoji'), ...si.cands.filter((c) => c.category !== 'emoji')] : si.cands
+      cand = order.find((c) => needed.every((cp) => c.covers(cp)))
+      if (!cand) {
+        cand = order.find((c) => c.covers(needed[0]!)) ?? si.cands[0]
+        for (const cp of needed) {
+          if (!cand || !cand.covers(cp)) missing.push({ index: start + s + ptext.slice(s, e).indexOf(String.fromCodePoint(cp)), char: String.fromCodePoint(cp), codePoint: cp })
         }
       }
     }

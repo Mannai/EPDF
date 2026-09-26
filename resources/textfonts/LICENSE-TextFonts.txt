@@ -1,7 +1,7 @@
 Fonts bundled for the Epdf text engine (src/shared/text)
 
-All fonts are licensed under the SIL Open Font License 1.1 (full text: OFL-1.1.txt, and the license files next to the
-older fonts) except Homemade Apple (Apache License 2.0, see LICENSE-Apache-2.0-HomemadeApple.txt).
+All fonts are licensed under the SIL Open Font License 1.1 (full text: OFL-1.1.txt in this folder, and the license files
+in resources/fonts next to the older fonts) except Homemade Apple (Apache License 2.0, resources/fonts/LICENSE-Apache-2.0-HomemadeApple.txt).
 Fonts are embedded in PDFs only as subsets of the glyphs used, which the OFL permits; the subset keeps the
 font name and copyright notice. The fonts are not sold on their own.
 

@@ -15,7 +15,7 @@ import { registerFeatureChannel } from '../api'
 
 const resourcesDir = (): string => (app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'resources'))
 
-const NameSchema = z.object({ name: z.string().max(120).regex(/^(text\/[\w.-]+\.wasm|fonts\/[\w.-]+\.(ttf|otf|json))$/) })
+const NameSchema = z.object({ name: z.string().max(120).regex(/^(text\/[\w.-]+\.wasm|(fonts|textfonts)\/[\w.-]+\.(ttf|otf|json))$/) })
 
 export function register(_ctx: MainContext): void {
   useNodeResources(resourcesDir())

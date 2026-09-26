@@ -375,7 +375,7 @@ describe('validity', () => {
     const doc = await reload(bytes)
     const parts = fontParts(doc, [...fontDicts(doc, doc.getPage(0).node.Resources()).values()][0]!)
     const f = fontkit.create(parts.program as unknown as Uint8Array) as import('@pdf-lib/fontkit').Font
-    const original = fontkit.create(new Uint8Array(readFileSync('resources/fonts/NotoNaskhArabic-Regular.ttf'))) as import('@pdf-lib/fontkit').Font
+    const original = fontkit.create(new Uint8Array(readFileSync('resources/textfonts/NotoNaskhArabic-Regular.ttf'))) as import('@pdf-lib/fontkit').Font
     expect(f.numGlyphs).toBeGreaterThanOrEqual(original.numGlyphs)
     const composite = f.getGlyph(original.numGlyphs)
     expect(composite.path.bbox.maxY).toBeGreaterThan(composite.path.bbox.minY)

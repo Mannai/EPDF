@@ -21,7 +21,7 @@ export function findResourcesDir(dir?: string): string {
   throw new Error(`Cannot find the text engine resources (looked in: ${candidates.join(', ')}). Set EPDF_RESOURCES_DIR.`)
 }
 
-const NAME_RE = /^(text\/[\w.-]+\.wasm|fonts\/[\w.-]+\.(ttf|otf|json))$/
+const NAME_RE = /^(text\/[\w.-]+\.wasm|(fonts|textfonts)\/[\w.-]+\.(ttf|otf|json))$/
 
 /** Read `name` (e.g. `fonts/NotoSans-Regular.ttf`) below `resourcesDir`. Names are validated: no path escapes. */
 export async function readResource(resourcesDir: string, name: string): Promise<Uint8Array> {

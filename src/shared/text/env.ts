@@ -7,7 +7,7 @@
  *   - sandboxed renderer:                     `useRendererResources()` from `@shared/text/renderer`
  *
  * Resource names are relative to the app's resources folder: `text/harfbuzz.wasm`, `text/harfbuzz-subset.wasm`,
- * `fonts/<file>` (see resources/fonts/text-fonts.json for the catalogue).
+ * `fonts/<file>` and `textfonts/<file>` (see resources/textfonts/text-fonts.json for the catalogue).
  */
 
 export type ResourceLoader = (name: string) => Promise<Uint8Array>

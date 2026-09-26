@@ -1,11 +1,11 @@
 /**
  * Developer tool (NOT part of the build, needs network): downloads the fonts the text engine bundles into
- * resources/fonts, pinned to exact upstream commits, so the font set is reproducible.
+ * resources/textfonts, pinned to exact upstream commits, so the font set is reproducible.
  *
  *   node scripts/fetch-text-fonts.mjs          # downloads what is missing
  *   node scripts/fetch-text-fonts.mjs --force  # re-downloads everything
  *
- * Afterwards run `node scripts/build-text-manifest.mjs` to regenerate resources/fonts/text-fonts.json and the
+ * Afterwards run `node scripts/build-text-manifest.mjs` to regenerate resources/textfonts/text-fonts.json and the
  * license notice. The fonts are committed; the app never downloads anything.
  *
  * Sources (all SIL Open Font License 1.1):
@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url'
 import { subsetRaw } from './lib/hbSubsetRaw.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const outDir = join(root, 'resources', 'fonts')
+const outDir = join(root, 'resources', 'textfonts')
 const force = process.argv.includes('--force')
 
 const NOTO_SHA = 'f145d86c53996717bc4c25d4602eb9294e43dccc'

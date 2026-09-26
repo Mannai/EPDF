@@ -1,7 +1,8 @@
 /**
- * Developer tool: (re)generates resources/fonts/text-fonts.json (the catalogue the text engine reads at runtime:
- * family, weight, metrics and the exact Unicode coverage of every bundled font) and LICENSE-TextFonts.txt (the
- * copyright notices of the fonts + a pointer to the OFL text). Run it after adding or changing a font:
+ * Developer tool: (re)generates resources/textfonts/text-fonts.json (the catalogue the text engine reads at runtime:
+ * family, weight, metrics and the exact Unicode coverage of every bundled font, from resources/fonts AND
+ * resources/textfonts) and resources/textfonts/LICENSE-TextFonts.txt (the copyright notices of the fonts + a pointer
+ * to the OFL text). Run it after adding or changing a font:
  *
  *   node scripts/build-text-manifest.mjs
  *
@@ -13,7 +14,8 @@ import { fileURLToPath } from 'node:url'
 import * as hb from '../src/shared/text/vendor/harfbuzz/index.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const fontsDir = join(root, 'resources', 'fonts')
+const fontDirs = ['fonts', 'textfonts'] // fonts of earlier features, and the fonts added by the text engine
+const outDir = join(root, 'resources', 'textfonts')
 await hb.initHarfBuzz({ wasmBinary: readFileSync(join(root, 'resources', 'text', 'harfbuzz.wasm')) })
 
 /** Curated facts that are not in the font: ISO 15924 scripts each family is meant for, and its category. */
@@ -63,13 +65,13 @@ const FAMILY_INFO = {
 
 const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
-const files = readdirSync(fontsDir).filter((f) => /\.(ttf|otf)$/i.test(f)).sort()
+const files = fontDirs.flatMap((d) => readdirSync(join(root, 'resources', d)).filter((f) => /\.(ttf|otf)$/i.test(f)).sort().map((f) => ({ dir: d, file: f })))
 const families = new Map()
 const notices = new Map()
 const u16 = (b, o) => (b[o] << 8) | b[o + 1]
 
-for (const file of files) {
-  const bytes = new Uint8Array(readFileSync(join(fontsDir, file)))
+for (const { dir, file } of files) {
+  const bytes = new Uint8Array(readFileSync(join(root, 'resources', dir, file)))
   const face = new hb.Face(new hb.Blob(bytes))
   const font = new hb.Font(face)
   const tag = (t) => face.referenceTable(t)
@@ -100,6 +102,7 @@ for (const file of files) {
   const id = slug(family)
   if (!families.has(id)) families.set(id, { id, name: family, category: info?.category ?? 'sans', scripts: info?.scripts ?? [], faces: [] })
   families.get(id).faces.push({
+    dir,
     file,
     style,
     weight,
@@ -110,24 +113,24 @@ for (const file of files) {
     lineGap: ext.lineGap,
     numGlyphs,
     outline,
-    bytes: statSync(join(fontsDir, file)).size,
+    bytes: statSync(join(root, 'resources', dir, file)).size,
     license: /HomemadeApple/.test(file) ? 'Apache-2.0' : 'OFL-1.1',
     ranges: ranges.flat()
   })
   if (copyright) notices.set(family, copyright.replace(/\s+/g, ' ').trim())
-  console.log(file.padEnd(38), family.padEnd(22), String(weight).padEnd(4), italic ? 'italic' : '      ', outline, String(numGlyphs).padStart(6), 'glyphs', String(uni.length).padStart(6), 'cps')
+  console.log((dir + '/' + file).padEnd(48), family.padEnd(22), String(weight).padEnd(4), italic ? 'italic' : '      ', outline, String(numGlyphs).padStart(6), 'glyphs', String(uni.length).padStart(6), 'cps')
 }
 
 const manifest = { version: 1, families: [...families.values()] }
-writeFileSync(join(fontsDir, 'text-fonts.json'), JSON.stringify(manifest))
+writeFileSync(join(outDir, 'text-fonts.json'), JSON.stringify(manifest))
 const kb = Math.round(JSON.stringify(manifest).length / 1024)
 console.log(`wrote text-fonts.json (${kb} KB, ${families.size} families, ${files.length} faces)`)
 
 const lines = [
   'Fonts bundled for the Epdf text engine (src/shared/text)',
   '',
-  'All fonts are licensed under the SIL Open Font License 1.1 (full text: OFL-1.1.txt, and the license files next to the',
-  'older fonts) except Homemade Apple (Apache License 2.0, see LICENSE-Apache-2.0-HomemadeApple.txt).',
+  'All fonts are licensed under the SIL Open Font License 1.1 (full text: OFL-1.1.txt in this folder, and the license files',
+  'in resources/fonts next to the older fonts) except Homemade Apple (Apache License 2.0, resources/fonts/LICENSE-Apache-2.0-HomemadeApple.txt).',
   'Fonts are embedded in PDFs only as subsets of the glyphs used, which the OFL permits; the subset keeps the',
   'font name and copyright notice. The fonts are not sold on their own.',
   '',
@@ -136,4 +139,4 @@ const lines = [
 ]
 for (const [family, c] of [...notices].sort((a, b) => a[0].localeCompare(b[0]))) lines.push(`* ${family}: ${c}`)
 lines.push('')
-writeFileSync(join(fontsDir, 'LICENSE-TextFonts.txt'), lines.join('\n'), 'utf8')
+writeFileSync(join(outDir, 'LICENSE-TextFonts.txt'), lines.join('\n'), 'utf8')

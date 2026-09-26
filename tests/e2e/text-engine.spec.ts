@@ -87,8 +87,13 @@ function saveImages(name: string, a: Ink, b: Ink): void {
   const data = new Float32Array(w * h)
   for (let y = 0; y < a.height; y++) for (let x = 0; x < a.width; x++) data[y * w + x] = a.data[y * a.width + x]!
   for (let y = 0; y < b.height; y++) for (let x = 0; x < b.width; x++) data[(a.height + 4 + y) * w + x] = b.data[y * b.width + x]!
+  // 2x nearest-neighbour so details (marks, brackets) are visible when a human looks at the picture
+  const W = w * 2
+  const H = h * 2
+  const big = new Float32Array(W * H)
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) big[y * W + x] = data[(y >> 1) * w + (x >> 1)]!
   mkdirSync(resolve(OUT, 'compare'), { recursive: true })
-  writeFileSync(resolve(OUT, 'compare', `${name}.png`), grayPng(w, h, data))
+  writeFileSync(resolve(OUT, 'compare', `${name}.png`), grayPng(W, H, big))
 }
 
 async function compare(pdfName: string, specName: string): Promise<Similarity> {

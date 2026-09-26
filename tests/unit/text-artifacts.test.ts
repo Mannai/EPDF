@@ -16,7 +16,7 @@ import { CORPUS, byId, type CorpusItem } from '../support/textCorpus'
  */
 
 export const OUT = resolve('test-results/text')
-const fontUrl = (file: string): string => 'file:///' + resolve('resources/fonts', file).replace(/\\/g, '/')
+const fontUrl = (dir: string, file: string): string => 'file:///' + resolve('resources', dir, file).replace(/\\/g, '/')
 
 async function make(item: CorpusItem, name: string, override: { direction?: 'ltr' | 'rtl' | 'auto' } = {}): Promise<void> {
   const size = item.size ?? 20
@@ -37,7 +37,7 @@ async function make(item: CorpusItem, name: string, override: { direction?: 'ltr
   writeFileSync(
     resolve(OUT, `${name}.json`),
     JSON.stringify({
-      fonts: files.map((c) => ({ name: `EF-${c.file}`, url: fontUrl(c.file!) })),
+      fonts: files.map((c) => ({ name: `EF-${c.file}`, url: fontUrl(c.dir!, c.file!) })),
       families: files.map((c) => `EF-${c.file}`),
       sizePt: size,
       lang: item.lang,
@@ -59,7 +59,7 @@ describe('artifacts for the Chromium comparison harness', () => {
     // Negative control 3: pdf-lib's drawText (embedded font through fontkit, logical order left to right, no bidi).
     const pdf = await PDFDocument.create()
     pdf.registerFontkit(fontkit)
-    const font = await pdf.embedFont(readFileSync('resources/fonts/NotoNaskhArabic-Regular.ttf'), { subset: true })
+    const font = await pdf.embedFont(readFileSync('resources/textfonts/NotoNaskhArabic-Regular.ttf'), { subset: true })
     const item = byId('ar-plain')
     const layout = await layoutParagraph(item.text, { size: item.size ?? 20, fontStack: item.fonts })
     const page = pdf.addPage([Math.ceil(layout.width) + 40, Math.ceil(layout.height) + 40])

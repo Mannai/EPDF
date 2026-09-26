@@ -12,6 +12,8 @@ import type * as HB from './vendor/harfbuzz/index.mjs'
 // Catalogue
 
 export interface FaceInfo {
+  /** Resource folder of the file: `fonts` (older features) or `textfonts` (added by the text engine). */
+  dir: string
   file: string
   style: string
   weight: number
@@ -45,7 +47,7 @@ let catalogPromise: Promise<Catalog> | null = null
 let catalogSync: Catalog | null = null
 
 export function getCatalog(): Promise<Catalog> {
-  catalogPromise ??= loadResource('fonts/text-fonts.json').then((b) => {
+  catalogPromise ??= loadResource('textfonts/text-fonts.json').then((b) => {
     catalogSync = JSON.parse(new TextDecoder().decode(b)) as Catalog
     return catalogSync
   })
@@ -228,10 +230,12 @@ export function loadBundledFont(file: string): Promise<TextFont> {
   let p = fontCache.get(file)
   if (!p) {
     p = (async () => {
-      const [hb, bytes, catalog] = await Promise.all([loadHarfBuzz(), loadResource(`fonts/${file}`), getCatalog()])
-      let coverage: Coverage | undefined
-      for (const f of catalog.families) for (const face of f.faces) if (face.file === file) coverage = new Coverage(face.ranges)
-      return new TextFont(bytes, hb, `bundled:${file}`, { coverage })
+      const catalog = await getCatalog()
+      let face: FaceInfo | undefined
+      for (const f of catalog.families) for (const fc of f.faces) if (fc.file === file) face = fc
+      if (!face) throw new Error(`Unknown bundled font: ${file}`)
+      const [hb, bytes] = await Promise.all([loadHarfBuzz(), loadResource(`${face.dir}/${file}`)])
+      return new TextFont(bytes, hb, `bundled:${file}`, { coverage: new Coverage(face.ranges) })
     })()
     p.catch(() => fontCache.delete(file))
     fontCache.set(file, p)
@@ -258,8 +262,9 @@ export interface FontCandidate {
   id: string
   family: string
   category: FontCategory
-  /** File name in resources/fonts for bundled fonts. */
+  /** File name for bundled fonts and the resource folder it lives in (`fonts` or `textfonts`). */
   file?: string
+  dir?: string
   /** Does the font have a glyph for this code point? Never loads the font. */
   covers(cp: number): boolean
   load(): Promise<TextFont>
@@ -382,6 +387,7 @@ function bundledCandidate(family: FamilyInfo, weight: number, italic: boolean): 
       family: family.name,
       category: family.category,
       file: face.file,
+      dir: face.dir,
       covers: (cp) => cov.has(cp),
       load: () => loadBundledFont(face.file),
       synthBold,

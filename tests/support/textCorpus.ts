@@ -17,7 +17,7 @@ export interface CorpusItem {
   /** Chromium cannot produce this layout (kashida justification): only sanity-checked, not compared. */
   noReference?: boolean
   /** PDF.js is known to misplace parts of these (see docs/text-engine.md "PDF.js quirks"). */
-  pdfjsQuirk?: 'combining-marks' | 'neutral-bidi'
+  pdfjsQuirk?: 'combining-marks' | 'neutral-bidi' | 'angle-brackets'
 }
 
 const arLong =
@@ -42,7 +42,7 @@ export const CORPUS: CorpusItem[] = [
   { id: 'he-niqqud', label: 'Hebrew with niqqud', text: 'בְּרֵאשִׁית בָּרָא אֱלֹהִים', fonts: ['Noto Sans Hebrew'], size: 28 },
   { id: 'mixed-rtl', label: 'Arabic with English, numbers, punctuation', text: 'سعر المنتج 250 ريال (شامل الضريبة) حوالي 12.5% من ABC-123', fonts: ['Noto Naskh Arabic', 'Noto Sans'], direction: 'rtl' },
   { id: 'ar-indic-digits', label: 'Arabic with Arabic-Indic and Western digits', text: 'في عام ٢٠٢٤ بلغ السعر ١٢٥٫٥٠ ريالا (أي 33.4 دولارا) بزيادة ٧٪ عن 2023', fonts: ['Noto Naskh Arabic'] },
-  { id: 'ar-mirroring', label: 'Arabic with mirrored brackets, quotes and guillemets', text: 'قال: «مرحبا (بالعالم) [الجميل] {الكبير}» ثم "انصرف" — <نهاية>', fonts: ['Noto Naskh Arabic', 'Noto Sans'], size: 20 },
+  { id: 'ar-mirroring', label: 'Arabic with mirrored brackets, quotes and guillemets', text: 'قال: «مرحبا (بالعالم) [الجميل] {الكبير}» ثم "انصرف" — <نهاية>', fonts: ['Noto Naskh Arabic', 'Noto Sans'], size: 20, pdfjsQuirk: 'angle-brackets' },
   { id: 'ar-mixed-wrap', label: 'Arabic paragraph with English, digits and punctuation, wrapped, right aligned', text: 'تم إصدار الإصدار 2.5.1 من برنامج PDF Editor يوم 12/03/2024 (الساعة 10:30) وهو يدعم الكتابة من اليمين إلى اليسار، كما يدعم الأرقام العربية ٠١٢٣٤٥٦٧٨٩ والغربية 0123456789 في نفس السطر.', fonts: ['Noto Naskh Arabic', 'Noto Sans'], width: 260, size: 15 },
   { id: 'he-mixed-wrap', label: 'Hebrew paragraph with English and numbers, wrapped', text: 'גרסה 3.1 של Epdf יצאה ב-12/03/2024 (בשעה 10:30) ותומכת בכתיבה מימין לשמאל, במספרים 123 ובמילים באנגלית בתוך המשפט.', fonts: ['Noto Sans Hebrew', 'Noto Sans'], width: 240, size: 15 },
   { id: 'mixed-ltr', label: 'English with Arabic', text: 'The price is 250 ريال and the code is ABC-123 (مثال جميل) ok', fonts: ['Noto Sans', 'Noto Naskh Arabic'], direction: 'ltr' },
