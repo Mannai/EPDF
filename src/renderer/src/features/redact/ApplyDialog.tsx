@@ -97,7 +97,7 @@ export function RedactDialog(): JSX.Element | null {
               <input type="radio" name="redact-overlay" checked={settings.overlay === 'custom'} onChange={() => patch({ overlay: 'custom' })} />
               <span>Custom text</span>
             </label>
-            <input aria-label="Custom overlay text" className="field w-40 select-text" disabled={settings.overlay !== 'custom'} value={settings.custom} maxLength={40} onChange={(e) => patch({ custom: e.target.value })} />
+            <input aria-label="Custom overlay text" dir="auto" className="field w-40 select-text" disabled={settings.overlay !== 'custom'} value={settings.custom} maxLength={40} onChange={(e) => patch({ custom: e.target.value })} />
           </div>
         </fieldset>
 

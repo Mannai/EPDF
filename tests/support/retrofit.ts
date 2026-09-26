@@ -32,8 +32,13 @@ export async function appearanceTexts(bytes: Uint8Array): Promise<string[]> {
 
 /** Like `appearanceTexts`, with the full page text model (geometry in display space) of every page. */
 export async function appearanceModels(bytes: Uint8Array): Promise<ReturnType<typeof buildPageText>[]> {
+  const flat = await PDFDocument.load(await appearanceOnlyPdf(bytes), { updateMetadata: false })
+  return flat.getPages().map((_, i) => buildPageText(flat, i))
+}
+
+/** The document with every page's content replaced by what its annotations' normal appearances paint (flattened). */
+export async function appearanceOnlyPdf(bytes: Uint8Array): Promise<Uint8Array> {
   const pdf = await PDFDocument.load(bytes, { updateMetadata: false })
-  const out: ReturnType<typeof buildPageText>[] = []
   for (let i = 0; i < pdf.getPageCount(); i++) {
     const page = pdf.getPage(i)
     const annots = page.node.Annots()
@@ -75,9 +80,7 @@ export async function appearanceModels(bytes: Uint8Array): Promise<ReturnType<ty
     page.node.set(PDFName.of('Resources'), pdf.context.obj({ XObject: xobjects }))
     page.node.delete(PDFName.of('Annots'))
   }
-  const flat = await PDFDocument.load(await pdf.save({ updateFieldAppearances: false }), { updateMetadata: false })
-  for (let i = 0; i < flat.getPageCount(); i++) out.push(buildPageText(flat, i))
-  return out
+  return pdf.save({ updateFieldAppearances: false })
 }
 
 /** Every Type0 font object of a document. */
@@ -89,7 +92,9 @@ export function type0Fonts(pdf: PDFDocument): PDFDict[] {
 
 /** Annotations of page `n` (1-based) as PDF.js (legacy build, Node) reads them. */
 export async function pdfjsAnnotations(bytes: Uint8Array, n = 1): Promise<Record<string, unknown>[]> {
-  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  // (a native import: Playwright's transform would turn `import()` into `require`, which cannot load this ES module)
+  const dynImport = new Function('s', 'return import(s)') as (s: string) => Promise<typeof import('pdfjs-dist')>
+  const pdfjs = await dynImport('pdfjs-dist/legacy/build/pdf.mjs')
   const task = pdfjs.getDocument({ data: bytes.slice(), useSystemFonts: false, verbosity: 0, disableFontFace: true })
   const doc = await task.promise
   try {
