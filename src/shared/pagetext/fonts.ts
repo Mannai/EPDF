@@ -2,7 +2,7 @@ import { Font, FontNames } from '@pdf-lib/standard-fonts'
 import { PDFArray, PDFDict, PDFName, PDFNumber, PDFStream } from 'pdf-lib'
 import { cmapCid, cmapUnicode, parseCMap, splitCodes, type CMap, type CodeSpaceRange } from '../../renderer/src/features/textedit/pdfcontent/cmap'
 import { STANDARD, WIN_ANSI, baseEncoding, glyphNameForChar, symbolEncoding } from '../../renderer/src/features/textedit/pdfcontent/encodings'
-import { standardFontFor } from '../../renderer/src/features/textedit/pdfcontent/fonts'
+import { standardFontFor, stripSubset, styleOf } from '../../renderer/src/features/textedit/pdfcontent/fonts'
 import { darr, ddict, dget, dname, dnum, dstream, nameText, numbers, streamBytes } from '../../renderer/src/features/textedit/pdfcontent/pdfutil'
 import { unicodeForGlyphName } from './glyphnames'
 import { readSfnt, type Sfnt } from './sfnt'
@@ -39,6 +39,8 @@ export interface DecodedGlyph {
 export interface TextFont {
   key: number
   name: string
+  bold: boolean
+  italic: boolean
   vertical: boolean
   type3: boolean
   /** Ascent/descent per unit font size (descent negative). */
@@ -71,6 +73,8 @@ export function brokenFont(name: string, why: string): TextFont {
   return {
     key: ++fontKeys,
     name,
+    bold: false,
+    italic: false,
     vertical: false,
     type3: false,
     ascent: 0.8,
@@ -99,12 +103,21 @@ interface Descriptor {
   ascent?: number
   descent?: number
   missingWidth?: number
+  italicAngle?: number
+  weight?: number
   file?: { bytes: Uint8Array; kind: 'FontFile' | 'FontFile2' | 'FontFile3'; subtype?: string }
 }
 
 function readDescriptor(d: PDFDict | undefined): Descriptor {
   const fd = ddict(d, 'FontDescriptor')
-  const out: Descriptor = { flags: dnum(fd, 'Flags') ?? 0, ascent: dnum(fd, 'Ascent'), descent: dnum(fd, 'Descent'), missingWidth: dnum(fd, 'MissingWidth') }
+  const out: Descriptor = {
+    flags: dnum(fd, 'Flags') ?? 0,
+    ascent: dnum(fd, 'Ascent'),
+    descent: dnum(fd, 'Descent'),
+    missingWidth: dnum(fd, 'MissingWidth'),
+    italicAngle: dnum(fd, 'ItalicAngle'),
+    weight: dnum(fd, 'FontWeight')
+  }
   for (const kind of ['FontFile2', 'FontFile3', 'FontFile'] as const) {
     const s = dstream(fd, kind)
     if (!s) continue
@@ -273,9 +286,12 @@ function loadSimple(d: PDFDict): TextFont {
     descent = t3desc !== undefined && t3desc < 0 && t3desc > -0.6 ? t3desc : -0.2
   } else ({ ascent, descent } = metrics(desc, stdFont))
   const ink = inkFn(sfnt)
+  const style = styleOf(baseFont, desc.flags, desc.italicAngle, desc.weight)
   return {
     key: ++fontKeys,
-    name: baseFont,
+    name: stripSubset(baseFont),
+    bold: style.bold,
+    italic: style.italic,
     vertical: false,
     type3: subtype === 'Type3',
     ascent,
@@ -412,9 +428,12 @@ function loadType0(d: PDFDict): TextFont {
   }
   const { ascent, descent } = metrics(desc, undefined)
   const ink = inkFn(sfnt)
+  const style = styleOf(baseFont, desc.flags, desc.italicAngle, desc.weight)
   return {
     key: ++fontKeys,
-    name: baseFont,
+    name: stripSubset(baseFont),
+    bold: style.bold,
+    italic: style.italic,
     vertical,
     type3: false,
     ascent,

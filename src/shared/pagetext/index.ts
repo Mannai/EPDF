@@ -6,6 +6,6 @@
 export { buildPageText, modelFromInterpretation, type BuildOptions } from './build'
 export { interpretPage, pageGeometry, type Glyph, type Interpretation, type PageGeometry } from './interpret'
 export { hasComplexScript, hasRtlChar, normalizeGlyphText } from './unicode'
-export { visualToLogicalOrder } from './visual'
+export { visualToLogicalOrder, visualToLogicalText } from './visual'
 export * from './query'
 export type { Box, PageTextLine, PageTextModel, PageTextStats } from './types'

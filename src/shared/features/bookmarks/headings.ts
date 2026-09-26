@@ -1,3 +1,4 @@
+import { normalizeGlyphText } from '../../pagetext/unicode'
 import { isRtlCodePoint, rtlRatio, visualToLogical, type TextLine } from '../textlines'
 
 /**
@@ -69,15 +70,13 @@ function asciiDigits(s: string): string {
   return s.replace(/[٠-٩]/g, (c) => String(c.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/g, (c) => String(c.charCodeAt(0) - 0x06f0))
 }
 
-const PRESENTATION_FORMS = /[\uFB50-\uFDFF\uFE70-\uFEFF]/
-
 /**
  * Arabic text from many producers (Chromium, Word) comes out of the font's /ToUnicode as shaped presentation
- * forms (U+FE70..U+FEFF: initial, medial, final and ligature glyphs). NFKC turns them back into the base letters
- * readers would type and search for.
+ * forms (U+FE70..U+FEFF: initial, medial, final and ligature glyphs). They become the base letters readers would
+ * type and search for, with the same normalisation the page text model applies to glyph text.
  */
 export function plainArabic(s: string): string {
-  return PRESENTATION_FORMS.test(s) ? s.normalize('NFKC') : s
+  return normalizeGlyphText(s)
 }
 
 const ARABIC_ONLY = /[\u0629\u0623\u0625\u0649\u064A\u0643]/ // teh marbuta, hamza-alefs, alef maksura, Arabic yeh and kaf

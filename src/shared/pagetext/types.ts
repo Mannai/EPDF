@@ -17,6 +17,12 @@ export interface PageTextLine {
   angle: number
   /** Font size (em) in points. */
   size: number
+  /** Position of the baseline across the line direction (for horizontal lines: the baseline's y). */
+  baseline: number
+  /** Dominant font of the line (BaseFont without subset prefix) and its style. */
+  font: string
+  bold: boolean
+  italic: boolean
   /** Axis-aligned bounds. */
   x0: number
   y0: number
@@ -49,6 +55,8 @@ export interface PageTextModel {
   width: number
   height: number
   rotation: number
+  /** PDF user space -> display space (a, b, c, d, e, f); invert it to write annotations or redaction marks. */
+  transform: number[]
   /** Logical text: lines in reading order separated by '\n'. */
   text: string
   lines: PageTextLine[]

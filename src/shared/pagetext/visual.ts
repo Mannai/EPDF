@@ -47,6 +47,7 @@ type Cls = 'R' | 'L' | 'N' | 'D'
 
 const RTL_CHAR = /[֐-ࣿיִ-﷿ﹰ-ﻼ\u{10800}-\u{10fff}\u{1e800}-\u{1efff}]/u
 const LTR_CHAR = /\p{L}/u
+const RTL_OR_CONTROL = /[֐-ࣿיִ-﷿ﹰ-ﻼ‏‪-‮⁦-⁩؜\u{10800}-\u{10fff}\u{1e800}-\u{1efff}]/u
 const DIGIT = /[\p{Nd}]/u
 
 function classOf(text: string): Cls {
@@ -256,6 +257,8 @@ export function visualToLogicalOrder(units: VisualUnit[], para: 0 | 1): LogicalO
   const n = units.length
   if (n === 0) return { order: [], levels: [], mirror: [], exact: true }
   const noMirror = new Array<boolean>(n).fill(false)
+  // fast path: a left-to-right line without right-to-left letters or bidi controls reads as drawn
+  if (para === 0 && !units.some((u) => RTL_OR_CONTROL.test(u.text))) return { order: units.map((_, i) => i), levels: new Array<number>(n).fill(0), mirror: noMirror, exact: true }
   const budget = { n: 600 }
   const first = solve(units, para, noMirror, budget)
   const candidates: Solution[] = [first]
@@ -281,7 +284,61 @@ export function visualToLogicalOrder(units: VisualUnit[], para: 0 | 1): LogicalO
   const mirrored = (s: Solution): number => s.mirror.filter(Boolean).length
   candidates.sort((a, b) => Number(b.exact) - Number(a.exact) || a.imbalance - b.imbalance || mirrored(a) - mirrored(b) || b.score - a.score)
   const c = candidates[0]
+  // No logical text displays like this under the bidi algorithm: the producer did not use it. The usual non-conforming
+  // producer reverses a right-to-left line and keeps each left-to-right run (words, numbers) in order.
+  if (!c.exact && para === 1) return simpleReversal(units)
   return { order: c.order, levels: c.levels, mirror: c.mirror, exact: c.exact }
 }
 
+const JOINERS = '.,:/-_%@#+&=?'
+
+/** Reverse the line, restore left-to-right runs, and mirror brackets outside them if that balances them. */
+function simpleReversal(units: VisualUnit[]): LogicalOrder {
+  const n = units.length
+  const cls = units.map((u) => classOf(u.text))
+  const ltrish = (i: number): boolean => cls[i] === 'L' || cls[i] === 'D'
+  const rev = units.map((_, i) => n - 1 - i)
+  const order: number[] = []
+  const levels = new Array<number>(n).fill(1)
+  for (let k = 0; k < n; ) {
+    if (!ltrish(rev[k])) {
+      order.push(rev[k++])
+      continue
+    }
+    let j = k
+    while (j < n && (ltrish(rev[j]) || (j > k && j + 1 < n && JOINERS.includes(units[rev[j]].text) && ltrish(rev[j + 1])))) j++
+    const run = rev.slice(k, j).reverse()
+    for (const i of run) levels[i] = 2
+    order.push(...run)
+    k = j
+  }
+  const plain = new Array<boolean>(n).fill(false)
+  const flip = units.map((u, i) => levels[i] === 1 && isBracketish(u.text))
+  const text = (m: boolean[]): string => order.map((i) => (m[i] ? mirrorText(units[i].text) : units[i].text)).join('')
+  const mirror = flip.some(Boolean) && bracketImbalance(text(flip)) < bracketImbalance(text(plain)) ? flip : plain
+  return { order, levels, mirror, exact: false }
+}
+
 export const mirrorText = (t: string): string => [...t].map(mirrorChar).join('')
+
+/**
+ * Logical order of a string stored in visual order (leftmost character first), e.g. a line some other extractor read
+ * glyph by glyph. Characters are the units (combining marks stay with their base). `dir: 'auto'` = right-to-left when
+ * right-to-left letters outnumber left-to-right ones. Presentation forms are left as they are (see normalizeGlyphText).
+ */
+export function visualToLogicalText(visual: string, dir: 'ltr' | 'rtl' | 'auto' = 'auto'): string {
+  const units: VisualUnit[] = []
+  for (const m of visual.matchAll(/\P{M}\p{M}*|\p{M}+/gu)) units.push({ text: m[0], seq: units.length })
+  let para: 0 | 1
+  if (dir === 'auto') {
+    let r = 0
+    let l = 0
+    for (const ch of visual) {
+      if (RTL_CHAR.test(ch)) r++
+      else if (LTR_CHAR.test(ch)) l++
+    }
+    para = r > l ? 1 : 0
+  } else para = dir === 'rtl' ? 1 : 0
+  const res = visualToLogicalOrder(units, para)
+  return res.order.map((i) => (res.mirror[i] ? mirrorText(units[i].text) : units[i].text)).join('')
+}

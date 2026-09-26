@@ -68,6 +68,8 @@ interface Unit {
   glyphTexts?: string[]
   seq: number
   synthetic: boolean
+  /** Font key of the unit's (first) glyph. */
+  font: number
 }
 
 interface LineRec {
@@ -88,6 +90,8 @@ interface LineRec {
   /** per char: piece in the line frame */
   pieces: Piece[]
   exact: boolean
+  /** Dominant font key (most characters). */
+  font: number
 }
 
 const deg = (r: number): number => (r * 180) / Math.PI
@@ -350,7 +354,8 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
           block: -1,
           text: '',
           pieces: [],
-          exact: true
+          exact: true,
+          font: -1
         }
         fl.push(rec)
         seg = []
@@ -474,7 +479,7 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
           stats.actualText++
           const covered = l.anchors.slice(k, j)
           const text = ip.spans[si].text.normalize('NFC')
-          const u: Unit = { text, boxes: covered.map(piece), charBox: null, seq: Math.min(...covered.map((x) => glyphs[x.g].seq)), synthetic: false }
+          const u: Unit = { text, boxes: covered.map(piece), charBox: null, seq: Math.min(...covered.map((x) => glyphs[x.g].seq)), synthetic: false, font: g.font }
           if (covered.length > 1) {
             u.charBox = [] // aligned once the direction is known
             u.glyphTexts = covered.map((x) => glyphUnitText(x))
@@ -490,7 +495,7 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
       }
       // a glyph of a span we could not use keeps its own text
       const text = glyphUnitText(a).normalize('NFC')
-      units.push({ text, boxes: [piece(a)], charBox: null, seq: g.seq, synthetic: false })
+      units.push({ text, boxes: [piece(a)], charBox: null, seq: g.seq, synthetic: false, font: g.font })
       k++
     }
     // spaces
@@ -507,7 +512,7 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
         if (gap > SPACE_GAP * sz && !prevSpace && !curSpace) {
           const t0 = Math.min(prev.boxes[0].t0, u.boxes[0].t0)
           const t1 = Math.max(prev.boxes[0].t1, u.boxes[0].t1)
-          out.push({ text: ' ', boxes: [{ s0: pe, s1: us, t0, t1 }], charBox: null, seq: prev.seq, synthetic: true })
+          out.push({ text: ' ', boxes: [{ s0: pe, s1: us, t0, t1 }], charBox: null, seq: prev.seq, synthetic: true, font: prev.font })
         } else if (prevSpace && curSpace && isSpaceText(u.text) && isSpaceText(prev.text)) {
           prev.boxes.push(...u.boxes)
           continue
@@ -516,11 +521,15 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
       out.push(u)
     }
     l.units = out.filter((u) => u.text !== '')
+    const fontWeight = new Map<number, number>()
     for (const u of l.units) {
       const c = strongCounts(u.text)
       l.strong.r += c.r
       l.strong.l += c.l
+      if (!u.synthetic) fontWeight.set(u.font, (fontWeight.get(u.font) ?? 0) + u.text.length)
     }
+    let fw = -1
+    for (const [k, w] of fontWeight) if (w > fw) [fw, l.font] = [w, k]
     l.ownDir = l.strong.r !== l.strong.l
     l.dir = l.strong.r > l.strong.l ? 1 : 0
   }
@@ -694,12 +703,17 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
         }
       }
       text += l.text
+      const fi = ip.fonts.get(l.font)
       outLines.push({
         start,
         end: text.length,
         dir: l.dir ? 'rtl' : 'ltr',
         angle: f.angle,
         size: l.size,
+        baseline: l.t,
+        font: fi?.name ?? '',
+        bold: fi?.bold ?? false,
+        italic: fi?.italic ?? false,
         x0,
         y0,
         x1,
@@ -715,6 +729,7 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
     width: ip.width,
     height: ip.height,
     rotation: ip.rotation,
+    transform: [...ip.transform],
     text,
     lines: outLines,
     charQuad: Int32Array.from(charQuad),

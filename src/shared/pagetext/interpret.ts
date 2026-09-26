@@ -69,9 +69,17 @@ export interface PageGeometry {
   transform: Matrix
 }
 
+export interface FontInfo {
+  name: string
+  bold: boolean
+  italic: boolean
+}
+
 export interface Interpretation extends PageGeometry {
   glyphs: Glyph[]
   spans: Span[]
+  /** Fonts by `Glyph.font` key. */
+  fonts: Map<number, FontInfo>
   warnings: string[]
 }
 
@@ -178,6 +186,7 @@ function pdfObjText(o: PDFObject | undefined): string | undefined {
 class Walker {
   glyphs: Glyph[] = []
   spans: Span[] = []
+  fonts = new Map<number, FontInfo>()
   warnings: string[] = []
   private ops = 0
   private seq = 0
@@ -404,6 +413,7 @@ class Walker {
     reversed: boolean
   ): void {
     if (!(em > 0) || !Number.isFinite(ox + oy + ex + ey + len + top + bottom)) return
+    if (!this.fonts.has(font.key)) this.fonts.set(font.key, { name: font.name, bold: font.bold, italic: font.italic })
     const g: Glyph = {
       text: gl.text,
       known: gl.known,
@@ -506,5 +516,5 @@ export function interpretPage(pdf: PDFDocument, pageIndex: number): Interpretati
   }
   const g0: GState = { ctm: IDENTITY, text: { font: undefined, size: 0, tc: 0, tw: 0, th: 1, tl: 0, rise: 0, mode: 0 } }
   w.walk(parseLenient(all, w.warnings), res, g0, 0)
-  return { ...geom, glyphs: w.glyphs, spans: w.spans, warnings: w.warnings }
+  return { ...geom, glyphs: w.glyphs, spans: w.spans, fonts: w.fonts, warnings: w.warnings }
 }
