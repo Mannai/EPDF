@@ -95,9 +95,9 @@ export const hasRtlText = (s: string): boolean => /[֐-ࣿיִ-﷿ﹰ-ﻼ]/.test(
 
 /**
  * Shape one line. `dir`: the paragraph direction (`auto` = first strong character). With `justify`, the line is
- * stretched to that width (kashida in Arabic words first, then the spaces).
+ * stretched to that width by widening the spaces; with `kashida`, Arabic words are stretched with tatweel first.
  */
-export function shapeLine(cat: FontCatalog, items: LineItem[], dir: 'ltr' | 'rtl' | 'auto', justify?: number): ShapedLine {
+export function shapeLine(cat: FontCatalog, items: LineItem[], dir: 'ltr' | 'rtl' | 'auto', justify?: number, kashida = false): ShapedLine {
   let text = ''
   const starts: number[] = []
   for (const it of items) {
@@ -144,7 +144,7 @@ export function shapeLine(cat: FontCatalog, items: LineItem[], dir: 'ltr' | 'rtl
     let extra = justify - contentW
     if (extra > 0.01) {
       const line: Line = { runs, y: 0, x: 0, width: contentW, height: 0, baseline: 0, ascent: 0, descent: 0, textStart: 0, textEnd: n, rtl: direction === 'rtl', last: false, paragraph: 0 }
-      extra -= kashidaJustify(line, extra, text)
+      if (kashida) extra -= kashidaJustify(line, extra, text)
       const spaces: LayoutGlyph[] = []
       for (const r of runs) for (const g of r.glyphs) if (g.space) spaces.push(g)
       if (extra > 0.01 && spaces.length) for (const g of spaces) g.advance += extra / spaces.length

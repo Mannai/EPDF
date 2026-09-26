@@ -398,7 +398,8 @@ class DocxReader {
       widowControl: m.widowControl !== false,
       shading: m.shading,
       borders: Object.keys(borders).length ? borders : undefined,
-      rtl: m.rtl
+      rtl: m.rtl,
+      kashida: m.kashida || undefined
     }
   }
 

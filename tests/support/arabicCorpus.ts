@@ -41,6 +41,8 @@ export const T = {
   p2c: ' في عام 2024 في المنامة، البحرين.',
   justify:
     'يهدف هذا المشروع إلى تطوير برنامج متكامل لتحرير ملفات المستندات وتحويلها، مع دعم كامل للغة العربية واتجاه الكتابة من اليمين إلى اليسار، بحيث تظهر الحروف متصلة بشكل صحيح وتبقى الكلمات بترتيبها المنطقي عند النسخ والبحث داخل الملف، سواء كان النص قصيرا أو طويلا يمتد على عدة أسطر.',
+  kashida:
+    'وهذه فقرة مضبوطة بالكشيدة: تمتد فيها الحروف المتصلة بدلا من توسيع المسافات بين الكلمات، كما في الكتابة العربية التقليدية التي نراها في الكتب والصحف والمجلات.',
   end: 'هذه الفقرة محاذاة إلى النهاية.',
   center: 'فقرة في الوسط',
   bullets: ['البند الأول', 'البند الثاني', 'البند الثالث'],
@@ -121,6 +123,7 @@ export function docxDocument(opts: { pages?: number } = {}): CorpusDoc {
     bp(rr(T.p1), '<w:jc w:val="left"/>') +
     bp(rr(T.p2a) + rr(T.p2b, '<w:b/><w:bCs/>') + rr(T.p2c)) +
     bp(rr(T.justify), '<w:jc w:val="both"/>') +
+    bp(rr(T.kashida), '<w:jc w:val="mediumKashida"/>') +
     bp(rr(T.end), '<w:jc w:val="right"/>') +
     bp(rr(T.center), '<w:jc w:val="center"/>') +
     T.bullets.map((t) => item(1, t)).join('') +
@@ -145,6 +148,7 @@ export function docxDocument(opts: { pages?: number } = {}): CorpusDoc {
     { text: T.p1, side: 'right' },
     { text: T.p2a + T.p2b + T.p2c, side: 'right', oneLine: true },
     { text: T.justify },
+    { text: T.kashida },
     { text: T.end, side: 'left', oneLine: true },
     { text: T.center, side: 'center', oneLine: true },
     ...T.bullets.map((t) => ({ text: `• ${t}`, side: 'right' as const, oneLine: true })),

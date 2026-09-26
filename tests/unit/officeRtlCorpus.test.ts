@@ -31,8 +31,8 @@ const EDGE_TOL = 6
 /** A line is "centred" when its left and right gaps differ by less than this (points). */
 const CENTER_TOL = 6
 
-/** Comparison normalisation: NFC, bidi/format marks removed, whitespace collapsed. */
-const norm = (s: string): string => s.normalize('NFC').replace(/[‎‏؜‪-‮⁦-⁩]/g, '').replace(/\s+/g, ' ').trim()
+/** Comparison normalisation: NFC, bidi/format marks and kashida (tatweel, LibreOffice writes it into its text) removed, whitespace collapsed. */
+const norm = (s: string): string => s.normalize('NFC').replace(/[‎‏؜‪-‮⁦-⁩ـ]/g, '').replace(/\s+/g, ' ').trim()
 const words = (s: string): string => norm(s).split(' ').sort().join(' ')
 
 interface PLine {

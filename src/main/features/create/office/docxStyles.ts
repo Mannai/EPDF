@@ -60,6 +60,8 @@ export interface PPr {
   pStyle?: string
   rtl?: boolean
   contextualSpacing?: boolean
+  /** jc lowKashida/mediumKashida/highKashida */
+  kashida?: boolean
 }
 
 export interface TblPrStyle {
@@ -345,6 +347,7 @@ export function parsePPr(n: XNode | undefined, theme: Theme): PPr {
         const v = attr(c, 'val')
         // Logical values: in a bidi paragraph Word reads left/start as the right edge (the layout mirrors them).
         p.align = v === 'center' ? 'center' : v === 'right' || v === 'end' ? 'right' : v === 'both' || v === 'distribute' || v === 'justify' || v === 'lowKashida' || v === 'mediumKashida' || v === 'highKashida' || v === 'thaiDistribute' ? 'justify' : 'left'
+        p.kashida = v === 'lowKashida' || v === 'mediumKashida' || v === 'highKashida'
         break
       }
       case 'spacing': {

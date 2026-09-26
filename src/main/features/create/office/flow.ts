@@ -98,6 +98,11 @@ export interface ParaProps {
    * list marker are all logical and mirrored by the layout.
    */
   rtl?: boolean
+  /**
+   * Justify Arabic by stretching words with kashida (tatweel) before widening spaces: Word's "Justify Low/Medium/
+   * High" (w:jc lowKashida...), RTF \qk. Plain justification (w:jc both) widens the spaces only, as Word does.
+   */
+  kashida?: boolean
 }
 
 export const DEFAULT_PARA_PROPS: ParaProps = {

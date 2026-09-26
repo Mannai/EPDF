@@ -109,13 +109,17 @@ describe('line building', () => {
     expect(xs[1]).toBeGreaterThan(xs[2]!) // the Latin word before the rest, further left
   })
 
-  it('justifies Arabic with kashida (tatweel glyphs) before widening spaces', () => {
+  it('kashida justification stretches Arabic words with tatweel; plain justification only widens spaces', () => {
     const st = { face: cat.face('Arial', false, false), size: 14, color: '#000000' }
-    const natural = shapeLine(cat, [{ text: 'يهدف هذا المشروع إلى تطوير برنامج متكامل', style: st }], 'rtl')
-    const just = shapeLine(cat, [{ text: 'يهدف هذا المشروع إلى تطوير برنامج متكامل', style: st }], 'rtl', natural.width + 30)
-    expect(just.width).toBeCloseTo(natural.width + 30, 1)
-    const tatweels = just.runs.flatMap((r) => r.glyphs).filter((g) => g.chars === 0 && !g.space)
-    expect(tatweels.length).toBeGreaterThan(0)
+    const text = 'يهدف هذا المشروع إلى تطوير برنامج متكامل'
+    const natural = shapeLine(cat, [{ text, style: st }], 'rtl')
+    const kashida = shapeLine(cat, [{ text, style: st }], 'rtl', natural.width + 30, true)
+    const count = (l: typeof natural): number => l.runs.reduce((s, r) => s + r.glyphs.length, 0)
+    expect(kashida.width).toBeCloseTo(natural.width + 30, 1)
+    expect(count(kashida)).toBeGreaterThan(count(natural)) // tatweel glyphs inserted
+    const spaces = shapeLine(cat, [{ text, style: st }], 'rtl', natural.width + 30)
+    expect(spaces.width).toBeCloseTo(natural.width + 30, 1)
+    expect(count(spaces)).toBe(count(natural))
   })
 })
 
@@ -212,6 +216,16 @@ describe('RTF', () => {
 })
 
 describe('XLSX', () => {
+  it('a right-to-left sheet: column A on the right, cell text in its own reading order (context: first strong character)', async () => {
+    const { xlsxDocument, SHEET } = await import('../support/arabicCorpus')
+    const { models: ms } = await models((await convert('r.xlsx', xlsxDocument().bytes)).bytes)
+    const m = ms[0]!
+    expect(xOf(m, SHEET.header[0]!)).toBeGreaterThan(xOf(m, SHEET.header[1]!))
+    // "ملاحظة: … (BHD)" starts with Arabic: right-to-left, so its first word is rightmost and "(BHD)" at the left end
+    // (LibreOffice lays this cell out left to right and puts "(BHD)" on the right; Excel's readingOrder 0 = context)
+    expect(xOf(m, 'ملاحظة')).toBeGreaterThan(xOf(m, 'BHD'))
+  })
+
   it('"General" alignment follows the text direction in a left-to-right sheet', async () => {
     const { xlsxDocument } = await import('../support/arabicCorpus')
     // flip the corpus sheet to left-to-right: Arabic text is still right-aligned in its cell, English left-aligned
@@ -241,4 +255,26 @@ describe('performance', () => {
     expect(r.pages).toBeGreaterThanOrEqual(50)
     expect(ms).toBeLessThan(60_000)
   }, 120_000)
+
+  it('50+ pages of varied Arabic prose (justified, mixed with numbers and Latin words) convert in reasonable time', async () => {
+    const vocab = (T.justify + ' ' + T.p1 + ' ' + T.kashida + ' ' + T.p2c + ' الشركة الوزارة التقرير السنوي المالية المشاريع الصغيرة والمتوسطة التمويل المواطنين الموظفين الإدارة العامة الخدمات الإلكترونية')
+      .split(/\s+/)
+      .filter(Boolean)
+    let seed = 7
+    const rnd = (): number => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648)
+    const paras: string[] = []
+    for (let i = 0; i < 760; i++) {
+      const n = 25 + Math.floor(rnd() * 30)
+      const words = Array.from({ length: n }, () => vocab[Math.floor(rnd() * vocab.length)]!)
+      if (i % 5 === 0) words.splice(3, 0, `${1000 + i}`, 'Epdf')
+      paras.push(`<w:p><w:pPr><w:bidi/><w:jc w:val="both"/></w:pPr><w:r><w:rPr><w:rtl/></w:rPr><w:t xml:space="preserve">${words.join(' ')}</w:t></w:r></w:p>`)
+    }
+    const bytes = buildDocx({ body: paras.join(''), sectPr: '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708"/><w:bidi/></w:sectPr>' })
+    const t0 = performance.now()
+    const r = await convert('prose.docx', bytes)
+    const ms = performance.now() - t0
+    console.log(`[perf] varied Arabic prose DOCX: ${r.pages} pages, ${(r.bytes.length / 1024).toFixed(0)} KB out, ${ms.toFixed(0)} ms`)
+    expect(r.pages).toBeGreaterThanOrEqual(50)
+    expect(ms).toBeLessThan(90_000)
+  }, 180_000)
 })

@@ -704,7 +704,7 @@ function emitLine(ctx: LayoutContext, ops: Op[], ln: Line, props: ParaProps, lef
     }
     const x = Math.max(seg.x, prevEnd)
     const target = justify && si === segs.length - 1 ? Math.max(0, avail - x) : undefined
-    const line = shapeLine(ctx.catalog, items, rtl ? 'rtl' : 'ltr', target)
+    const line = shapeLine(ctx.catalog, items, rtl ? 'rtl' : 'ltr', target, !!props.kashida)
     shaped.push({ seg, line, atomOf, x })
     prevEnd = x + line.width
   })

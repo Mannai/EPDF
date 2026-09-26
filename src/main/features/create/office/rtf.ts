@@ -225,6 +225,7 @@ interface ParaFmt {
   ls: number
   ilvl: number
   rtl: boolean
+  kashida?: boolean
 }
 
 type Dest =
@@ -651,6 +652,7 @@ export function readRtf(bytes: Uint8Array, env: ConvertEnv): FlowDocument {
       widowControl: p.widow,
       shading: p.shade > 0 ? colorOf(p.shade) : undefined,
       rtl: p.rtl || undefined,
+      kashida: p.kashida || undefined,
       marker
     }
     const bd = p.bdr
@@ -974,6 +976,12 @@ export function readRtf(bytes: Uint8Array, env: ConvertEnv): FlowDocument {
       case 'qj':
       case 'qd':
         pf.qa = 'justify'
+        pf.kashida = false
+        return true
+      case 'qk':
+        // kashida justification (\qk0 low, \qk10 medium, \qk20 high)
+        pf.qa = 'justify'
+        pf.kashida = true
         return true
       case 'li':
       case 'lin':
