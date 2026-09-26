@@ -194,12 +194,7 @@ export class EmbeddedFont {
     if (!isCff) cid.CIDToGIDMap = 'Identity'
     ctx.assign(this.descendantRef, ctx.obj(cid as never))
     const toUni = new Map<number, string>()
-    for (const [code, g] of this.glyphs) {
-      if (g.text) toUni.set(code, g.text)
-      else if (process.env.TEXT_EXP_ZERO === 'empty') toUni.set(code, '')
-      else if (process.env.TEXT_EXP_ZERO === 'zwnj') toUni.set(code, '‌')
-      else if (process.env.TEXT_EXP_ZERO === 'zwsp') toUni.set(code, '​')
-    }
+    for (const [code, g] of this.glyphs) if (g.text) toUni.set(code, g.text)
     ctx.assign(this.toUnicodeRef, ctx.flateStream(buildToUnicode(toUni)))
     ctx.assign(
       this.ref,
