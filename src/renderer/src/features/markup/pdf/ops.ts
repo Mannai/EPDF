@@ -4,15 +4,14 @@ import {
   apRotation,
   buildImageStamp,
   colorOp,
+  freeTextNeededHeight,
   infoOfDict,
   installAppearance,
-  layoutFreeText,
   NOTE_SIZE,
   regenerateAppearance,
   stampSize
 } from './appearance'
 import { clampOpacity, formatPdfDate, newAnnotName, sanitizeColor, isOurName, type Color } from './basics'
-import { stdFont } from './fonts'
 import {
   clampCenter,
   geomOfPage,
@@ -255,11 +254,9 @@ export function daString(color: Color, size: number): string {
 
 export async function addFreeText(pdf: PDFDocument, pageIndex: number, o: FreeTextOptions): Promise<string> {
   const g = geomOfPage(page(pdf, pageIndex))
-  const font = await stdFont(pdf)
   let rect = normalizeRect(o.rect)
   const [w, h] = uprightSize(rect, g.rotation)
-  const lay = layoutFreeText(font, o.text, w, o.fontSize, o.borderWidth)
-  rect = growRectDown(rect, g.rotation, lay.neededHeight - h)
+  rect = growRectDown(rect, g.rotation, (await freeTextNeededHeight(pdf, o.text, w, o.fontSize, o.borderWidth)) - h)
   const { dict, ref } = createAnnot(pdf, pageIndex, {
     ...o,
     subtype: 'FreeText',
@@ -464,10 +461,9 @@ export async function updateAnnotation(pdf: PDFDocument, id: string, patch: Patc
 async function growToFit(pdf: PDFDocument, d: PDFDict, rotation: number): Promise<void> {
   const info = infoOfDict(d)
   if (!info) return
-  const font = await stdFont(pdf)
   const [w, h] = uprightSize(info.rect, rotation)
-  const lay = layoutFreeText(font, info.contents, w, info.fontSize, Math.max(0, info.borderWidth))
-  if (lay.neededHeight > h) setNumbers(pdf.context, d, 'Rect', growRectDown(info.rect, rotation, lay.neededHeight - h))
+  const needed = await freeTextNeededHeight(pdf, info.contents, w, info.fontSize, Math.max(0, info.borderWidth))
+  if (needed > h) setNumbers(pdf.context, d, 'Rect', growRectDown(info.rect, rotation, needed - h))
 }
 
 const translateFlat = (v: number[], dx: number, dy: number): number[] => v.map((n, i) => (i % 2 === 0 ? n + dx : n + dy))

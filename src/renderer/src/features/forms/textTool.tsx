@@ -193,6 +193,7 @@ function DraftBox({ docId, pageIndex, viewport, scale }: PageOverlayProps): JSX.
         className="absolute inset-0 m-0 block resize-none overflow-hidden border-0 bg-white/60 p-0 outline outline-1 outline-dashed outline-accent focus:outline-2"
         style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: size * scale, lineHeight: LINE_HEIGHT, color, colorScheme: 'light', userSelect: 'text' }}
         value={draft.text}
+        dir="auto"
         spellCheck={false}
         onChange={(e) => patch({ text: e.target.value })}
         onKeyDown={(e) => {

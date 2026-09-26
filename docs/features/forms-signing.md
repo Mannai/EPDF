@@ -24,10 +24,14 @@ Two related features that share code (`src/renderer/src/features/forms/` and `..
 * A value is committed when you **leave the field / press Enter / choose** (Ctrl+Enter in a multiline field;
   Escape abandons the edit) — one undo step per completed edit, labelled `Undo Fill “Field name”`, never per
   keystroke. Save writes it with the standard Save commands.
-* The value is written with pdf-lib's form API and **real appearance streams** are generated
-  (`form.updateFieldAppearances`), so other readers display it. Helvetica is used when it can encode the
-  text; otherwise the bundled Noto Sans (embedded as a subset). Characters that no bundled font contains
-  (CJK, Arabic, Hebrew, Indic, ...) are refused with a message instead of drawing empty boxes.
+* The value is written with pdf-lib's form API and **real appearance streams** are generated, so other readers
+  display it. A field whose text WinAnsi can encode gets pdf-lib's Helvetica appearance
+  (`form.updateFieldAppearances`) exactly as before; a field showing any other character (Arabic, Hebrew,
+  Cyrillic, Indic, Thai, CJK, ...) gets its appearance from the **text engine** (see "Right-to-left and other
+  scripts in fields" below). Only characters that no bundled font contains (e.g. Tibetan) are refused with a
+  message instead of drawing empty boxes.
+* The inputs on the page use `dir="auto"` and "start" alignment, so Arabic and Hebrew are typed right to left and
+  right-aligned, like the saved appearance.
 * Keyboard: **Tab / Shift+Tab** walk the fields in page order (top-to-bottom, left-to-right as displayed,
   also on rotated pages), across pages (the viewer scrolls to the next page). Read-only fields and buttons
   are skipped; a radio group is one stop and the arrow keys move inside it. Every field has an accessible
@@ -41,8 +45,11 @@ Two related features that share code (`src/renderer/src/features/forms/` and `..
 * Ribbon group **Forms**: **Add text**, **Check**, **Cross**, **Dot**, **Date**. Size (default 12) and color
   live in the ribbon. Click a page to start a text box; type; drag it by *Move*, resize with the corner
   handle (or the arrow keys on those handles); **Add to page** (or Ctrl+Enter) draws it into the page content
-  (`drawText`, wrapped to the box, one undo step). Escape cancels. Starting a second box or switching tools
-  writes the first one; empty boxes are dropped.
+  (wrapped to the box, one undo step). Escape cancels. Starting a second box or switching tools
+  writes the first one; empty boxes are dropped. Text WinAnsi can encode is drawn with Helvetica as before; any
+  other text with the text engine (`drawText` of `@shared/text`): shaped, right-to-left text right-aligned in the
+  box, the first baseline where the Helvetica path puts it, lines 1.2 × size apart. The date stamp and the date next
+  to a signature follow the same rule (e.g. an Arabic-locale date). The text box itself uses `dir="auto"`.
 * Check / cross / dot are vector paths (sharp at any zoom, no font). Date is today's date in the user's
   locale. Text and stamps are drawn upright on rotated pages. They are permanent page content (undoable until
   saved, and visible to text extraction/search after re-opening).
@@ -64,6 +71,57 @@ Two related features that share code (`src/renderer/src/features/forms/` and `..
   there is no plain-text fallback. Nothing is ever sent anywhere.
 * Channels (validated with zod, size limits: PNG ≤ 1.5 MB, sides ≤ 2400 px, name ≤ 60 chars, ≤ 24 items):
   `sign:list`, `sign:save`, `sign:delete`, `sign:status`, and `forms:font` (bundled fonts by *name* only).
+
+## Right-to-left and other scripts in fields
+
+`forms/appearance.ts` (`writeEngineAppearances`) draws the appearance of text fields (single line, multiline,
+comb, password, automatic size), combo boxes, list boxes and push buttons whose text WinAnsi cannot encode:
+
+* **/V** stays the logical string (UTF-16, as typed). `/RV` is dropped as before.
+* **/AP /N** is a form XObject with the widget's background and border (`/MK /BG /BC`, `/BS /W`), the rotation of
+  `/MK /R`, a clip, and `/Tx BMC … EMC` around the text, which is a nested **`makeTextXObject`** form of the engine:
+  shaped, bidi-ordered, subset Type0/Identity-H fonts with `/ToUnicode`, `/ActualText` on right-to-left lines. The
+  font family follows the field's `/DA` font (Helv/HeBo → sans, TiRo/TiBo → serif, Cour/CoBo → mono, bold where the
+  name says so; the metric-compatible Liberation fonts, then every script's Noto font as fallback).
+* **Alignment**: `/Q 1` centres, `/Q 2` right-aligns; `/Q 0` (the default, and what most producers write) means
+  *start*: left for left-to-right text, **right for right-to-left text**.
+* **Automatic size** (`0 Tf`): single line = as large as the box allows (width and height, measured by the engine);
+  multiline = the largest size up to 12 pt whose wrapped text fits the height; comb = every character within ¾ of a
+  cell; list boxes = up to 12 pt, the options fitting the height. `/DA` keeps `0 Tf`.
+* **Multiline** wraps with the engine's line breaking (UAX #14, Arabic, Thai/CJK dictionary breaks). **Comb** puts
+  one grapheme per cell, left to right in logical order. **Password** fields show one `*` per grapheme.
+* The field is marked clean afterwards, so pdf-lib's own Helvetica regeneration at save time leaves it alone.
+* A field that goes back to WinAnsi text gets pdf-lib's Helvetica appearance again. Our previous appearance stream
+  (marked `/EpdfTextAP`) and its nested text form are deleted when a field is redrawn; the old font subset of an
+  earlier edit step stays in the file (see limits).
+
+### AcroForm compatibility choice (/DA, /DR, NeedAppearances)
+
+Researched behaviour of other readers (not re-verified here: no Acrobat on this machine):
+
+* A reader shows a field's **existing** `/AP` as long as `/NeedAppearances` is not true; every reader does (PDF.js,
+  pdfium/Chrome, Acrobat, Preview, Windows' PDF engine).
+* With `/NeedAppearances true`, readers **regenerate** the appearance from `/V` and `/DA`. PDF.js and pdfium do that
+  without Arabic shaping or bidi (the value comes out as isolated letters left to right); Acrobat shapes it but needs a
+  font it can use. Other producers of RTL forms that set it (e.g. mPDF for "complex scripts") trade correct display
+  in Chrome/Firefox for Acrobat regeneration.
+* A reader that regenerates (on its own, or when the user edits the field in Acrobat) reads the font from `/DR` by the
+  `/DA` name. An embedded **subset** Type0/Identity-H font without a Unicode `cmap` cannot encode new text, so such a
+  reader substitutes a font (pdfkit's issue #1789 documents Acrobat doing exactly that); a complete font would be
+  hundreds of KB per script.
+
+Epdf's choice, for the most readers showing the right thing:
+
+1. **`/NeedAppearances` is never set** by filling: every reader shows the engine's correct appearance as it is.
+2. **`/DA` names the engine font that draws most of the text** (`/EpdfSans 12 Tf 0 g`, `EpdfSerifBd`, `EpdfMono`,
+   … with `_2`, `_3` when an earlier edit used the name for another subset), keeping the old size (0 = auto) and
+   colour, and **that font is added to `/AcroForm /DR /Font` under the same name**. So `/DA` always names a font that
+   exists in `/DR`, with a `/ToUnicode` map and the right glyphs for the current value; a reader that regenerates
+   for an edit gets an Arabic-capable font description and, where it cannot use the subset, substitutes (Acrobat
+   then shapes the text itself). The name also records the family/weight, so the form builder shows the style that
+   was chosen (`EpdfSerifBd` → Times bold).
+3. Latin fields keep pdf-lib's behaviour (Helvetica appearance; pdf-lib writes `/Helvetica` into `/DA` without a
+   `/DR` entry, as before this change).
 
 ## Files
 ```
@@ -105,10 +163,20 @@ dependency `pako` is MIT/Zlib). It is bundled into the renderer to embed the Uni
 * Comb fields are filled and rendered correctly in the saved appearance but are shown as a normal input
   while editing. A widget's own content rotation (`/MK /R`) is ignored in the on-screen input (the generated
   appearance honours it). Auto-sized fields (`0 Tf`) use an approximate size on screen.
-* When a field's appearance is regenerated, pdf-lib re-creates it with Helvetica (or Noto Sans), so a field
-  that used another font in its `/DA` changes typeface. `updateFieldAppearances` also creates appearances
-  for other fields that had none. A rich-text value (`/RV`) is replaced by the plain text you enter.
-* Unicode coverage is Latin/Greek/Cyrillic/Vietnamese (Noto Sans). Other scripts are refused, not drawn wrong.
+* When a field's appearance is regenerated, pdf-lib re-creates it with Helvetica (WinAnsi text) or the engine
+  draws it with the Liberation/Noto family matching its `/DA` (other text), so a field that used another font in
+  its `/DA` changes typeface. `updateFieldAppearances` also creates appearances for other fields that had none. A
+  rich-text value (`/RV`) is replaced by the plain text you enter.
+* Every script the bundled fonts cover is written (Arabic, Persian, Urdu, Hebrew, Indic, Thai, CJK, Cyrillic,
+  Greek, ...); characters no bundled font has (e.g. Tibetan) are refused, not drawn wrong. Not verified in Acrobat:
+  what it does when the user edits such a field there (see the compatibility choice above).
+* Each fill of a non-WinAnsi field in a new edit step embeds a new small font subset; the subset of the previous
+  step is no longer used but stays in the file (a few KB per edit; pdf-lib does not garbage-collect objects).
+* Comb fields fill cells left to right in logical order, also for right-to-left text (combs are meant for digits and
+  codes; Acrobat's behaviour for RTL combs was not checked). Password fields drawn by the engine show `*` per
+  character; pdf-lib's Latin appearance of a password field shows the value (unchanged, pre-existing).
+* Typed signatures are pictures rendered by Chromium in the dialog (`sign/typed.ts`); the script fonts only have Latin
+  letters, so other scripts fall back to a system font in the picture. They are not text in the PDF.
 * The form model is read with pdf-lib on the main renderer thread after every edit of a document that has
   fields. That is instant for normal forms but can pause the UI for very large (100 MB+) form PDFs.
 * Drawing a signature needs a pointer; the *Type* and *Import* tabs are the keyboard-only alternatives.
@@ -123,7 +191,8 @@ dependency `pako` is MIT/Zlib). It is bundled into the renderer to embed the Uni
 1. `npm run build`, launch, open `test-results/fixtures/forms.pdf` (created by `npx playwright test forms-signing`)
    or any fillable PDF. The banner says how many fields it has. Fill every field; Tab/Shift+Tab across the
    pages; watch *Undo* say `Undo Fill “…”` after each field; Save and open the result in Acrobat/Preview/
-   Chrome: values are visible. Type `Привет` in a text field and `你好` in another (the second is refused).
+   Chrome: values are visible. Type `الاسم الكامل` in a text field (right to left, shaped, right-aligned after
+   Enter), `שלום 2026` and `你好` in others; `བོད` is refused.
 2. Open `flat.pdf`: *Add text* → click → type → Ctrl+Enter; try Check/Cross/Dot/Date; rotate the page
    (*Document ▸ Rotate*) and add more: everything stays upright. Save, re-open, search for the text.
 3. *Tools ▸ Signatures…*: draw, type, import a scanned signature (with and without background removal); save
@@ -139,6 +208,13 @@ dependency `pako` is MIT/Zlib). It is bundled into the renderer to embed the Uni
   drawing (position, wrapping, rotation), font choice, stroke smoothing/pressure, background removal and
   trimming, the encrypted store with a fake cipher (round trip, never plain, refusal, limits, undecryptable
   rows), zod schemas, migration 3.
+* Right-to-left and other scripts (`tests/unit/forms-engine.test.ts`, `forms-draw-engine.test.ts`,
+  `tests/e2e/text-retrofit.spec.ts`): Arabic/Hebrew/mixed/Devanagari/Thai/CJK values, combo and list options, comb,
+  auto size, `/Q`, rotated widgets, `/DA` in `/DR`; saved files read by PDF.js (`fieldValue`, `hasAppearance`) and
+  the page text model over the appearances (logical order, right alignment, wrapping); Add text / date stamps /
+  signature date in the same scripts and on rotated pages; in the real app the Arabic field and the Arabic Add text
+  are compared with Chromium's rendering of the same string (NCC ≥ 0.8, negative control < 0.75). Windows' own PDF
+  engine was looked at for `test-results/text-retrofit/forms-arabic.pdf` and `addtext-arabic.pdf`.
 * E2E (`tests/e2e/forms-signing.spec.ts`, fixtures from `tests/fixtures/forms-signing.mjs`): fill every field
   type through the UI and re-check the *saved* file with pdf-lib and with PDF.js in Node; undo/redo; Tab
   order; rotated-page form; flat-PDF text (also found by the text layer after reopening); stamps; signature

@@ -291,8 +291,11 @@ LibreOffice) and skip cleanly without them.
 - **Arabic and other right-to-left text in existing PDFs** is selected, copied and searched in logical order through
   the page text model (`src/shared/pagetext/`, see `docs/page-text.md`), verified on LibreOffice, Chromium, the text
   engine and legacy visual-order files. Its limits (heuristic reading order of complex layouts, fonts without any
-  Unicode mapping, vertical writing, tashkeel-sensitive library search) are listed there. Text that Epdf *writes* is
-  shaped by the text engine (`src/shared/text/`, see `docs/text-engine.md`).
+  Unicode mapping, vertical writing, tashkeel-sensitive library search) are listed there. Text that Epdf *writes*
+  (form fields, Add text, stamps, form builder, text boxes, comparison reports, redaction overlays, headers/footers,
+  new text in the text editor) is shaped by the text engine (`src/shared/text/`) whenever the standard fonts cannot
+  encode it; `docs/text-engine.md` section 13 lists the rule and each feature. Editing *existing* Arabic text in the
+  page content is not supported properly yet, and Acrobat's handling of Epdf's Arabic form fields was not tested.
 - Drag-a-tab-out-of-the-window is not implemented; use **Document ▸ Move Tab to New Window**.
 
 ## Licensing and self-containment

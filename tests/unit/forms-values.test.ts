@@ -164,7 +164,8 @@ describe('applyFieldValue: real PDF output', () => {
 
   it('refuses characters no bundled font has, and leaves the document untouched', async () => {
     const pdf = await PDFDocument.load(bytes)
-    await expect(applyFieldValue(pdf, 'full_name', '你好', provider)).rejects.toBeInstanceOf(UnsupportedCharactersError)
+    // (Chinese used to be refused here; the text engine writes it now. Tibetan has no bundled font.)
+    await expect(applyFieldValue(pdf, 'full_name', 'བོད་ཡིག', provider)).rejects.toBeInstanceOf(UnsupportedCharactersError)
     expect(pdf.getForm().getTextField('full_name').getText()).toBeUndefined()
   })
 

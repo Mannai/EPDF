@@ -1,4 +1,4 @@
-import { PDFName, PDFOperator, PDFRef, type PDFDocument, type PDFPage } from 'pdf-lib'
+import { PDFDict, PDFName, PDFOperator, PDFRef, type PDFDocument, type PDFPage } from 'pdf-lib'
 import { layoutParagraph } from '../layout'
 import type { MissingChar, ParagraphLayout, ParagraphOptions, Span } from '../types'
 import { embeddedFontsFor } from './embed'
@@ -76,9 +76,43 @@ function layoutOptions(o: DrawOptions): ParagraphOptions {
   return { ...(out as ParagraphOptions), width: o.width ?? o.maxWidth }
 }
 
-function registerResources(page: PDFPage, res: EmitResult): void {
-  for (const ef of res.fonts) page.node.setFontDictionary(PDFName.of(ef.resourceName), ef.ref)
-  for (const st of res.states.values()) page.node.setExtGState(PDFName.of(st.name), st.ref)
+/**
+ * A resource name in `dict` for `ref`: `wanted` when it is free or already names `ref`, otherwise `wanted_2`, `_3` ...
+ * (Each `editPdf` step works on a new PDFDocument whose engine fonts are again called EpdfF1, EpdfF2 ...: text drawn on
+ * the same page in an earlier step must keep its own font, so an existing name is never overwritten.)
+ */
+function freeName(dict: PDFDict | undefined, wanted: string, ref: PDFRef): string {
+  if (!dict) return wanted
+  let name = wanted
+  for (let i = 2; ; i++) {
+    const cur = dict.get(PDFName.of(name))
+    if (cur === undefined || (cur instanceof PDFRef && cur === ref)) return name
+    name = `${wanted}_${i}`
+  }
+}
+
+/** Rewrites the engine's font / graphics-state resource names in emitted content (`/EpdfF1 12 Tf`, `/EpdfGS500 gs`). */
+export function renameContentResources(content: string, names: Map<string, string>): string {
+  if (![...names].some(([a, b]) => a !== b)) return content
+  return content.replace(/\/(EpdfF\d+|EpdfGS\d+)(?= )/g, (_m, n: string) => `/${names.get(n) ?? n}`)
+}
+
+function registerResources(page: PDFPage, res: EmitResult): Map<string, string> {
+  const names = new Map<string, string>()
+  const resources = page.node.Resources()
+  const fonts = resources?.lookupMaybe(PDFName.of('Font'), PDFDict)
+  const states = resources?.lookupMaybe(PDFName.of('ExtGState'), PDFDict)
+  for (const ef of res.fonts) {
+    const n = freeName(fonts, ef.resourceName, ef.ref)
+    names.set(ef.resourceName, n)
+    page.node.setFontDictionary(PDFName.of(n), ef.ref)
+  }
+  for (const st of res.states.values()) {
+    const n = freeName(states, st.name, st.ref)
+    names.set(st.name, n)
+    page.node.setExtGState(PDFName.of(n), st.ref)
+  }
+  return names
 }
 
 /**
@@ -92,8 +126,8 @@ export async function drawText(page: PDFPage, text: string | Span[], options: Dr
   const emitted = emitLayout({ docText: dt, layout, originBaseline: true, renderMode: options.renderMode, strokeColor: options.strokeColor, strokeWidth: options.strokeWidth, extraction: options.extraction })
   const boxW = layout.boxWidth ?? layout.width
   const ax = layout.boxWidth === undefined ? (options.anchor === 'right' ? -boxW : options.anchor === 'center' ? -boxW / 2 : 0) : 0
-  pushDrawing(page, emitted, options, ax)
-  registerResources(page, emitted)
+  const names = registerResources(page, emitted)
+  pushDrawing(page, { ...emitted, content: renameContentResources(emitted.content, names) }, options, ax)
   const first = layout.lines[0]
   const top = first ? first.baseline : 0
   return {
@@ -111,8 +145,8 @@ export async function drawParagraph(page: PDFPage, text: string | Span[], option
   const layout = await layoutParagraph(text, layoutOptions(options))
   const dt = embeddedFontsFor(page.doc)
   const emitted = emitLayout({ docText: dt, layout, originBaseline: false, renderMode: options.renderMode, strokeColor: options.strokeColor, strokeWidth: options.strokeWidth, extraction: options.extraction })
-  pushDrawing(page, emitted, options, 0)
-  registerResources(page, emitted)
+  const names = registerResources(page, emitted)
+  pushDrawing(page, { ...emitted, content: renameContentResources(emitted.content, names) }, options, 0)
   const boxW = layout.boxWidth ?? layout.width
   return {
     layout,
@@ -194,6 +228,42 @@ export async function makeTextXObject(pdf: PDFDocument, text: string | Span[], o
     })
   )
   return { ref, width, height, bbox, layout, missing: layout.missing }
+}
+
+export interface TextContent {
+  layout: ParagraphLayout
+  /**
+   * Content-stream operators (ASCII) drawing the text. Local coordinates: x right, y up; the origin is the start of the
+   * first baseline (`origin: 'baseline'`) or the top-left of the layout box (`origin: 'top'`).
+   */
+  content: string
+  /** Resources the content uses, by the names it uses them under (rename with `renameContentResources`). */
+  fonts: { name: string; ref: PDFRef }[]
+  states: { name: string; ref: PDFRef }[]
+  /** Width of the box the text is laid out in (`width` option, else the widest line) and total height. */
+  width: number
+  height: number
+  missing: MissingChar[]
+}
+
+/**
+ * The drawing operators for text without putting them anywhere: for callers that insert text into a content stream
+ * or form they build themselves (a redaction overlay, a text edit inside an existing stream). The fonts are embedded
+ * in `pdf` as with every other drawing call; the caller must add `fonts`/`states` to the resources of the stream the
+ * content ends up in.
+ */
+export async function textContent(pdf: PDFDocument, text: string | Span[], options: XObjectOptions & { origin?: 'baseline' | 'top' } = {}): Promise<TextContent> {
+  const layout = await layoutParagraph(text, options)
+  const emitted = emitLayout({ docText: embeddedFontsFor(pdf), layout, originBaseline: options.origin !== 'top', renderMode: options.renderMode, strokeColor: options.strokeColor, strokeWidth: options.strokeWidth, extraction: options.extraction })
+  return {
+    layout,
+    content: emitted.content,
+    fonts: [...emitted.fonts].map((ef) => ({ name: ef.resourceName, ref: ef.ref })),
+    states: [...emitted.states.values()].map((s) => ({ name: s.name, ref: s.ref })),
+    width: layout.boxWidth ?? layout.width,
+    height: layout.height,
+    missing: layout.missing
+  }
 }
 
 /** Measure text without drawing (needs the same fonts as drawing). */

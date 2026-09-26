@@ -1,5 +1,6 @@
-import { PDFCheckBox, PDFDropdown, PDFName, PDFOptionList, PDFRadioGroup, PDFTextField, type PDFDocument } from 'pdf-lib'
-import { fontForText, helvetica, unicodeFont, unsupportedChars, UnsupportedCharactersError, type UnicodeFontProvider } from './fonts'
+import { PDFButton, PDFCheckBox, PDFDropdown, PDFName, PDFOptionList, PDFRadioGroup, PDFTextField, type PDFDocument } from 'pdf-lib'
+import { assertDrawable, fieldStack, needsEngineAppearance, writeEngineAppearances } from './appearance'
+import { helvetica, type UnicodeFontProvider } from './fonts'
 import { describeField, type FieldModel, type FieldValue } from './model'
 
 /** Validation and application of form-field values. Pure pdf-lib logic (no DOM), unit-tested in Node. */
@@ -76,30 +77,32 @@ export const textOf = (v: FieldValue): string => (typeof v === 'string' ? v : Ar
 
 /**
  * (Re)generates appearance streams for every field that needs one, so the filled form displays in other PDF
- * readers. Uses Helvetica when it can encode everything, otherwise the bundled Unicode font.
+ * readers. The rule (docs/text-engine.md, "Which path writes the text"): a field whose text WinAnsi can encode gets
+ * pdf-lib's Helvetica appearance exactly as before; a field showing any other character (Arabic, Hebrew, Cyrillic,
+ * CJK, ...) gets a text-engine appearance (`writeEngineAppearances`: shaped, bidi, subset fonts, /DA + /DR).
+ * `_provider` is no longer needed (the engine loads its own fonts) and kept for callers.
  */
-export async function refreshAppearances(pdf: PDFDocument, texts: string, provider: UnicodeFontProvider): Promise<void> {
+export async function refreshAppearances(pdf: PDFDocument, _texts: string, _provider?: UnicodeFontProvider): Promise<void> {
   const form = pdf.getForm()
-  const h = await helvetica(pdf)
-  if (unsupportedChars(h, texts).length === 0) {
+  for (const f of form.getFields()) {
+    if (!(f instanceof PDFTextField || f instanceof PDFDropdown || f instanceof PDFOptionList || f instanceof PDFButton)) continue
+    let needs = false
     try {
-      form.updateFieldAppearances(h)
-      return
+      needs = f.needsAppearancesUpdate()
     } catch {
-      // Some other field on the form holds text Helvetica cannot draw: fall through to the Unicode font.
+      continue
     }
+    if (needs && needsEngineAppearance(f)) await writeEngineAppearances(pdf, f)
   }
-  const u = await unicodeFont(pdf, provider)
-  const bad = unsupportedChars(u, texts)
-  if (bad.length > 0) throw new UnsupportedCharactersError(bad)
-  form.updateFieldAppearances(u)
+  form.updateFieldAppearances(await helvetica(pdf))
 }
 
 /**
  * Sets one field's value inside an `editPdf` callback and regenerates the appearances. Throws
  * `FormValueError` / `UnsupportedCharactersError` with a user-presentable message; nothing is saved then.
+ * (`provider` is no longer used: text the standard fonts cannot encode goes through the text engine.)
  */
-export async function applyFieldValue(pdf: PDFDocument, name: string, value: FieldValue, provider: UnicodeFontProvider): Promise<void> {
+export async function applyFieldValue(pdf: PDFDocument, name: string, value: FieldValue, provider?: UnicodeFontProvider): Promise<void> {
   const form = pdf.getForm()
   const field = form.getFieldMaybe(name)
   if (!field) throw new FormValueError('That field no longer exists in the document.')
@@ -108,10 +111,11 @@ export async function applyFieldValue(pdf: PDFDocument, name: string, value: Fie
   const res = validateValue(model, value)
   if (!res.ok) throw new FormValueError(res.error)
   const v = res.value
+  const { fontStack } = fieldStack(pdf, field)
 
   if (field instanceof PDFTextField) {
     // Fail early (before touching the document) if the text cannot be drawn at all.
-    await fontForText(pdf, v as string, provider)
+    await assertDrawable(v as string, fontStack)
     if ((v as string) === '') field.setText(undefined)
     else field.setText(v as string)
     // A rich-text value (/RV) would override the plain value in some readers: the edit replaces both.
@@ -122,12 +126,12 @@ export async function applyFieldValue(pdf: PDFDocument, name: string, value: Fie
   } else if (field instanceof PDFRadioGroup) {
     field.select(v as string)
   } else if (field instanceof PDFDropdown) {
-    await fontForText(pdf, v as string, provider)
+    await assertDrawable(v as string, fontStack)
     if (v === '') field.clear()
     else field.select(v as string)
   } else if (field instanceof PDFOptionList) {
     const arr = v as string[]
-    await fontForText(pdf, arr.join('\n'), provider)
+    await assertDrawable(arr.join('\n'), fontStack)
     if (arr.length === 0) field.clear()
     else field.select(arr)
   } else {

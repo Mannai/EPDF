@@ -58,6 +58,7 @@ export function NoteDraftEditor({ draft, scale, geom, width, height }: { draft: 
         id="note-draft-text"
         ref={ref}
         rows={4}
+        dir="auto"
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
@@ -105,6 +106,7 @@ export function TextBoxDraftEditor({ draft, scale, geom }: { draft: BoxDraft; sc
       ref={ref}
       aria-label="Text box text"
       data-testid="textbox-draft"
+      dir="auto"
       value={text}
       onChange={(e) => setText(e.target.value)}
       onBlur={() => void finish(true)}

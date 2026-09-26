@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path'
 import { deflateSync } from 'node:zlib'
 import Database from 'better-sqlite3'
 import { PDFCheckBox, PDFDict, PDFDocument, PDFName, PDFRadioGroup, PDFRawStream, PDFStream, decodePDFRawStream } from 'pdf-lib'
+import { pageModel } from '../support/retrofit'
 import { FIX, axeViolations, copyFixture, launch, menuClick, quitDiscarding } from './helpers'
 
 test.beforeAll(() => {
@@ -460,7 +461,8 @@ test.describe('form filling', () => {
       await expect(undoBtn(page, 'Undo Fill “Full name”')).toBeEnabled()
 
       const pin = page.getByLabel('PIN')
-      await pin.fill('你好')
+      // (Chinese used to be refused here; the text engine writes it now. No bundled font has Tibetan.)
+      await pin.fill('བོད')
       await pin.press('Enter')
       await expect(page.getByRole('alert').filter({ hasText: /can’t be written/ })).toBeVisible()
       await expect(page.getByLabel('PIN')).toHaveValue('') // the refused value is not kept
@@ -648,11 +650,13 @@ test.describe('add text and stamps', () => {
 
       await save(page)
       const saved = await loadSaved(path)
-      const content = await pageContent(saved, 0)
-      const lines = [...content.matchAll(/1 0 0 1 ([\d.]+) ([\d.]+) Tm/g)]
-      expect(lines.length).toBeGreaterThan(2) // the sentence wrapped into several lines
-      const x = Number(lines[lines.length - 1][1])
-      expect(x).toBeCloseTo((150 + 60) / s, 0)
+      // Text outside WinAnsi is drawn by the text engine (inside a `cm`, so its Tm operators are relative): the
+      // position is checked on the page as a reader sees it (page text model) instead of in the Tm operands.
+      const model = await pageModel(new Uint8Array(readFileSync(path)))
+      const typed = 'Привет мир, this is a long line that must wrap inside the box'
+      const drawn = model.lines.filter((l) => typed.includes(model.text.slice(l.start, l.end).trim()))
+      expect(drawn.length).toBeGreaterThan(2) // the sentence wrapped into several lines
+      expect(Math.min(...drawn.map((l) => l.x0))).toBeCloseTo((150 + 60) / s, 0)
       const type0 = [...saved.context.enumerateIndirectObjects()].filter(([, o]) => (o as unknown as { get?(n: PDFName): unknown }).get?.(PDFName.of('Subtype'))?.toString() === '/Type0')
       expect(type0.length).toBe(1)
       await menuClick(app, 'File', 'Reload from Disk')
@@ -669,7 +673,8 @@ test.describe('add text and stamps', () => {
       await tool(page, 'Add text').click()
       const pb = await box(page.locator('[data-page="1"]'))
       await page.mouse.click(pb.x + 100, pb.y + 100)
-      await page.getByLabel('Text to add to the page').fill('你好世界')
+      // (Chinese used to be refused here; the text engine draws it now. No bundled font has Tibetan.)
+      await page.getByLabel('Text to add to the page').fill('བོད་ཡིག')
       await page.getByRole('button', { name: 'Add to page' }).click()
       await expect(page.getByRole('alert').filter({ hasText: /can’t be written/ })).toBeVisible()
       await expect(undoBtn(page)).toBeDisabled()

@@ -346,8 +346,9 @@ describe('strategy 2: replace', () => {
     const src = await simple('Hello world from Epdf')
     const doc = await PDFDocument.load(src)
     const b = await block(src, 'Hello')
-    await expect(applyTextEdit(doc, 0, { blockId: b.id, oldText: b.text, newText: 'Hello 世界' }, loader)).rejects.toThrow(EditRefusedError)
-    await expect(applyTextEdit(doc, 0, { blockId: b.id, oldText: b.text, newText: 'Hello 世界' }, loader)).rejects.toThrow(/世/)
+    // (Chinese used to be refused here; the text engine draws it now. No bundled font has Tibetan.)
+    await expect(applyTextEdit(doc, 0, { blockId: b.id, oldText: b.text, newText: 'Hello བོད' }, loader)).rejects.toThrow(EditRefusedError)
+    await expect(applyTextEdit(doc, 0, { blockId: b.id, oldText: b.text, newText: 'Hello བོད' }, loader)).rejects.toThrow(/བ/)
     // nothing was committed to the (still open) doc: its first page still reads the same
     expect(await lineTexts(await doc.save())).toEqual(['Hello world from Epdf', 'Untouched neighbour text'])
   })
@@ -553,7 +554,7 @@ describe('refusals and failure injection: the document is never half-edited', ()
     const b = await block(src, 'Hello')
     const doc = await PDFDocument.load(src)
     const before = await doc.save()
-    for (const text of ['Hello 世界', 'Ω世']) {
+    for (const text of ['Hello བོད', 'Ωབོད']) {
       await applyTextEdit(doc, 0, { blockId: b.id, oldText: b.text, newText: text }, loader).catch(() => undefined)
     }
     const after = await doc.save()

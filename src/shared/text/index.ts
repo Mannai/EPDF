@@ -11,7 +11,21 @@
 export { configureTextEngine, isTextEngineConfigured, type ResourceLoader } from './env'
 
 // Drawing into PDFs
-export { drawText, drawParagraph, makeTextXObject, measureText, measureParagraph, type DrawOptions, type DrawResult, type TextXObject, type XObjectOptions } from './pdf/draw'
+export {
+  drawText,
+  drawParagraph,
+  makeTextXObject,
+  measureText,
+  measureParagraph,
+  textContent,
+  renameContentResources,
+  type DrawOptions,
+  type DrawResult,
+  type TextContent,
+  type TextXObject,
+  type XObjectOptions
+} from './pdf/draw'
+export { isWinAnsiText, nonWinAnsiChars, ensureTextEngine, uncoveredChars } from './retrofit'
 export { embeddedFontsFor, flushTextFonts, DocText, EmbeddedFont } from './pdf/embed'
 export type { Extraction, RenderMode } from './pdf/emit'
 

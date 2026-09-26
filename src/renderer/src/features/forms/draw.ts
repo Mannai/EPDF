@@ -1,11 +1,17 @@
 import { LineCapStyle, degrees, rgb, type PDFDocument, type PDFFont, type PDFPage } from 'pdf-lib'
+import { drawText, isWinAnsiText } from '@shared/text'
+import { FAMILY_STACK, assertDrawable } from './appearance'
 import { fontForText, stripLayoutChars, type UnicodeFontProvider } from './fonts'
 import { frameToUser, hexToRgb01, type Frame } from './geometry'
 
 /**
  * Drawing permanent content (text, check marks, dates) onto a page in PDF user space. Everything is
  * positioned in a `Frame`: a point on the page plus the page's rotation, so what the reader sees on screen
- * is upright on rotated pages too. Pure pdf-lib: no DOM.
+ * is upright on rotated pages too. Pure pdf-lib + text engine: no DOM.
+ *
+ * Text WinAnsi can encode is drawn with the standard Helvetica exactly as before (no font embedded); any other text
+ * (Arabic, Hebrew, Cyrillic, Indic, Thai, CJK ...) goes through the text engine (`@shared/text`): shaped, in display
+ * order, right-aligned in its box when it is right-to-left, subset fonts with /ToUnicode and /ActualText.
  */
 
 export interface TextStyle {
@@ -73,6 +79,25 @@ export async function drawTextBlock(
   const text = content.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
   if (text.trim() === '') throw new Error('There is no text to add.')
   const page = pageAt(pdf, pageIndex)
+  if (!isWinAnsiText(text)) {
+    // Any script: the text engine shapes it, orders it for display (right-to-left text is right-aligned in the box)
+    // and wraps it at the box width; the first baseline sits where the Helvetica path puts it.
+    await assertDrawable(text)
+    const c = hexToRgb01(style.color)
+    const [x, y] = frameToUser(frame, 0, frame.height - BASELINE_FROM_TOP * style.size)
+    const r = await drawText(page, text.replace(/\t/g, '    '), {
+      x,
+      y,
+      size: style.size,
+      color: [c.r, c.g, c.b],
+      width: Math.max(frame.width, style.size),
+      lineHeight: LINE_HEIGHT * style.size,
+      rotate: frame.rotation,
+      fontStack: FAMILY_STACK.sans,
+      align: 'start'
+    })
+    return r.lineCount
+  }
   const font = await fontForText(pdf, text.replace(/\n/g, ' '), provider)
   const lines = wrapText(text, font, style.size, Math.max(frame.width, style.size))
   const c = hexToRgb01(style.color)
@@ -126,6 +151,11 @@ export async function drawStamp(
   } else if (kind === 'dot') {
     const p = at(0, 0)
     page.drawCircle({ x: p.x, y: p.y, size: Math.max(1.2, s * 0.28), color })
+  } else if (!isWinAnsiText(label)) {
+    // A date in a locale the standard fonts cannot write (Arabic, Persian, CJK ...): the text engine, centred.
+    await assertDrawable(label)
+    const p = at(0, -0.3 * s)
+    await drawText(page, label, { x: p.x, y: p.y, size: s, color: [c.r, c.g, c.b], rotate: rotation, anchor: 'center', fontStack: FAMILY_STACK.sans })
   } else {
     const font = await fontForText(pdf, label, provider)
     const w = font.widthOfTextAtSize(label, s)
@@ -150,8 +180,13 @@ export async function drawDateAt(
   label = dateLabel()
 ): Promise<void> {
   const page = pageAt(pdf, pageIndex)
-  const font = await fontForText(pdf, label, provider)
   const col = hexToRgb01(color)
   const [x, y] = frameToUser(frame, dx, dy)
+  if (!isWinAnsiText(label)) {
+    await assertDrawable(label)
+    await drawText(page, label, { x, y, size, color: [col.r, col.g, col.b], rotate: frame.rotation, fontStack: FAMILY_STACK.sans })
+    return
+  }
+  const font = await fontForText(pdf, label, provider)
   page.drawText(label, { x, y, size, font, color: rgb(col.r, col.g, col.b), rotate: degrees(frame.rotation) })
 }

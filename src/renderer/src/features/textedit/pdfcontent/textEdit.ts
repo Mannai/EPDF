@@ -3,11 +3,14 @@ import fontkit from '@pdf-lib/fontkit'
 import { PDFDict, PDFDocument, PDFName, StandardFonts, type PDFFont } from 'pdf-lib'
 import { analyzePage, addrKey, type PageAnalysis, type RunGlyph, type StreamSlot, type TextRun } from './analyze'
 import { buildBlocks, findBlock, type Atom, type TextBlock } from './blocks'
-import { arr, mkOp, num, name as nameObj, str, withArgs, type Op, type PdfObj } from './content'
+import { ensureTextEngine, hasRtl, measureText, renameContentResources, textContent, uncoveredChars } from '@shared/text'
+import { hasComplexScript } from '@shared/pagetext'
+import { arr, latin1ToBytes, mkOp, num, name as nameObj, parseContent, str, withArgs, type Op, type PdfObj } from './content'
 import type { FontStyle } from './fonts'
 import { invert, mul, type Matrix } from './matrix'
 import { ddict, dget, dname, nameText } from './pdfutil'
 import { EditRefusedError, PlanSet, addResource, commitSources, slotOf } from './write'
+import type { ContentSource } from './analyze'
 
 /**
  * Editing text in the page content. Two strategies, chosen automatically and reported to the caller:
@@ -114,6 +117,9 @@ function planInPlace(analysis: PageAnalysis, block: TextBlock, newText: string):
   const inserted = newText.slice(p, newText.length - tail)
   if (newText.length - tail < p) return null
   if (inserted.includes('\n')) return null
+  // Right-to-left and complex-script characters need shaping and reordering: never splice their codes into an
+  // existing run (they would show as isolated letters in the wrong order); the replace strategy draws them.
+  if (hasComplexScript(inserted)) return null
 
   const firstAtom = bounds.indexOf(p)
   const endAtom = bounds.indexOf(suffixStart)
@@ -308,6 +314,51 @@ function findExistingStandard(analysis: PageAnalysis, sourceId: string, std: Sta
   return undefined
 }
 
+/**
+ * New text in a script the document's fonts cannot show properly (right-to-left, complex scripts, CJK ...) drawn by
+ * the text engine in place of the block: shaped, in display order, wrapped at the same width, lines `leadT` apart,
+ * first baseline at the block's text origin. The engine's subset fonts are added to the block's resources. The
+ * editor's model is unchanged: this only produces the operators the replace strategy inserts.
+ */
+async function engineReplacement(
+  pdf: PDFDocument,
+  source: ContentSource,
+  block: TextBlock,
+  newText: string,
+  g: { tm: Matrix; th: number; newSize: number; leadT: number; width: number; oldWidth: number; color: [number, number, number]; mode: number }
+): Promise<{ ops: Op[]; family: string }> {
+  try {
+    ensureTextEngine()
+  } catch {
+    throw refuse('The new text needs the text engine, which is not available here. Nothing was changed.')
+  }
+  const style = block.lines[0].runs[0].font.style
+  const fontStack = style.mono ? ['Courier'] : style.serif ? ['Times'] : ['Helvetica']
+  const base = { size: g.newSize, lineHeight: g.leadT, fontStack, weight: style.bold ? ('bold' as const) : ('normal' as const), italic: style.italic }
+  const missing = await uncoveredChars(newText, base)
+  if (missing.length) {
+    throw refuse(`No font that Epdf can use has the character${missing.length > 1 ? 's' : ''} ${missing.slice(0, 5).map((c) => `“${c}”`).join(' ')}. Nothing was changed.`)
+  }
+  let width = g.width
+  // A single right-to-left line keeps its right edge where the old text ended (when it fits there).
+  if (hasRtl(newText) && block.level !== 'paragraph' && !newText.includes('\n')) {
+    const natural = (await measureText(newText, base)).width
+    width = Math.min(g.width, Math.max(natural, g.oldWidth))
+  }
+  const renderMode = g.mode === 1 ? ('stroke' as const) : g.mode === 2 ? ('fillStroke' as const) : ('fill' as const)
+  const tc = await textContent(pdf, newText, { ...base, width, align: 'start', color: g.color, renderMode, origin: 'baseline' })
+  const names = new Map<string, string>()
+  for (const f of tc.fonts) names.set(f.name, addResource(pdf, source, 'Font', 'EpdfF', f.ref))
+  const parsed = parseContent(latin1ToBytes(renameContentResources(tc.content, names)))
+  const cm = mul([g.th, 0, 0, 1, 0, 0], g.tm)
+  const count = new Map<string, number>()
+  for (const line of tc.layout.lines) for (const run of line.runs) count.set(run.font.family, (count.get(run.font.family) ?? 0) + run.glyphs.length)
+  const family = [...count].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'the bundled fonts'
+  // Re-made as new operations (each on its own line) so they serialise cleanly after the editor's own.
+  const ops = parsed.ops.map((o) => mkOp(o.op, ...o.args))
+  return { ops: [mkOp('q'), mkOp('cm', ...cm.map(num)), ...ops, mkOp('Q')], family }
+}
+
 interface ReplaceOutcome {
   strategy: TextStrategy
   message: string
@@ -348,11 +399,15 @@ async function replaceBlock(
 
   // Choose the font.
   let measure: Measurer | null = null
-  let fontOperand: PdfObj
+  let fontOperand: PdfObj | undefined
   let strategy: TextStrategy = 'document-font'
   let message = 'Edited using the document’s own font'
   const used = analysis.fontUsage.get(first.font) ?? new Set<number>()
-  const ownOk = first.fontName !== '(ExtGState font)' && Array.from(newText.replace(/\n/g, '')).every((ch) => first.font.encode(ch, used))
+  // Text that needs shaping or right-to-left ordering (Arabic, Hebrew, Indic, Thai ...) is never drawn with a font's
+  // raw codes: it goes through the text engine below.
+  const complex = hasComplexScript(newText)
+  const ownOk = !complex && first.fontName !== '(ExtGState font)' && Array.from(newText.replace(/\n/g, '')).every((ch) => first.font.encode(ch, used))
+  let engineOps: Op[] | null = null
   if (ownOk) {
     const f = first.font
     const codeOf = (bytes: number[]): number => bytes.reduce((a, b) => a * 256 + b, 0)
@@ -373,7 +428,7 @@ async function replaceBlock(
     fontOperand = nameObj(first.fontName)
   } else {
     const std = STANDARD_BY_STYLE(first.font.style)
-    let pdfFont: PDFFont
+    let pdfFont: PDFFont | null = null
     let label: string
     let resName: string | undefined
     if (winAnsiCan(newText)) {
@@ -388,29 +443,40 @@ async function replaceBlock(
         fontOperand = nameObj(addResource(pdf, source, 'Font', 'EpdfF', pdfFont.ref))
       }
     } else {
-      if (!loader) throw refuse('The new text uses characters that need a Unicode font, which is not available here.')
-      const bytes = await loader.unicodeFont(first.font.style)
-      // Check coverage before embedding anything, so a refusal leaves the document exactly as it was.
-      const probe = fontkit.create(bytes) as { hasGlyphForCodePoint(cp: number): boolean }
-      const missing = Array.from(new Set(Array.from(newText.replace(/\n/g, '')).filter((ch) => !probe.hasGlyphForCodePoint(ch.codePointAt(0)!))))
-      if (missing.length) {
-        throw refuse(`No font that Epdf can use has the character${missing.length > 1 ? 's' : ''} ${missing.slice(0, 5).map((c) => `“${c}”`).join(' ')}. Nothing was changed.`)
+      // Left-to-right text the bundled Noto Sans covers (Cyrillic, Greek, Latin extended) keeps the pdf-lib path the
+      // editor always used; anything else (right-to-left, complex scripts, CJK ...) is drawn by the text engine.
+      let probe: { hasGlyphForCodePoint(cp: number): boolean } | null = null
+      let bytes: Uint8Array | null = null
+      if (!complex && loader) {
+        bytes = await loader.unicodeFont(first.font.style)
+        probe = fontkit.create(bytes) as { hasGlyphForCodePoint(cp: number): boolean }
       }
-      pdf.registerFontkit(fontkit)
-      pdfFont = await pdf.embedFont(bytes, { subset: true })
-      label = 'Noto Sans'
-      fontOperand = nameObj(addResource(pdf, source, 'Font', 'EpdfF', pdfFont.ref))
+      const notoMissing = probe ? Array.from(new Set(Array.from(newText.replace(/\n/g, '')).filter((ch) => !probe!.hasGlyphForCodePoint(ch.codePointAt(0)!)))) : null
+      if (bytes && notoMissing && notoMissing.length === 0) {
+        pdf.registerFontkit(fontkit)
+        pdfFont = await pdf.embedFont(bytes, { subset: true })
+        label = 'Noto Sans'
+        fontOperand = nameObj(addResource(pdf, source, 'Font', 'EpdfF', pdfFont.ref))
+      } else {
+        const drawn = await engineReplacement(pdf, source, block, newText, { tm, th, newSize, leadT: leadingUser / Math.abs(m[3]), width: maxWidth(0) / th, oldWidth: (oldRight - originX0) / Math.abs(m[0]) / th, color: (req.color ? hexToRgb(req.color) : null) ?? hexToRgb(block.color.css) ?? [0, 0, 0], mode: first.renderMode })
+        engineOps = drawn.ops
+        label = drawn.family
+      }
     }
     strategy = 'fallback-font'
     message = `Font not available in this PDF — used ${label}`
-    const pf = pdfFont
-    measure = {
-      width: (s) => pf.widthOfTextAtSize(s, newSize) * th,
-      encode: (s) => hexBytes(pf.encodeText(s))
+    if (pdfFont) {
+      const pf = pdfFont
+      measure = {
+        width: (s) => pf.widthOfTextAtSize(s, newSize) * th,
+        encode: (s) => hexBytes(pf.encodeText(s))
+      }
     }
   }
 
-  const lines = wrapLines(newText, measure.width, maxWidth)
+  const newOps: Op[] = engineOps ?? buildReplacementOps()
+  function buildReplacementOps(): Op[] {
+  const lines = wrapLines(newText, measure!.width, maxWidth)
 
   // Color: keep the original device color operators; anything fancier is approximated in DeviceRGB.
   let colorOps: Op[]
@@ -428,7 +494,7 @@ async function replaceBlock(
     mkOp('q'),
     ...colorOps,
     mkOp('BT'),
-    mkOp('Tf', fontOperand, num(newSize)),
+    mkOp('Tf', fontOperand!, num(newSize)),
     mkOp('Tc', num(strategy === 'document-font' ? first.charSpace : 0)),
     mkOp('Tw', num(strategy === 'document-font' ? first.wordSpace : 0)),
     mkOp('Tz', num(th * 100)),
@@ -445,6 +511,8 @@ async function replaceBlock(
     if (line !== '') newOps.push(mkOp('Tj', str(measure!.encode(line), true)))
   })
   newOps.push(mkOp('ET'), mkOp('Q'))
+  return newOps
+  }
 
   // Remove the old text and insert the new.
   const plans = new PlanSet()
