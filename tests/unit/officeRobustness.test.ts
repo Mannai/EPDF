@@ -83,7 +83,9 @@ describe('damaged input never hangs or crashes the built-in converter', () => {
     const bomb = buildOds({ tables: [{ name: 'T', xml: '<table:table-row table:number-rows-repeated="1000000000">' + tcell('x', undefined, 'table:number-columns-repeated="1000000000"') + '</table:table-row>' }] })
     const t1 = Date.now()
     await convertOffice({ name: 'bomb.ods', bytes: bomb }, { fontsDir }).catch(() => undefined)
-    // capped (512 columns x 2000 rows of content) rather than a billion cells; the worst case is slow but bounded
-    expect(Date.now() - t1).toBeLessThan(45_000)
-  }, 120_000)
+    // capped (512 columns x 2000 rows of content) rather than a billion cells; the worst case is slow but bounded.
+    // ~38 s alone on the dev machine (a known limitation, see README); the bound only has to prove it is capped, and
+    // it needs headroom because other test files run in parallel.
+    expect(Date.now() - t1).toBeLessThan(100_000)
+  }, 150_000)
 })
