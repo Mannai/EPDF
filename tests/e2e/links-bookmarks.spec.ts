@@ -6,6 +6,7 @@ import { PDFDocument, PDFName } from 'pdf-lib'
 import { readBookmarks } from '../../src/renderer/src/features/bookmarks/pdf/read'
 import { validateOutline } from '../../src/renderer/src/features/bookmarks/pdf/validate'
 import type { BmNode } from '../../src/renderer/src/features/bookmarks/pdf/model'
+import { readLinks } from '../../src/renderer/src/features/links/pdf/read'
 import { writeLbFixtures } from '../fixtures/lbFixtures'
 import { openWith } from '../unit/helpers/securityHelpers'
 import { axeViolations, copyFixture, launch, menuClick, quitDiscarding } from './helpers'
@@ -706,6 +707,596 @@ test.describe('bookmarks: scale', () => {
       const disk = await outlineOnDisk(path)
       expect(disk.problems).toEqual([])
       expect(disk.titles.length).toBe(5001)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+})
+
+// ---------------------------------------------------------------- links
+
+type Box = { x: number; y: number; width: number; height: number }
+
+/** The page's box once its layout has stopped moving. */
+async function pageBox(page: Page, n = 1): Promise<Box> {
+  const read = async (): Promise<Box> => (await page.locator(`.epdf-page[data-page="${n}"]`).boundingBox())!
+  let prev = await read()
+  for (let i = 0, same = 0; i < 40 && same < 3; i++) {
+    await page.waitForTimeout(100)
+    const cur = await read()
+    same = cur.x === prev.x && cur.y === prev.y && cur.width === prev.width && cur.height === prev.height ? same + 1 : 0
+    prev = cur
+  }
+  return prev
+}
+
+/** Screen position of a PDF point on an unrotated 612x792 page. */
+async function pdfPoint(page: Page, n: number, x: number, y: number): Promise<{ x: number; y: number }> {
+  const b = await pageBox(page, n)
+  return { x: b.x + (x / 612) * b.width, y: b.y + ((792 - y) / 792) * b.height }
+}
+
+async function mouseDrag(page: Page, from: { x: number; y: number }, to: { x: number; y: number }, steps = 8): Promise<void> {
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(to.x, to.y, { steps })
+  await page.mouse.up()
+}
+
+/** Opens a links fixture, fit-width at a known window size, and waits for the text layer. */
+async function openLinks(file = 'lb-links.pdf', opts: Parameters<typeof launch>[0] = {}): Promise<{ app: ElectronApplication; page: Page; path: string }> {
+  const r = await open(file, opts)
+  await r.page.getByLabel('Zoom level').selectOption('fit-page')
+  await r.page.waitForTimeout(700)
+  return r
+}
+
+/** A text-layer span's box once it has stopped moving (the page re-renders after every edit). */
+async function textBox(page: Page, text: string, n = 1): Promise<Box> {
+  const span = page.locator(`[data-page="${n}"] .textLayer span`, { hasText: text }).first()
+  await expect(span).toBeVisible()
+  let prev = (await span.boundingBox())!
+  for (let i = 0, same = 0; i < 60 && same < 4; i++) {
+    await page.waitForTimeout(100)
+    const cur = (await span.boundingBox())!
+    same = cur.x === prev.x && cur.y === prev.y && cur.width === prev.width && cur.height === prev.height ? same + 1 : 0
+    prev = cur
+  }
+  return prev
+}
+
+const linkTool = (page: Page, name: 'Add link' | 'Edit links'): Locator => tool(page, name)
+const linkDialog = (page: Page, name: 'Add link' | 'Edit link'): Locator => page.getByRole('dialog', { name })
+
+async function activate(page: Page, name: 'Add link' | 'Edit links'): Promise<void> {
+  await linkTool(page, name).click()
+  await expect(linkTool(page, name)).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator(name === 'Add link' ? '[data-testid="links-draw-layer"]' : '[data-testid="links-select-layer"][data-ready="true"]').first()).toBeAttached()
+}
+
+const linksOnDisk = async (path: string) => readLinks(await docOnDisk(path))
+const near = (a: number, b: number, tol = 2.5): boolean => Math.abs(a - b) <= tol
+
+/** Stops "open in the browser" from really launching one, and records what would have been opened. */
+async function trapExternal(app: ElectronApplication): Promise<() => Promise<string[]>> {
+  await app.evaluate(({ shell }) => {
+    const g = globalThis as unknown as { __opened?: string[] }
+    g.__opened = []
+    ;(shell as unknown as { openExternal: (u: string) => Promise<void> }).openExternal = async (u: string) => {
+      g.__opened!.push(u)
+    }
+  })
+  return () => app.evaluate(() => (globalThis as unknown as { __opened: string[] }).__opened)
+}
+
+test.describe('links: add', () => {
+  test('draw a box, enter an address (unsafe ones are refused), create, undo/redo; the saved file has a real Link annotation that works in Epdf', async () => {
+    const { app, page, path } = await openLinks()
+    const opened = await trapExternal(app)
+    try {
+      await activate(page, 'Add link')
+      const from = await pdfPoint(page, 1, 72, 330)
+      const to = await pdfPoint(page, 1, 300, 300)
+      await mouseDrag(page, from, to)
+      const dlg = linkDialog(page, 'Add link')
+      await expect(dlg).toBeVisible()
+      const address = dlg.getByRole('textbox', { name: 'Address' })
+      const create = dlg.getByRole('button', { name: 'Create link' })
+      await expect(create).toBeDisabled()
+      for (const bad of ['javascript:alert(1)', 'file:///C:/Windows/win.ini', 'data:text/html,hi', 'not an address']) {
+        await address.fill(bad)
+        await expect(dlg.getByRole('alert')).toContainText('Problem:')
+        await expect(create).toBeDisabled()
+      }
+      await address.fill('example.org/page?a=1')
+      await expect(dlg.getByRole('alert')).toHaveCount(0)
+      await dlg.getByLabel('Border', { exact: true }).selectOption('thin')
+      await dlg.getByLabel('Description').fill('وصف الرابط – Link description')
+      await create.click()
+      await expect(dlg).toHaveCount(0)
+      await expect(dot(page)).toBeVisible()
+      await expect(undoButton(page, 'Add link')).toBeVisible()
+
+      // Undo removes it, Redo brings it back (one step each).
+      await undoButton(page, 'Add link').click()
+      await expect(dot(page)).toHaveCount(0)
+      await page.getByRole('button', { name: 'Redo Add link' }).click()
+      await expect(dot(page)).toBeVisible()
+
+      await save(page)
+      const links = await linksOnDisk(path)
+      const mine = links.find((l) => l.target.kind === 'uri' && l.target.uri.startsWith('https://example.org'))!
+      expect(mine.target).toEqual({ kind: 'uri', uri: 'https://example.org/page?a=1' })
+      expect(mine.pageIndex).toBe(0)
+      expect(near(mine.rect[0], 72) && near(mine.rect[2], 300) && near(mine.rect[1], 300) && near(mine.rect[3], 330)).toBe(true)
+      expect(mine.flags & 4).toBe(4) // print flag
+      expect(mine.contents).toBe('وصف الرابط – Link description')
+      expect(mine.border).toMatchObject({ width: 1, dashed: false })
+      expect(links).toHaveLength(4) // the three existing links are untouched
+
+      // Click-through inside Epdf itself: the link is a real PDF link, so the viewer's own link layer offers it.
+      await page.keyboard.press('Escape')
+      const el = page.locator('[data-page="1"] a.epdf-link[title="https://example.org/page?a=1"]')
+      await expect(el).toHaveCount(1)
+      await el.click()
+      await expect.poll(opened).toEqual(['https://example.org/page?a=1'])
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('link to a page with a spot picked on it: XYZ destination written, and following it in Epdf scrolls there', async () => {
+    const { app, page, path } = await openLinks()
+    try {
+      await activate(page, 'Add link')
+      await mouseDrag(page, await pdfPoint(page, 1, 72, 400), await pdfPoint(page, 1, 250, 380))
+      const dlg = linkDialog(page, 'Add link')
+      await dlg.getByLabel('A page in this document').check()
+      await dlg.getByLabel('Target page').fill('3')
+      await dlg.getByLabel('How the page opens').selectOption('position')
+      await dlg.getByRole('button', { name: 'Choose the spot on a page…' }).click()
+      // The dialog steps aside; a banner explains, and Escape would go back.
+      await expect(dlg).toHaveCount(0)
+      await expect(page.getByText('Click the spot on any page that the link should open')).toBeVisible()
+      // Click on page 3 at PDF (100, 300): the pick layer reports the page and the spot.
+      await page.evaluate(() => document.querySelector('.epdf-page[data-page="3"]')?.scrollIntoView())
+      await expect(page.locator('.epdf-page[data-page="3"] [data-testid="links-pick-layer"]')).toBeVisible()
+      const at = await pdfPoint(page, 3, 100, 300)
+      await page.mouse.click(at.x, at.y)
+      await expect(dlg).toBeVisible()
+      await expect(dlg.getByTestId('link-picked')).toContainText('Page 3')
+      await dlg.getByRole('button', { name: 'Create link' }).click()
+      await expect(dlg).toHaveCount(0)
+      await save(page)
+      const links = await linksOnDisk(path)
+      const mine = links.find((l) => l.target.kind === 'page')!
+      expect(mine.target.kind === 'page' && mine.target.dest.pageIndex).toBe(2)
+      if (mine.target.kind === 'page') {
+        const [type, x, y, zoom] = mine.target.dest.tail
+        expect(type).toBe('XYZ')
+        expect(near(x as number, 100, 4) && near(y as number, 300, 4)).toBe(true)
+        expect(zoom).toBeNull()
+      }
+      // Follow it in the viewer: page 3 opens with the spot near the top of the window.
+      await page.keyboard.press('Escape')
+      await goto(page, 1)
+      await page.locator('[data-page="1"] a.epdf-link[title="Jump to page"]').first().click()
+      await expect.poll(() => currentPage(page)).toBe(3)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('link to a named destination is offered only when the document has some; a document without shows why', async () => {
+    const { app, page } = await openLinks()
+    try {
+      await activate(page, 'Add link')
+      await mouseDrag(page, await pdfPoint(page, 1, 72, 400), await pdfPoint(page, 1, 250, 380))
+      const dlg = linkDialog(page, 'Add link')
+      await expect(dlg.getByLabel(/A named destination \(this document has none\)/)).toBeDisabled()
+      await dlg.getByRole('button', { name: 'Cancel' }).click()
+      await expect(dlg).toHaveCount(0)
+      await expect(dot(page)).toHaveCount(0) // cancelled: nothing was written
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('a box drawn on a rotated page with a CropBox offset lands exactly on the text it was drawn around', async () => {
+    const { app, page, path } = await openLinks('lb-rotated.pdf')
+    try {
+      await activate(page, 'Add link')
+      const span = page.locator('[data-page="1"] .textLayer span', { hasText: 'TARGET' }).first()
+      await expect(span).toBeVisible()
+      await page.waitForTimeout(500)
+      const b = (await span.boundingBox())!
+      await mouseDrag(page, { x: b.x - 4, y: b.y - 4 }, { x: b.x + b.width + 4, y: b.y + b.height + 4 })
+      const dlg = linkDialog(page, 'Add link')
+      await dlg.getByRole('textbox', { name: 'Address' }).fill('https://rotated.example')
+      await dlg.getByRole('button', { name: 'Create link' }).click()
+      await expect(dlg).toHaveCount(0)
+      await save(page)
+      const [l] = await linksOnDisk(path)
+      // TARGET (24 pt Helvetica) runs from x = 200 to about 297 with its baseline at y = 400 in PDF space: the rect covers that, and not much more.
+      expect(l.rect[0]).toBeLessThan(206)
+      expect(l.rect[2]).toBeGreaterThan(292)
+      expect(l.rect[1]).toBeLessThan(402)
+      expect(l.rect[3]).toBeGreaterThan(415)
+      expect(l.rect[2] - l.rect[0]).toBeLessThan(115)
+      expect(l.rect[3] - l.rect[1]).toBeLessThan(50)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+})
+
+test.describe('links: from text, and addresses found in the text', () => {
+  test('link the selected text (one line, and a wrapped sentence as QuadPoints)', async () => {
+    const { app, page, path } = await openLinks()
+    try {
+      // Text is selected while no tool is active (a tool's catcher would draw instead), then linked from the Tools menu.
+      const one = page.locator('[data-page="1"] .textLayer span', { hasText: 'Select these words' }).first()
+      await expect(one).toBeVisible()
+      await page.waitForTimeout(500)
+      const b = (await one.boundingBox())!
+      await mouseDrag(page, { x: b.x + 2, y: b.y + b.height / 2 }, { x: b.x + b.width * 0.985, y: b.y + b.height / 2 })
+      await menuClick(app, 'Tools', 'Link from Selected Text')
+      const dlg = linkDialog(page, 'Add link')
+      await dlg.getByRole('textbox', { name: 'Address' }).fill('https://one-line.example')
+      await dlg.getByRole('button', { name: 'Create link' }).click()
+      await expect(dlg).toHaveCount(0)
+
+      // Two lines: drag from inside the first line to the end of the second.
+      const b1 = await textBox(page, 'This sentence wraps across')
+      const b2 = await textBox(page, 'two lines for the multi line link.')
+      await mouseDrag(page, { x: b1.x + 2, y: b1.y + b1.height / 2 }, { x: b2.x + b2.width * 0.985, y: b2.y + b2.height / 2 }, 12)
+      expect(await page.evaluate(() => window.getSelection()!.toString())).toBe('This sentence wraps across\ntwo lines for the multi line link')
+      await activate(page, 'Add link') // the selection survives choosing the tool; its button links it
+      await page.getByRole('button', { name: 'Link selected text' }).click()
+      await expect(dlg).toBeVisible()
+      await expect(dlg).toContainText('covering 2 lines of text')
+      await dlg.getByRole('textbox', { name: 'Address' }).fill('https://wrapped.example')
+      await dlg.getByRole('button', { name: 'Create link' }).click()
+      await expect(dlg).toHaveCount(0)
+      await save(page)
+      const links = await linksOnDisk(path)
+      const single = links.find((l) => l.target.kind === 'uri' && l.target.uri.startsWith('https://one-line'))!
+      // "Select these words to make a link." is line 4: baseline y = 700 - 3*20 = 640.
+      expect(single.rect[0]).toBeLessThan(76)
+      expect(single.rect[1]).toBeLessThan(642)
+      expect(single.rect[3]).toBeGreaterThan(648)
+      expect(single.quads).toHaveLength(0)
+      const wrapped = links.find((l) => l.target.kind === 'uri' && l.target.uri.startsWith('https://wrapped'))!
+      expect(wrapped.quads).toHaveLength(2)
+      // Two lines 20 pt apart (baselines 580 and 560): the quads' tops differ by about a line.
+      expect(Math.abs(wrapped.quads[0][1] - wrapped.quads[1][1])).toBeGreaterThan(15)
+      expect(wrapped.rect[3] - wrapped.rect[1]).toBeGreaterThan(30)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('find web and e-mail addresses in the text: review, reject one, create; a second run lists them as already linked', async () => {
+    const { app, page, path } = await openLinks()
+    try {
+      await activate(page, 'Add link')
+      await page.getByRole('button', { name: 'Find addresses…' }).click()
+      const dlg = page.getByRole('dialog', { name: 'Find web and e-mail addresses' })
+      await expect(dlg.getByTestId('detect-review')).toBeVisible({ timeout: 30_000 })
+      const items = dlg.getByTestId('detect-item')
+      await expect(items).toHaveCount(3)
+      await expect(items.nth(0)).toContainText('https://example.com/docs')
+      await expect(items.nth(1)).toContainText('support@example.com')
+      await expect(items.nth(2)).toContainText('www.example.org/about')
+      await dlg.getByRole('checkbox', { name: 'Link www.example.org/about' }).uncheck()
+      await dlg.getByRole('button', { name: 'Create 2 links' }).click()
+      await expect(dlg).toHaveCount(0)
+      await expect(undoButton(page, 'Add detected links')).toBeVisible()
+      await save(page)
+      const links = await linksOnDisk(path)
+      const uris = links.map((l) => (l.target.kind === 'uri' ? l.target.uri : l.target.kind))
+      expect(uris).toContain('https://example.com/docs')
+      expect(uris).toContain('mailto:support@example.com')
+      expect(uris).not.toContain('https://www.example.org/about')
+      // The box hugs the address: "Visit https://example.com/docs for ..." is line 1 (baseline 700); the link starts after "Visit ".
+      const web = links.find((l) => l.target.kind === 'uri' && l.target.uri === 'https://example.com/docs')!
+      expect(web.rect[0]).toBeGreaterThan(95)
+      expect(web.rect[0]).toBeLessThan(115)
+      expect(web.rect[2]).toBeLessThan(290)
+      expect(web.rect[1]).toBeLessThan(702)
+      expect(web.rect[3]).toBeGreaterThan(708)
+
+      // Again: the two new links are recognised, so they are listed as already linked and left unticked.
+      await page.getByRole('button', { name: 'Find addresses…' }).click()
+      await expect(dlg.getByTestId('detect-review')).toBeVisible({ timeout: 30_000 })
+      await expect(items.filter({ hasText: 'Already linked' })).toHaveCount(2)
+      await expect(dlg.getByRole('button', { name: 'Create 1 link' })).toBeVisible()
+      await dlg.getByRole('button', { name: 'Cancel' }).click()
+      await expect(dlg).toHaveCount(0)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('a document without addresses says so, and cancelling the search leaves it untouched', async () => {
+    const { app, page } = await openLinks('lb-outline.pdf')
+    try {
+      await activate(page, 'Add link')
+      await page.getByRole('button', { name: 'Find addresses…' }).click()
+      const dlg = page.getByRole('dialog', { name: 'Find web and e-mail addresses' })
+      await expect(dlg.getByTestId('detect-empty')).toBeVisible({ timeout: 30_000 })
+      await dlg.getByRole('button', { name: 'Close' }).click()
+      await expect(dlg).toHaveCount(0)
+      await expect(dot(page)).toHaveCount(0)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+})
+
+test.describe('links: edit', () => {
+  test('select a link from another program, move and resize it with the keyboard, retarget it, change its border, undo', async () => {
+    const { app, page, path } = await openLinks()
+    try {
+      await activate(page, 'Edit links')
+      // The existing URI link covers "Existing link text": x 72..180, y 536..552.
+      const p = await pdfPoint(page, 1, 120, 544)
+      await page.mouse.click(p.x, p.y)
+      const frame = page.getByTestId('link-frame')
+      await expect(frame).toBeVisible()
+      await expect(frame).toBeFocused()
+      await expect(frame).toHaveAttribute('aria-label', /Selected link: https:\/\/existing\.example\//)
+      // Keyboard: 3 x Right = +3 pt, Shift+Down = -10 pt (down the page), Alt+Right = wider by 1 pt.
+      for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight')
+      await page.keyboard.press('Shift+ArrowDown')
+      await page.keyboard.press('Alt+ArrowRight')
+      await expect(undoButton(page, 'Resize link')).toBeVisible()
+      await expect.poll(async () => (await frame.boundingBox())!.width).toBeGreaterThan(0)
+      // Enter opens the editor; change the target and give it a dashed red border.
+      await page.keyboard.press('Enter')
+      const dlg = linkDialog(page, 'Edit link')
+      await expect(dlg).toBeVisible()
+      await expect(dlg.getByRole('textbox', { name: 'Address' })).toHaveValue('https://existing.example/')
+      await dlg.getByRole('textbox', { name: 'Address' }).fill('https://changed.example/x')
+      await dlg.getByLabel('Border', { exact: true }).selectOption('dashed')
+      await dlg.getByLabel('Border colour').fill('#ff0000')
+      await dlg.getByRole('button', { name: 'Save link' }).click()
+      await expect(dlg).toHaveCount(0)
+      await expect(undoButton(page, 'Edit link')).toBeVisible()
+      await save(page)
+      const changed = (await linksOnDisk(path)).find((l) => l.target.kind === 'uri' && l.target.uri === 'https://changed.example/x')!
+      expect(changed).toBeTruthy()
+      expect(near(changed.rect[0], 75) && near(changed.rect[1], 526) && near(changed.rect[2], 184)).toBe(true) // +3, -10, +3 +1
+      expect(changed.border).toEqual({ width: 1, dashed: true, color: [1, 0, 0] })
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('links whose action Epdf does not manage (GoToR, Launch) are kept exactly; they can still be moved, restyled and deleted', async () => {
+    const { app, page, path } = await openLinks()
+    try {
+      const before = await docOnDisk(path)
+      const actionsBefore = readLinks(before).map((l) => (l.target.kind === 'other' ? `${l.target.action}:${l.target.detail}` : l.target.kind))
+      expect(actionsBefore).toEqual(['uri', 'other', 'other'].map((k, i) => (i === 0 ? 'uri' : ['GoToR:other.pdf', 'Launch:program.exe'][i - 1])))
+      await activate(page, 'Edit links')
+      await page.getByLabel('Choose a link').selectOption({ label: 'Page 1: GoToR: other.pdf' })
+      const frame = page.getByTestId('link-frame')
+      await expect(frame).toBeVisible()
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('Enter')
+      const dlg = linkDialog(page, 'Edit link')
+      await expect(dlg).toContainText('does something Epdf does not change')
+      await expect(dlg.getByRole('textbox', { name: 'Address' })).toHaveCount(0)
+      await dlg.getByLabel('Border', { exact: true }).selectOption('thin')
+      await dlg.getByRole('button', { name: 'Save link' }).click()
+      await expect(dlg).toHaveCount(0)
+      // Delete the Launch link with the keyboard.
+      await page.getByLabel('Choose a link').selectOption({ label: 'Page 1: Launch: program.exe' })
+      await expect(page.getByTestId('link-frame')).toBeFocused()
+      await page.keyboard.press('Delete')
+      await expect(undoButton(page, 'Delete link')).toBeVisible()
+      await save(page)
+      const after = await linksOnDisk(path)
+      expect(after.map((l) => (l.target.kind === 'other' ? `${l.target.action}:${l.target.detail}` : l.target.kind))).toEqual(['uri', 'GoToR:other.pdf'])
+      const gotor = after[1]
+      expect(near(gotor.rect[1], 515, 1.5)).toBe(true) // moved down by 1 pt from 516
+      expect(gotor.border.width).toBe(1)
+      // The action dictionary itself is byte-for-byte what it was.
+      const pdf = await docOnDisk(path)
+      const annots = pdf.getPage(0).node.lookup(N('Annots'))
+      const dict = (annots as unknown as { lookup(i: number): PDFDict }).lookup(1)
+      expect(dict.lookup(N('A')).toString()).toContain('/GoToR')
+      expect(dict.lookup(N('A')).toString()).toContain('other.pdf')
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('drag to move and resize with the mouse; Delete removes; Escape deselects', async () => {
+    const { app, page, path } = await openLinks()
+    try {
+      await activate(page, 'Edit links')
+      const p = await pdfPoint(page, 1, 120, 544)
+      await page.mouse.click(p.x, p.y)
+      const frame = page.getByTestId('link-frame')
+      await expect(frame).toBeVisible()
+      const fb = (await frame.boundingBox())!
+      // Move: drag the frame body 40 px right and 30 px down.
+      await mouseDrag(page, { x: fb.x + fb.width / 2, y: fb.y + fb.height / 2 }, { x: fb.x + fb.width / 2 + 40, y: fb.y + fb.height / 2 + 30 })
+      await expect(undoButton(page, 'Move link')).toBeVisible()
+      // Resize: drag the south-east handle 30 px right and 20 px down.
+      const se = page.locator('[data-link-frame] [data-handle="se"]')
+      await expect.poll(async () => (await se.boundingBox())?.x ?? 0).toBeGreaterThan(fb.x + fb.width)
+      const sb = (await se.boundingBox())!
+      await mouseDrag(page, { x: sb.x + sb.width / 2, y: sb.y + sb.height / 2 }, { x: sb.x + sb.width / 2 + 30, y: sb.y + sb.height / 2 + 20 })
+      await expect(undoButton(page, 'Resize link')).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(frame).toHaveCount(0)
+      await save(page)
+      const moved = (await linksOnDisk(path)).find((l) => l.target.kind === 'uri')!
+      const scale = fb.width / (108) // frame px per pt at the start (108 pt wide)
+      expect(moved.rect[0]).toBeGreaterThan(72 + 30 / scale - 3)
+      expect(moved.rect[1]).toBeLessThan(536 - 22 / scale)
+      expect(moved.rect[2] - moved.rect[0]).toBeGreaterThan(108 + 20 / scale)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('remove links from a page or from the whole document, after asking; undo brings them back', async () => {
+    const { app, page, path } = await openLinks()
+    try {
+      await activate(page, 'Add link')
+      await page.getByRole('button', { name: /^Remove links on page 1$/ }).click()
+      const dlg = page.getByRole('dialog', { name: 'Remove all links from page 1?' })
+      await expect(dlg).toContainText('3 links')
+      await dlg.getByRole('button', { name: 'Cancel' }).click()
+      await expect(dot(page)).toHaveCount(0)
+      await page.getByRole('button', { name: /^Remove links on page 1$/ }).click()
+      await dlg.getByRole('button', { name: 'Remove 3 links' }).click()
+      await expect(undoButton(page, 'Remove links from page')).toBeVisible()
+      await undoButton(page, 'Remove links from page').click()
+      await expect(dot(page)).toHaveCount(0)
+      await page.getByRole('button', { name: 'Remove all links', exact: true }).click()
+      await page.getByRole('dialog', { name: 'Remove all links from this document?' }).getByRole('button', { name: 'Remove 3 links' }).click()
+      await save(page)
+      expect(await linksOnDisk(path)).toHaveLength(0)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('the "show all links" highlight outlines every link, and the View menu toggles it', async () => {
+    const { app, page } = await openLinks()
+    try {
+      await expect(page.getByTestId('link-outlines')).toHaveCount(0)
+      await menuClick(app, 'View', 'Highlight Links')
+      await expect(page.locator('[data-page="1"] [data-link-outline]')).toHaveCount(3)
+      await menuClick(app, 'View', 'Highlight Links')
+      await expect(page.getByTestId('link-outlines')).toHaveCount(0)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+})
+
+// ---------------------------------------------------------------- accessibility
+
+const setTheme = async (app: ElectronApplication, page: Page, theme: 'light' | 'dark'): Promise<void> => {
+  await app.evaluate(({ nativeTheme }, t) => void (nativeTheme.themeSource = t), theme)
+  await expect.poll(() => page.evaluate(() => document.documentElement.classList.contains('dark'))).toBe(theme === 'dark')
+}
+
+test.describe('accessibility (axe, WCAG 2.1 A/AA)', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    test(`bookmarks panel and dialogs are axe-clean in ${theme} mode`, async () => {
+      const { app, page } = await open('lb-outline.pdf')
+      try {
+        await setTheme(app, page, theme)
+        await showBookmarks(app, page)
+        expect(await axeViolations(page, `panel ${theme}`)).toEqual([])
+        // A selected bookmark with its properties, a colour, and the inline title editor.
+        await selectRow(page, /^Last/)
+        await page.getByLabel('Bookmark colour').fill('#ffee00')
+        expect(await axeViolations(page, `panel selected ${theme}`)).toEqual([])
+        await page.keyboard.press('F2')
+        await expect(tree(page).getByLabel('Bookmark title')).toBeFocused()
+        expect(await axeViolations(page, `panel editing ${theme}`)).toEqual([])
+        await page.keyboard.press('Escape')
+        await page.getByLabel('Filter bookmarks').fill('deep')
+        expect(await axeViolations(page, `panel filtered ${theme}`)).toEqual([])
+        await page.getByLabel('Filter bookmarks').fill('')
+        // The delete confirmation.
+        await selectRow(page, /Introduction/)
+        await page.keyboard.press('Delete')
+        await expect(page.getByRole('dialog', { name: 'Delete this bookmark and its children?' })).toBeVisible()
+        expect(await axeViolations(page, `delete confirm ${theme}`)).toEqual([])
+        await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+      } finally {
+        await quitDiscarding(app, page)
+      }
+    })
+
+    test(`generate dialog is axe-clean in ${theme} mode (analysing, review, empty)`, async () => {
+      const { app, page } = await open('lb-report.pdf')
+      try {
+        await setTheme(app, page, theme)
+        await showBookmarks(app, page)
+        await generateButton(page).click()
+        const dlg = generateDialog(page)
+        await expect(dlg).toBeVisible()
+        await expect(dlg.getByTestId('generate-review')).toBeVisible({ timeout: 45_000 })
+        expect(await axeViolations(page, `generate review ${theme}`)).toEqual([])
+        await dlg.getByRole('button', { name: 'Cancel' }).click()
+      } finally {
+        await quitDiscarding(app, page)
+      }
+    })
+
+    test(`link tools, dialogs and the address review are axe-clean in ${theme} mode`, async () => {
+      const { app, page } = await openLinks()
+      try {
+        await setTheme(app, page, theme)
+        await activate(page, 'Add link')
+        expect(await axeViolations(page, `add link options ${theme}`)).toEqual([])
+        await mouseDrag(page, await pdfPoint(page, 1, 72, 400), await pdfPoint(page, 1, 250, 380))
+        const dlg = linkDialog(page, 'Add link')
+        await expect(dlg).toBeVisible()
+        await dlg.getByRole('textbox', { name: 'Address' }).fill('javascript:1')
+        expect(await axeViolations(page, `add link dialog error ${theme}`)).toEqual([])
+        await dlg.getByLabel('A page in this document').check()
+        expect(await axeViolations(page, `add link dialog page ${theme}`)).toEqual([])
+        await dlg.getByRole('button', { name: 'Cancel' }).click()
+
+        await page.getByRole('button', { name: 'Find addresses…' }).click()
+        const detect = page.getByRole('dialog', { name: 'Find web and e-mail addresses' })
+        await expect(detect.getByTestId('detect-review')).toBeVisible({ timeout: 30_000 })
+        expect(await axeViolations(page, `detect review ${theme}`)).toEqual([])
+        await detect.getByRole('button', { name: 'Cancel' }).click()
+
+        await activate(page, 'Edit links')
+        const p = await pdfPoint(page, 1, 120, 544)
+        await page.mouse.click(p.x, p.y)
+        await expect(page.getByTestId('link-frame')).toBeVisible()
+        expect(await axeViolations(page, `edit links ${theme}`)).toEqual([])
+        await page.keyboard.press('Enter')
+        await expect(linkDialog(page, 'Edit link')).toBeVisible()
+        expect(await axeViolations(page, `edit link dialog ${theme}`)).toEqual([])
+        await page.keyboard.press('Escape')
+      } finally {
+        await quitDiscarding(app, page)
+      }
+    })
+  }
+})
+
+test.describe('links: protected documents', () => {
+  test('adding a link to a password-protected document works after unlocking and Save keeps it encrypted', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'epdf-lb-enc-'))
+    const path = join(dir, 'protected.pdf')
+    writeFileSync(path, readFileSync(join(SECURITY, 'aes-256-r6.pdf')))
+    const { app, page } = await launch({ files: [path] })
+    try {
+      const prompt = page.getByRole('dialog', { name: 'Password required' })
+      await expect(prompt).toBeVisible()
+      await prompt.getByLabel('Document password').fill('user256')
+      await prompt.getByRole('button', { name: 'Open' }).click()
+      await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
+      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1500, 1000))
+      await page.getByLabel('Zoom level').selectOption('fit-page')
+      await page.waitForTimeout(700)
+      await activate(page, 'Add link')
+      await mouseDrag(page, await pdfPoint(page, 1, 72, 500), await pdfPoint(page, 1, 250, 470))
+      const dlg = linkDialog(page, 'Add link')
+      await dlg.getByRole('textbox', { name: 'Address' }).fill('https://protected.example')
+      await dlg.getByRole('button', { name: 'Create link' }).click()
+      await expect(dlg).toHaveCount(0)
+      await save(page)
+      const bytes = new Uint8Array(readFileSync(path))
+      expect(Buffer.from(bytes).toString('latin1')).toContain('/Encrypt')
+      const links = readLinks(await PDFDocument.load((await openWith(bytes, 'user256')).plain))
+      expect(links.map((l) => l.target)).toEqual([{ kind: 'uri', uri: 'https://protected.example/' }])
     } finally {
       await quitDiscarding(app, page)
     }
