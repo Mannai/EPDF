@@ -37,6 +37,10 @@ export function firstStrong(s: string): StrongDir {
 export function strongCounts(s: string): { r: number; l: number } {
   let r = 0
   let l = 0
+  if (s.length === 1 && s.charCodeAt(0) < 0x80) {
+    const c = s.charCodeAt(0) | 0x20
+    return { r: 0, l: c >= 0x61 && c <= 0x7a ? 1 : 0 }
+  }
   for (const ch of s) {
     if (RTL_RE.test(ch)) r++
     else if (LTR_LETTER_RE.test(ch)) l++

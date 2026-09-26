@@ -112,9 +112,20 @@ function frameOf(g: Glyph, frames: Map<number, Frame>): Frame {
 
 const isAnchorGlyph = (g: Glyph): boolean => g.len > 0.02 * g.size || (g.text !== '' && !g.mark)
 
+// eslint-disable-next-line no-control-regex
+const ASCII = /^[\u0000-\u007f]*$/
+/** NFC, skipped for ASCII (the common case: nothing to compose). */
+const nfc = (s: string): string => (ASCII.test(s) ? s : s.normalize('NFC'))
+
 // ---- word segmentation -------------------------------------------------------------------------------------
 let segmenter: Intl.Segmenter | null | undefined
 function wordsOf(text: string, offset: number): number[] {
+  if (ASCII.test(text)) {
+    // what the word segmenter gives for ASCII: runs of letters/digits (with inner apostrophes and periods between digits)
+    const out: number[] = []
+    for (const m of text.matchAll(/[A-Za-z0-9_]+(?:['.,][A-Za-z0-9_]+)*/g)) out.push(offset + m.index!, offset + m.index! + m[0].length)
+    return out
+  }
   if (segmenter === undefined) {
     try {
       segmenter = typeof Intl !== 'undefined' && 'Segmenter' in Intl ? new Intl.Segmenter(undefined, { granularity: 'word' }) : null
@@ -242,6 +253,7 @@ function divide(text: string, box: Piece, rtl: boolean): Piece[] {
 }
 
 function unitPieces(u: Unit, text: string, rtl: boolean): Piece[] {
+  if (text.length === 1 && u.boxes.length === 1) return [u.boxes[0]]
   if (!u.charBox || u.boxes.length <= 1) return divide(text, unionPiece(u.boxes), rtl)
   // characters mapped to boxes; several characters on one box share it
   const out = new Array<Piece>(text.length)
@@ -261,6 +273,7 @@ function unitPieces(u: Unit, text: string, rtl: boolean): Piece[] {
 }
 
 // ---- Indic pre-base vowel signs ------------------------------------------------------------------------------
+const INDIC = /[ऀ-෿က-႟ក-៿]/u
 const VIRAMA_END = /[्্੍્୍்్್്්္្]$/u
 /** A pre-base matra drawn (and so found) before its consonant cluster moves after it. */
 function fixPreBase(order: number[], units: Unit[]): number[] {
@@ -472,6 +485,7 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
     const piece = (a: Anchor): Piece => ({ s0: a.s, s1: a.s + a.len, t0: a.t - a.top, t1: a.t + a.bottom })
     const glyphUnitText = (a: Anchor): string => {
       const g = glyphs[a.g]
+      if (!a.marks.length) return g.text
       let t = g.text
       // marks not inside another span keep their own text
       const ms = a.marks.slice().sort((x, y) => glyphs[x].seq - glyphs[y].seq)
@@ -492,7 +506,7 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
           spanUsed.add(si)
           stats.actualText++
           const covered = l.anchors.slice(k, j)
-          const text = ip.spans[si].text.normalize('NFC')
+          const text = nfc(ip.spans[si].text)
           const u: Unit = { text, boxes: covered.map(piece), charBox: null, seq: Math.min(...covered.map((x) => glyphs[x.g].seq)), synthetic: false, font: g.font }
           if (covered.length > 1) {
             u.charBox = [] // aligned once the direction is known
@@ -508,7 +522,7 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
         continue
       }
       // a glyph of a span we could not use keeps its own text
-      const text = glyphUnitText(a).normalize('NFC')
+      const text = nfc(glyphUnitText(a))
       units.push({ text, boxes: [piece(a)], charBox: null, seq: g.seq, synthetic: false, font: g.font })
       k++
     }
@@ -517,8 +531,10 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
     for (const u of units) {
       const prev = out[out.length - 1]
       if (prev) {
-        const pe = Math.max(...prev.boxes.map((b) => b.s1))
-        const us = Math.min(...u.boxes.map((b) => b.s0))
+        let pe = -Infinity
+        for (const b of prev.boxes) if (b.s1 > pe) pe = b.s1
+        let us = Infinity
+        for (const b of u.boxes) if (b.s0 < us) us = b.s0
         const gap = us - pe
         const sz = l.size
         const prevSpace = /\s$/u.test(prev.text)
@@ -602,7 +618,7 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
     if (!res.exact) stats.inexactLines++
     l.exact = res.exact
     let order = res.order
-    if (l.dir === 0 || units.some((u) => isPreBaseMatra(u.text))) order = fixPreBase(order, units)
+    if (units.some((u) => INDIC.test(u.text))) order = fixPreBase(order, units)
     // trim whitespace at both ends
     let a = 0
     let z = order.length
@@ -677,7 +693,10 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
   // 9. assemble
   let text = ''
   const charQuad: number[] = []
-  const quads: number[] = []
+  let totalPieces = 0
+  for (const l of lines) if (l.text) totalPieces += l.pieces.length
+  const quads = new Float32Array(totalPieces * 8)
+  let qn = 0
   const outLines: PageTextLine[] = []
   let blockIndex = -1
   let lastBlock = -1
@@ -699,17 +718,15 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
       let x1 = -Infinity
       let y1 = -Infinity
       for (const p of l.pieces) {
-        const q = [
-          [p.s0, p.t1],
-          [p.s1, p.t1],
-          [p.s1, p.t0],
-          [p.s0, p.t0]
-        ]
-        charQuad.push(quads.length / 8)
-        for (const [s, t] of q) {
+        charQuad.push(qn / 8)
+        // corners: start-bottom, end-bottom, end-top, start-top
+        for (let k = 0; k < 4; k++) {
+          const s = k === 1 || k === 2 ? p.s1 : p.s0
+          const t = k < 2 ? p.t1 : p.t0
           const x = s * f.ex + t * f.nx
           const y = s * f.ey + t * f.ny
-          quads.push(x, y)
+          quads[qn++] = x
+          quads[qn++] = y
           if (x < x0) x0 = x
           if (x > x1) x1 = x
           if (y < y0) y0 = y
@@ -747,7 +764,7 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
     text,
     lines: outLines,
     charQuad: Int32Array.from(charQuad),
-    quads: Float32Array.from(quads),
+    quads: qn === quads.length ? quads : quads.slice(0, qn),
     stats,
     warnings: ip.warnings
   }

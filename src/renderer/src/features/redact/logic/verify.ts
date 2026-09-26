@@ -1,4 +1,4 @@
-import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFStream, PDFString, type PDFObject } from 'pdf-lib'
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRef, PDFStream, PDFString, type PDFObject } from 'pdf-lib'
 import type { PageTextModel } from '@shared/pagetext'
 import { analyzePage } from '../../textedit/pdfcontent/analyze'
 import { bytesToLatin1, parseContent } from '../../textedit/pdfcontent/content'
@@ -228,7 +228,9 @@ export async function verifyRedaction(input: VerifyInput): Promise<Finding[]> {
   // ---- 5. unreachable objects
   const reach = reachableTags(pdf)
   let orphans = 0
-  for (const [ref] of ctx.enumerateIndirectObjects()) if (!reach.has(refTag(ref))) orphans++
+  // (a bare number cannot hold content: LibreOffice writes stream lengths as indirect numbers, which pdf-lib inlines
+  // when it saves, leaving the numbers unreferenced)
+  for (const [ref, obj] of ctx.enumerateIndirectObjects()) if (!reach.has(refTag(ref)) && !(obj instanceof PDFNumber)) orphans++
   if (orphans) add('file', `${orphans} object(s) that nothing refers to are still in the file and may hold old content.`)
 
   // ---- 1-3. per page geometry (only pages with marks)
@@ -391,24 +393,29 @@ export async function verifyRedaction(input: VerifyInput): Promise<Finding[]> {
       if (hits > 0 && hits > 2 * allowed(s)) add('file bytes', 'Redacted text appears in the raw bytes of the file.')
     }
     // ---- 6. PDF.js
+    let texts: string[] = []
     if (input.pdfjsPages) {
       try {
-        const texts = await input.pdfjsPages(input.bytes)
+        texts = await input.pdfjsPages(input.bytes)
         const joined = texts.join('\n')
         for (const s of secrets) {
           if (countOccurrences(joined, s) > allowed(s)) add('text extraction', 'The redacted text can still be extracted by PDF.js.')
         }
-        // PDF.js reads right-to-left text in visual order, so a secret could survive unnoticed there: those pages are
-        // read again in logical order, and any occurrence whose glyphs lie under a mark is a leak.
-        if (input.modelPages) {
-          const models = await input.modelPages(input.bytes, texts)
-          models.forEach((m, pi) => {
-            const shapes = input.shapesByPage?.get(pi) ?? (input.marksByPage.get(pi) ?? []).map(rectQuad)
-            if (m && shapes.length && logicalLeak(m, secrets, shapes)) add(`page ${pi + 1}`, 'The redacted text can still be extracted (read in logical order, under a mark).')
-          })
-        }
       } catch (e) {
         add('text extraction', `PDF.js could not read the result to confirm the redaction (${e instanceof Error ? e.message : String(e)}).`)
+      }
+    }
+    // ---- 7. PDF.js reads right-to-left text in visual order, so a secret could survive unnoticed there: those pages
+    // are read again in logical order (page text model), and any occurrence whose glyphs lie under a mark is a leak.
+    if (input.modelPages) {
+      try {
+        const models = await input.modelPages(input.bytes, texts)
+        models.forEach((m, pi) => {
+          const shapes = input.shapesByPage?.get(pi) ?? (input.marksByPage.get(pi) ?? []).map(rectQuad)
+          if (m && shapes.length && logicalLeak(m, secrets, shapes)) add(`page ${pi + 1}`, 'The redacted text can still be extracted (read in logical order, under a mark).')
+        })
+      } catch (e) {
+        add('text extraction', `The result could not be read in logical order to confirm the redaction (${e instanceof Error ? e.message : String(e)}).`)
       }
     }
   }

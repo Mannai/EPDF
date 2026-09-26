@@ -21,7 +21,7 @@ function makeDoc(): { pdf: Promise<PDFDocument> } {
 
 /** Adds a font dictionary (raw entries) to a page under `name` and returns its dict. */
 function addFont(pdf: PDFDocument, page: PDFPage, name: string, entries: Record<string, unknown>): PDFDict {
-  const d = pdf.context.obj(entries as never) as PDFDict
+  const d = pdf.context.obj(entries as never) as unknown as PDFDict
   const ref = pdf.context.register(d)
   page.node.setFontDictionary(N(name), ref)
   return d
@@ -34,7 +34,7 @@ function setContent(pdf: PDFDocument, page: PDFPage, content: string): void {
 
 function stream(pdf: PDFDocument, dict: Record<string, unknown>, content: string | Uint8Array): PDFRef {
   const bytes = typeof content === 'string' ? new TextEncoder().encode(content) : content
-  return pdf.context.register(PDFRawStream.of(pdf.context.obj(dict as never) as PDFDict, bytes))
+  return pdf.context.register(PDFRawStream.of(pdf.context.obj(dict as never) as unknown as PDFDict, bytes))
 }
 
 const model = async (pdf: PDFDocument, opts = {}): Promise<PageTextModel> => buildPageText(await PDFDocument.load(await pdf.save()), 0, opts)
