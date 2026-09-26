@@ -75,8 +75,14 @@ describe('font embedding: Type0 / Identity-H subsets', () => {
     // one Type0 font object for the whole document, referenced from both pages under the same resource name
     const type0 = doc.context.enumerateIndirectObjects().filter(([, o]) => o instanceof PDFDict && o.get(PDFName.of('Subtype')) === PDFName.of('Type0'))
     expect(type0.length).toBe(dt.all().length) // Naskh for Arabic + Noto Sans for "again": one Type0 object per font
-    const names = doc.getPages().map((p) => [...fontDicts(doc, p.node.Resources()).keys()].filter((k) => k.startsWith('EpdfF')))
-    expect(names[0]).toEqual(names[1])
+    const refs = doc.getPages().map((p) => {
+      const fonts = p.node.Resources()!.lookup(PDFName.of('Font'), PDFDict)
+      return new Map(fonts.entries().map(([k, v]) => [k.asString(), v.toString()]))
+    })
+    // a resource name means the same font object on every page (fonts are shared, never re-embedded per page)
+    const seen = new Map<string, string>()
+    for (const m of refs) for (const [name, ref] of m) expect(seen.get(name) ?? ref, name).toBe(ref), seen.set(name, ref)
+    expect(seen.size).toBe(dt.all().length)
   })
 
   it('saving twice is stable and later draws extend the same subset', async () => {

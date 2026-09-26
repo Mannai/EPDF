@@ -6,8 +6,9 @@
  *
  * Why vendored: harfbuzzjs initialises with a top-level `await` that fetches the WebAssembly relative to the module
  * URL. That cannot work in every place Epdf runs (sandboxed renderer, worker threads, packaged asar), so the app
- * supplies the wasm bytes itself (`initHarfBuzz({ wasmBinary })`). The patch is three small edits:
- *   1. harfbuzz.js -> harfbuzz.mjs: no `new URL('harfbuzz.wasm', import.meta.url)` (bytes are always passed in).
+ * supplies the wasm bytes itself (`initHarfBuzz({ wasmBinary })`). The patch is a few small edits:
+ *   1. harfbuzz.js -> harfbuzz.mjs: no `new URL('harfbuzz.wasm', import.meta.url)` and no Node/`import.meta.url` module
+ *      loading (the wasm bytes are always passed in, and the glue must also work once bundled to CommonJS).
  *   2. index.mjs: the top-level `init(await createHarfBuzz())` becomes the exported `initHarfBuzz(moduleArg)`.
  *   3. index.d.mts: the matching declaration.
  * Then re-run `node scripts/build-text-manifest.mjs` is NOT needed (fonts unaffected); run the unit tests.
@@ -23,9 +24,17 @@ mkdirSync(dst, { recursive: true })
 const version = JSON.parse(readFileSync(join(root, 'node_modules', 'harfbuzzjs', 'package.json'), 'utf8')).version
 
 let glue = readFileSync(join(src, 'harfbuzz.js'), 'utf8')
-const urlExpr = 'return new URL("harfbuzz.wasm",import.meta.url).href'
-if (!glue.includes(urlExpr)) throw new Error('harfbuzzjs glue changed: cannot patch the wasm URL expression')
-glue = `/* harfbuzzjs ${version} (MIT) Emscripten glue. Epdf patch: no \`new URL(..., import.meta.url)\` for the wasm (bytes are always passed in as \`wasmBinary\`). */\n` + glue.replace(urlExpr, 'return "harfbuzz.wasm"')
+const edits = [
+  ['return new URL("harfbuzz.wasm",import.meta.url).href', 'return "harfbuzz.wasm"'],
+  ['var ENVIRONMENT_IS_NODE=typeof process=="object"&&process.versions?.node&&process.type!="renderer";', 'var ENVIRONMENT_IS_NODE=false;'],
+  ['var _scriptName=import.meta.url;', 'var _scriptName="";']
+]
+for (const [from, to] of edits) {
+  if (!glue.includes(from)) throw new Error(`harfbuzzjs glue changed: cannot patch ${from}`)
+  glue = glue.replace(from, to)
+}
+glue =
+  `/* harfbuzzjs ${version} (MIT) Emscripten glue. Epdf patch: no import.meta.url / Node module loading: the wasm bytes are always passed in as \`wasmBinary\`. */\n` + glue
 writeFileSync(join(dst, 'harfbuzz.mjs'), glue)
 
 let index = readFileSync(join(src, 'index.mjs'), 'utf8')
