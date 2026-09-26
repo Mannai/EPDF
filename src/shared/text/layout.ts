@@ -500,8 +500,17 @@ function assembleLine(
   while (h > a && isHangingSpace(ptext.charCodeAt(h - 1))) h--
   const levels = lineLevels(plan.info, a, b, plan.level)
   const pieces: Piece[] = []
-  for (const lr of lruns) {
-    if (lr.plan.e <= a || lr.plan.s >= b) continue
+  // Runs are in source order: binary search for the first run that reaches this line, stop at the first past it.
+  let lo = 0
+  let hi = lruns.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (lruns[mid]!.plan.e <= a) lo = mid + 1
+    else hi = mid
+  }
+  for (let ri = lo; ri < lruns.length; ri++) {
+    const lr = lruns[ri]!
+    if (lr.plan.s >= b) break
     const rrtl = (lr.plan.level & 1) === 1
     const logical = (rrtl ? lr.glyphs.slice().reverse() : lr.glyphs).filter((g) => g.cluster >= a && g.cluster < b)
     let cur: LGlyph[] = []

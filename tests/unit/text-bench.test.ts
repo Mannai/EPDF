@@ -74,12 +74,17 @@ describe('performance: shaping + layout of 1,000 mixed-script paragraphs', () =>
 
   it('itemization and line breaking scale linearly with text length', async () => {
     const word = 'مرحبا hello '
+    // best of five: robust against other processes using the machine
     const t = async (n: number): Promise<number> => {
       const text = word.repeat(n)
       await layoutParagraph(text, { size: 12, width: 300 })
-      const t0 = performance.now()
-      for (let i = 0; i < 3; i++) await layoutParagraph(text, { size: 12, width: 300 })
-      return (performance.now() - t0) / 3
+      let best = Infinity
+      for (let i = 0; i < 5; i++) {
+        const t0 = performance.now()
+        await layoutParagraph(text, { size: 12, width: 300 })
+        best = Math.min(best, performance.now() - t0)
+      }
+      return best
     }
     const small = await t(500)
     const big = await t(4000)

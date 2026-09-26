@@ -377,11 +377,11 @@ Side-by-side pictures of every comparison (PDF.js on top, Chromium below) are sa
 
 | Pass | Time |
 |---|---|
-| cold (loads fonts, fills caches) | ~255 ms |
-| warm (new paragraphs, same vocabulary) | ~157 ms (thresholds: < 1000 ms) |
-| shaping cache emptied, fonts loaded | ~167 ms |
-| fully cached | ~142 ms |
-| 4,000 word pairs in one paragraph | ~140 ms |
+| cold (loads fonts, fills caches) | ~270 ms |
+| warm (new paragraphs, same vocabulary) | ~175 ms (threshold: < 1000 ms) |
+| shaping cache emptied, fonts loaded | ~185 ms (threshold: < 2500 ms) |
+| fully cached | ~160 ms (threshold: < 700 ms) |
+| one paragraph of 4,000 Arabic+English word pairs (8x the text of a 500-pair one) | ~45 ms vs ~5 ms: linear |
 
 <a id="limits"></a>
 ## 11. Known limits and what was not verified
