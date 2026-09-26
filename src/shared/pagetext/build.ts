@@ -133,7 +133,8 @@ function wordsOf(text: string, offset: number): number[] {
 }
 
 // ---- alignment of /ActualText with the glyphs it covers ------------------------------------------------------
-const baseKey = (s: string): string => s.normalize('NFKC').replace(/\p{M}/gu, '').toLowerCase()
+/** Alignment key: compatibility-folded, lower case, without non-spacing marks (spacing vowel signs are kept: they have glyphs of their own). */
+const baseKey = (s: string): string => s.normalize('NFKC').replace(/[\p{Mn}\p{Me}]/gu, '').toLowerCase()
 
 /**
  * Maps every character of an ActualText string to one of the span's glyph boxes: the ActualText is displayed with the
@@ -167,13 +168,26 @@ function alignSpan(actual: string, glyphTexts: string[], para: 0 | 1): number[] 
         dp[i * w + j] = a[i].key === b[j].key ? dp[(i + 1) * w + j + 1] + 1 : Math.max(dp[(i + 1) * w + j], dp[i * w + j + 1])
       }
     }
+    const usedB = new Uint8Array(b.length)
+    const doneA = new Uint8Array(a.length)
     for (let i = 0, j = 0; i < a.length && j < b.length; ) {
       if (a[i].key === b[j].key) {
         out[a[i].idx] = b[j].owner
+        doneA[i] = 1
+        usedB[j] = 1
         i++
         j++
       } else if (dp[(i + 1) * w + j] >= dp[i * w + j + 1]) i++
       else j++
+    }
+    // characters drawn out of order (an Indic pre-base vowel sign before its consonant): match what is left by key
+    for (let i = 0; i < a.length; i++) {
+      if (doneA[i]) continue
+      const j = b.findIndex((x, k) => !usedB[k] && x.key === a[i].key)
+      if (j >= 0) {
+        out[a[i].idx] = b[j].owner
+        usedB[j] = 1
+      }
     }
   } else if (a.length && b.length) {
     // proportional fallback for very long spans

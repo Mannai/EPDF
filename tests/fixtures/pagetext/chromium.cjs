@@ -20,9 +20,12 @@ async function print(name, doc) {
   writeFileSync(file, doc)
   await w.loadFile(file)
   await w.webContents.executeJavaScript('document.fonts.ready.then(() => true)')
+  // A word split by the bidi algorithm (a date in Arabic text, "(Epdf)") has one client rect per fragment: the box
+  // is their union.
   const boxes = await w.webContents.executeJavaScript(`[...document.querySelectorAll('span.w')].map((s) => {
-    const r = s.getClientRects()[0]
-    return { line: s.dataset.line, k: Number(s.dataset.k), text: s.textContent, x0: r.left, y0: r.top, x1: r.right, y1: r.bottom }
+    const rs = [...s.getClientRects()]
+    return { line: s.dataset.line, k: Number(s.dataset.k), text: s.textContent, fragments: rs.length,
+      x0: Math.min(...rs.map((r) => r.left)), y0: Math.min(...rs.map((r) => r.top)), x1: Math.max(...rs.map((r) => r.right)), y1: Math.max(...rs.map((r) => r.bottom)) }
   })`)
   const pdf = await w.webContents.printToPDF({ pageSize: 'A4', printBackground: false, margins: { marginType: 'none' }, preferCSSPageSize: true })
   writeFileSync(join(outDir, `chromium-${name}.pdf`), pdf)

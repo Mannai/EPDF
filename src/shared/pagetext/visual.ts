@@ -8,22 +8,31 @@ import { analyzeBidi, bracketPartner, lineLevels, reorderVisual } from '../text/
  * visual order left to right along the baseline) we look for a logical order whose UBA display (rules W1-W7, N0-N2,
  * I1-I2, L1-L2 of UAX #9, via bidi-js) reproduces exactly the visual order we see.
  *
- *  1. Candidate levels come from running the UBA on the visual string as if it were logical, which inverts the common
- *     structures (right-to-left words, numbers and Latin runs inside them). Rule L2 applied to items that keep their
- *     levels is an involution, so the candidate logical order is `reorderVisual(levels)` of the visual units.
- *  2. The candidate is VERIFIED by running the UBA forwards on the candidate logical string.
- *  3. If it does not reproduce the visual order, the levels of the ambiguous stretches (neutrals: spaces, punctuation,
- *     separators between numbers) are searched: each neutral run can belong to its left neighbour, its right neighbour
- *     or the paragraph level (or be split between the two neighbours). This recovers e.g. an Arabic-context date
+ *  1. Candidate levels: the UBA run on the visual string as if it were logical (inverts the common structures:
+ *     right-to-left words, numbers and Latin runs inside them), plus two other starting points (neutrals at the
+ *     paragraph level; numbers kept whole with the punctuation touching them). Rule L2 applied to items that keep
+ *     their levels is an involution, so a candidate logical order is `reorderVisual(levels)` of the visual units.
+ *  2. Every candidate is VERIFIED by running the UBA forwards on the candidate logical string, and REFINED to a fixed
+ *     point: the levels the UBA gives the candidate, carried back to the visual units, define the next candidate. A
+ *     fixed point displays exactly like the page.
+ *  3. A neighbourhood search over the ambiguous stretches (neutral runs: spaces, punctuation, separators between
+ *     numbers, each belonging to its left or right neighbour or the paragraph level, or split; bracket pairs jointly;
+ *     digit runs in left-to-right paragraphs) finds the exact readings. This recovers e.g. an Arabic-context date
  *     `2026-09-26`, which the UBA displays as `26-09-2026` (the digits become Arabic numbers, rule W2, and the hyphens
  *     between them resolve to right-to-left, rule N1).
- *  4. Several logical strings can display identically (the UBA is not injective). Among exact solutions, the one whose
- *     order agrees best with the order the producer drew the glyphs in (content stream order) wins: most producers
- *     draw runs in logical order.
+ *  4. Several logical strings can display identically (the UBA is not injective). Exact readings are ranked: brackets
+ *     that pair up (and enclose something), numbers kept whole, then the order the producer drew the glyphs in when
+ *     that carries information (most producers draw runs in logical order), else the fewest direction runs.
  *  5. Paired brackets: producers either map a mirrored glyph to the character typed (LibreOffice, Skia, our engine) or
- *     to the shape drawn. The variant whose brackets pair up in the logical text wins.
+ *     to the shape drawn. Both are tried; the variant whose brackets pair up in the logical text wins.
  *
- * The result reports whether an exact solution was found; if not, the best-scoring candidate is returned (flagged).
+ * If no exact reading exists (the producer did not follow the UBA), a right-to-left line falls back to the usual
+ * non-conforming behaviour (reverse the line, keep left-to-right runs), flagged `exact: false`.
+ *
+ * Measured (tests/unit/pagetext-bidi.test.ts): every case of the vendored BidiCharacterTest sample and of 6,000
+ * generated mixed sentences is inverted to a reading that displays identically; the typed original is recovered for
+ * ~97% of the conformance cases and ~92% (right-to-left) / ~75% (left-to-right with Arabic) of the generated ones,
+ * the rest being genuine ambiguities.
  */
 
 export interface VisualUnit {
@@ -145,14 +154,37 @@ function solve(units: VisualUnit[], para: 0 | 1, mirror: boolean[], budget: { n:
   const texts = textsWith(units, mirror)
   const cls = texts.map(classOf)
   const base = unitLevels(texts, para)
-  const evaluate = (levels: number[]): Solution => {
+  const evaluateRaw = (levels: number[]): Solution => {
     const order = reorderVisual(levels)
     budget.n--
     const sc = score(texts, order, para)
     return { order, levels, mirror, score: sc, exact: sc === n, disagreement: -1, imbalance: -1 }
   }
+  /**
+   * Fixed-point refinement: the levels the UBA gives the candidate logical text, carried back to the visual units,
+   * define the next candidate. A fixed point displays exactly as the visual order (L2 is an involution).
+   */
+  const evaluate = (levels0: number[]): Solution => {
+    let s = evaluateRaw(levels0)
+    for (let it = 0; it < 6 && !s.exact && budget.n > 0; it++) {
+      const logical = s.order.map((i) => texts[i])
+      const lv = unitLevels(logical, para)
+      const next = new Array<number>(n)
+      s.order.forEach((vi, k) => (next[vi] = lv[k]))
+      if (next.every((v, i) => v === s.levels[i])) break
+      const r = evaluateRaw(next)
+      if (r.score < s.score) break
+      s = r
+    }
+    return s
+  }
   let best = evaluate(base)
-  if (best.exact) return best
+  // A line with right-to-left text next to left-to-right text or numbers can have several logical readings that
+  // display identically: look for the alternatives even when the first candidate is exact, and rank them below.
+  const mixed = cls.includes('R') && (cls.includes('L') || cls.includes('D'))
+  if (best.exact && !mixed) return best
+  // only ranking alternatives from here: spend less
+  if (best.exact) budget.n = Math.min(budget.n, EXPLORE_BUDGET)
 
   // neutral runs (visual), with their neighbours
   const runs: { from: number; to: number }[] = []
@@ -179,75 +211,165 @@ function solve(units: VisualUnit[], para: 0 | 1, mirror: boolean[], budget: { n:
     i = j
   }
 
-  const exacts: Solution[] = []
-  for (let pass = 0; pass < 3 && budget.n > 0; pass++) {
-    let improved = false
+  // bracket units (for joint moves: a bracket pair resolves to one level, rule N0)
+  const brackets: number[] = []
+  for (let i = 0; i < n; i++) if (isBracketish(texts[i])) brackets.push(i)
+
+  /** Candidate level assignments one step away from `cur`. */
+  const neighbours = (cur: number[]): number[][] => {
+    const out: number[][] = []
+    const seenKeys = new Set<string>()
+    const add = (lv: number[]): void => {
+      const k = lv.join(',')
+      if (!seenKeys.has(k)) {
+        seenKeys.add(k)
+        out.push(lv)
+      }
+    }
     for (const r of runs) {
-      if (budget.n <= 0) break
-      const cur = best.levels
       const left = r.from > 0 ? cur[r.from - 1] : para
       const right = r.to < n ? cur[r.to] : para
-      const options = new Set<string>()
-      const cands: number[][] = []
-      const add = (lv: number[]): void => {
-        const k = lv.slice(r.from, r.to).join(',')
-        if (options.has(k)) return
-        options.add(k)
-        cands.push(lv)
-      }
       const len = r.to - r.from
-      for (const v of [para, left, right, para + 1 + ((para + 1) % 2 === 0 ? 0 : 1)]) {
+      for (const v of [para, left, right, para + 1]) {
         const lv = cur.slice()
         for (let k = r.from; k < r.to; k++) lv[k] = v
         add(lv)
       }
       if (len > 1 && left !== right) {
         for (let split = 1; split < len && split <= 6; split++) {
-          const lv = cur.slice()
-          for (let k = r.from; k < r.to; k++) lv[k] = k - r.from < split ? left : right
-          add(lv)
-          const lv2 = cur.slice()
-          for (let k = r.from; k < r.to; k++) lv2[k] = k - r.from < split ? left : para
-          add(lv2)
-          const lv3 = cur.slice()
-          for (let k = r.from; k < r.to; k++) lv3[k] = k - r.from < split ? para : right
-          add(lv3)
+          for (const [a, b] of [[left, right], [left, para], [para, right]]) {
+            const lv = cur.slice()
+            for (let k = r.from; k < r.to; k++) lv[k] = k - r.from < split ? a : b
+            add(lv)
+          }
         }
       }
-      for (const lv of cands) {
-        if (budget.n <= 0) break
-        const s = evaluate(lv)
-        if (s.exact) exacts.push(s)
-        if (s.score > best.score) {
-          best = s
-          improved = true
+    }
+    // two brackets at once (they pair up in the logical text and share a level)
+    for (let x = 0; x < brackets.length && brackets.length <= 16; x++) {
+      for (let y = x + 1; y < brackets.length; y++) {
+        for (const v of [para, para + 1]) {
+          const lv = cur.slice()
+          lv[brackets[x]] = v
+          lv[brackets[y]] = v
+          add(lv)
         }
       }
     }
     if (para === 0) {
       for (const r of digitRuns) {
-        if (budget.n <= 0) break
         for (const v of [0, 2]) {
-          const lv = best.levels.slice()
+          const lv = cur.slice()
           for (let k = r.from; k < r.to; k++) lv[k] = v
-          const s = evaluate(lv)
-          if (s.exact) exacts.push(s)
-          if (s.score > best.score) {
-            best = s
-            improved = true
-          }
+          add(lv)
         }
       }
     }
-    if (!improved) break
+    return out
   }
-  if (best.exact) exacts.push(best)
-  if (exacts.length) {
-    for (const s of exacts) s.disagreement = streamDisagreement(units, s.order)
-    exacts.sort((a, b) => a.disagreement - b.disagreement)
-    return exacts[0]
+
+  const exacts: Solution[] = []
+  const seen = new Set<string>()
+  const note = (s: Solution): void => {
+    if (!s.exact) return
+    const k = s.order.join(',')
+    if (seen.has(k)) return
+    seen.add(k)
+    exacts.push(s)
   }
+  // starting points, each refined to a fixed point: the UBA on the visual string, neutrals at the paragraph level,
+  // and numbers kept whole with the punctuation touching them ("95%", "$5", "12:30"); then a neighbourhood search
+  // from each (single stretches, bracket pairs, digit runs), keeping every exact reading found
+  const starts: Solution[] = [best]
+  for (const lv of alternativeStarts(texts, cls, para)) if (budget.n > 0) starts.push(evaluate(lv))
+  for (const st of starts) {
+    note(st)
+    if (st.score > best.score) best = st
+  }
+  for (const st of starts) {
+    let cur = st
+    for (let pass = 0; pass < 3 && budget.n > 0; pass++) {
+      let improved = false
+      for (const lv of neighbours(cur.levels)) {
+        if (budget.n <= 0) break
+        const s = evaluate(lv)
+        note(s)
+        if (s.score > cur.score) {
+          cur = s
+          improved = true
+        }
+        if (s.score > best.score) best = s
+      }
+      if (!improved) break
+    }
+  }
+  if (exacts.length) return rankExact(units, texts, exacts)
   return best
+}
+
+const TIGHT = /^[^\s]+$/u
+/** Candidate evaluations spent looking for better-ranked alternatives when an exact reading is already known. */
+const EXPLORE_BUDGET = 120
+
+function alternativeStarts(texts: string[], cls: Cls[], para: 0 | 1): number[][] {
+  const n = texts.length
+  const strongL = para ? 2 : 0
+  // D next to right-to-left text (through neutrals) is a number of that text: level 2 in either paragraph direction
+  const nearR = (i: number): boolean => {
+    for (let k = i - 1; k >= 0; k--) if (cls[k] !== 'N' && cls[k] !== 'D') return cls[k] === 'R'
+    for (let k = i + 1; k < n; k++) if (cls[k] !== 'N' && cls[k] !== 'D') return cls[k] === 'R'
+    return para === 1
+  }
+  const digitLevel = (i: number): number => (para ? 2 : nearR(i) ? 2 : 0)
+  const plain = cls.map((c, i) => (c === 'R' ? 1 : c === 'L' ? strongL : c === 'D' ? digitLevel(i) : para))
+  // tight tokens (no whitespace between units) that contain a digit take the digit's level as a whole
+  const tight = plain.slice()
+  for (let i = 0; i < n; ) {
+    let j = i
+    while (j < n && TIGHT.test(texts[j]) && cls[j] !== 'R' && cls[j] !== 'L') j++
+    if (j > i) {
+      const d = cls.slice(i, j).indexOf('D')
+      if (d >= 0) for (let k = i; k < j; k++) if (cls[k] === 'N' || cls[k] === 'D') tight[k] = digitLevel(i + d)
+      i = j
+    } else i++
+  }
+  return [plain, tight]
+}
+
+/**
+ * Among readings that all display exactly like the page: brackets that pair up, numbers kept whole ("95%", "$5",
+ * "+966", "12:30" read as drawn), then the order the producer drew the runs in when that carries information
+ * (producers that draw runs in logical order, e.g. LibreOffice), else the simplest structure (fewest direction runs).
+ */
+function rankExact(units: VisualUnit[], texts: string[], exacts: Solution[]): Solution {
+  const n = units.length
+  let monotonic = true
+  for (let i = 1; i < n && monotonic; i++) if (units[i].seq < units[i - 1].seq) monotonic = false
+  // groups of units drawn touching each other (no space) that contain a digit: "966+", "95%", "$5", "12:30"
+  const groups: number[][] = []
+  for (let i = 0; i < n; ) {
+    let j = i
+    while (j < n && TIGHT.test(texts[j]) && classOf(texts[j]) !== 'R' && classOf(texts[j]) !== 'L') j++
+    if (j - i > 1 && texts.slice(i, j).some((t) => classOf(t) === 'D') && texts.slice(i, j).some((t) => classOf(t) === 'N')) groups.push(Array.from({ length: j - i }, (_, k) => i + k))
+    i = Math.max(j, i + 1)
+  }
+  const scored = exacts.map((s) => {
+    const pos = new Array<number>(n)
+    s.order.forEach((vi, k) => (pos[vi] = k))
+    // a number group that is not one contiguous piece of the logical text was torn apart
+    let broken = 0
+    for (const g of groups) {
+      const ps = g.map((i) => pos[i])
+      if (Math.max(...ps) - Math.min(...ps) !== g.length - 1) broken++
+    }
+    let runs = 0
+    for (let i = 1; i < n; i++) if (s.levels[i] !== s.levels[i - 1]) runs++
+    const logical = s.order.map((i) => texts[i]).join('')
+    const emptyPairs = (logical.match(/[([{«‹]\s*[)\]}»›]/gu) ?? []).length
+    return { s, imbalance: bracketImbalance(logical) + emptyPairs, broken, runs, dis: monotonic ? 0 : streamDisagreement(units, s.order) }
+  })
+  scored.sort((a, b) => a.imbalance - b.imbalance || a.broken - b.broken || a.dis - b.dis || a.runs - b.runs)
+  return scored[0].s
 }
 
 /**

@@ -137,12 +137,13 @@ function drawVisual(page: ReturnType<PDFDocument['addPage']>, font: PdfFontLike,
  * the full fonts (`subset: false`), because pdf-lib's subsets keep neither a cmap nor glyph names (such a file is
  * genuinely unreadable and must be reported as such).
  */
-export async function presentationForms(opts: { toUnicode: boolean; fontsDir: string; subset?: boolean }): Promise<Uint8Array> {
+export async function presentationForms(opts: { toUnicode: boolean; fontsDir: string; subset?: boolean; fontFile?: string }): Promise<Uint8Array> {
   const pdf = await PDFDocument.create()
   pdf.registerFontkit(fontkit)
   const subset = opts.subset ?? true
-  const font = await pdf.embedFont(readFileSync(join(opts.fontsDir, 'textfonts', 'NotoNaskhArabic-Regular.ttf')), { subset })
-  const latin = await pdf.embedFont(readFileSync(join(opts.fontsDir, 'fonts', 'NotoSans-Regular.ttf')), { subset })
+  const one = opts.fontFile ? await pdf.embedFont(readFileSync(opts.fontFile), { subset }) : null
+  const font = one ?? (await pdf.embedFont(readFileSync(join(opts.fontsDir, 'textfonts', 'NotoNaskhArabic-Regular.ttf')), { subset }))
+  const latin = one ?? (await pdf.embedFont(readFileSync(join(opts.fontsDir, 'fonts', 'NotoSans-Regular.ttf')), { subset }))
   const page = pdf.addPage(A4)
   let y = 780
   for (const id of PRESENTATION_IDS) {
@@ -152,7 +153,7 @@ export async function presentationForms(opts: { toUnicode: boolean; fontsDir: st
   }
   // Hebrew stored in visual order, one glyph per letter (no presentation forms needed)
   const he = corpus.lines.find((x) => x.id === 'he')!
-  const heFont = await pdf.embedFont(readFileSync(join(opts.fontsDir, 'textfonts', 'NotoSansHebrew-Regular.ttf')), { subset })
+  const heFont = one ?? (await pdf.embedFont(readFileSync(join(opts.fontsDir, 'textfonts', 'NotoSansHebrew-Regular.ttf')), { subset }))
   drawVisual(page, heFont, visualString(he.text, 'rtl'), 555, y, 18, latin)
   const bytes = await pdf.save()
   if (opts.toUnicode) return bytes

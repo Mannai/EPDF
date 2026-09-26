@@ -90,8 +90,9 @@ function parse(b: Uint8Array): Sfnt | undefined {
       for (const [cp, gid] of uniSub.entries()) {
         if (!gid) continue
         const prev = reverse.get(gid)
-        // prefer base letters over presentation forms, and the lowest code point otherwise
-        if (prev === undefined || (isPresentation(prev) && !isPresentation(cp)) || (isPresentation(prev) === isPresentation(cp) && cp < prev)) reverse.set(gid, cp)
+        // A glyph shared by several characters (Arabic and Persian yeh look the same in the middle of a word):
+        // prefer the core letters, then Arabic Presentation Forms-B, then the extended/Persian/Urdu forms; lowest first.
+        if (prev === undefined || reverseRank(cp) < reverseRank(prev) || (reverseRank(cp) === reverseRank(prev) && cp < prev)) reverse.set(gid, cp)
       }
     }
     return reverse
@@ -158,7 +159,13 @@ function parse(b: Uint8Array): Sfnt | undefined {
   }
 }
 
-const isPresentation = (cp: number): boolean => (cp >= 0xfb50 && cp <= 0xfdff) || (cp >= 0xfe70 && cp <= 0xfeff) || (cp >= 0xfb1d && cp <= 0xfb4f)
+function reverseRank(cp: number): number {
+  if (cp < 0x0600 || (cp >= 0x0600 && cp <= 0x064a)) return 0 // Latin etc. and the core Arabic letters
+  if (cp >= 0xfe70 && cp <= 0xfeff) return 1 // Arabic Presentation Forms-B (the standard letters' forms)
+  if (cp < 0xfb00) return 2 // other base characters (extended Arabic, other scripts)
+  if (cp >= 0xfb1d && cp <= 0xfb4f) return 3 // Hebrew presentation forms
+  return 4 // Arabic Presentation Forms-A (extended letters, ligatures) and the rest
+}
 
 function readSub(dv: DataView, b: Uint8Array, o: number): Omit<Sub, 'platform' | 'encoding'> | undefined {
   const u16 = (x: number): number => dv.getUint16(x)
