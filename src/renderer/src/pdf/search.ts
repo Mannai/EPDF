@@ -1,4 +1,14 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist'
+import { normalizeForSearch } from '@shared/text/search'
+import { itemsText, pageText as unifiedPageText, pdfjsText, type PageText as UnifiedPageText } from './pagetext'
+
+/**
+ * In-document search. Page text comes from `pdf/pagetext`: PDF.js's text for ordinary pages, the page text model
+ * (logical order) for right-to-left and complex-script pages. Matching is done on text normalised with the text
+ * engine's `normalizeForSearch` ("find what the user means": Arabic tashkeel and tatweel ignored, alef/yeh variants
+ * and Arabic-Indic/Persian digits unified, presentation forms and ligatures expanded, Hebrew points ignored, case
+ * folded unless Match case is on), and mapped back to the original text so highlights cover the right characters.
+ */
 
 export interface SearchOptions {
   matchCase: boolean
@@ -16,19 +26,9 @@ export interface PageText {
   itemStarts: number[]
 }
 
-const NBSP = / /g
-
+/** PDF.js text items -> page text (kept for callers that work with PDF.js items). */
 export function buildPageText(items: { str?: string; hasEOL?: boolean }[]): PageText {
-  let text = ''
-  const itemStarts: number[] = []
-  for (const it of items) {
-    // Marked-content markers have no `str`; the text layer skips them too, so indices stay aligned.
-    if (typeof it.str !== 'string') continue
-    itemStarts.push(text.length)
-    text += it.str.replace(NBSP, ' ')
-    if (it.hasEOL) text += '\n'
-  }
-  return { text, itemStarts }
+  return itemsText(items)
 }
 
 /** Builds a global regex from a plain query: literal characters, any whitespace run matches any whitespace run. */
@@ -57,6 +57,44 @@ export function findMatches(text: string, re: RegExp): Match[] {
   return out
 }
 
+// eslint-disable-next-line no-control-regex
+const ASCII = /^[\u0000-\u007f]*$/
+
+interface Normalized {
+  text: string
+  toOriginal(a: number, b: number): [number, number]
+}
+
+function normalize(text: string, foldCase: boolean): Normalized {
+  // ASCII text normalises to itself (lower-cased when folding): no mapping needed
+  if (ASCII.test(text)) return { text: foldCase ? text.toLowerCase() : text, toOriginal: (a, b) => [a, b] }
+  return normalizeForSearch(text, { foldCase })
+}
+
+/**
+ * All matches of `query` in `text` after search normalisation, as ranges of the ORIGINAL text. Whitespace in the
+ * query matches any whitespace run (line breaks too); `wholeWord` requires no letter, digit or mark on either side.
+ */
+export function findInText(text: string, query: string, opts: SearchOptions): Match[] {
+  const q = query.trim()
+  if (!q || !text) return []
+  const fold = !opts.matchCase
+  const words = q
+    .split(/\s+/)
+    .map((w) => normalize(w, fold).text)
+    .filter(Boolean)
+  if (!words.length) return []
+  const body = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+')
+  const re = new RegExp(opts.wholeWord ? `(?<![\\p{L}\\p{N}\\p{M}_])${body}(?![\\p{L}\\p{N}\\p{M}_])` : body, 'gu')
+  const nt = normalize(text, fold)
+  const out: Match[] = []
+  for (const m of findMatches(nt.text, re)) {
+    const [start, end] = nt.toOriginal(m.start, m.end)
+    if (end > start) out.push({ start, end })
+  }
+  return out
+}
+
 /** Maps a character offset to the index of the text item that contains it. */
 export function itemIndexAt(itemStarts: number[], offset: number): number {
   let lo = 0
@@ -69,21 +107,14 @@ export function itemIndexAt(itemStarts: number[], offset: number): number {
   return lo
 }
 
-const textCache = new WeakMap<PDFDocumentProxy, Map<number, PageText>>()
+/** PDF.js's own text of a page with item offsets (the viewer's PDF.js text layer is built from the same items). */
+export function getPageText(doc: PDFDocumentProxy, pageNo: number): Promise<PageText> {
+  return pdfjsText(doc, pageNo)
+}
 
-export async function getPageText(doc: PDFDocumentProxy, pageNo: number): Promise<PageText> {
-  let perDoc = textCache.get(doc)
-  if (!perDoc) textCache.set(doc, (perDoc = new Map()))
-  const hit = perDoc.get(pageNo)
-  if (hit) return hit
-  const page = await doc.getPage(pageNo)
-  const content = await page.getTextContent()
-  page.cleanup()
-  const pt = buildPageText(content.items as { str?: string; hasEOL?: boolean }[])
-  // Bound memory on very large documents: keep the most recent ~300 pages of text.
-  if (perDoc.size > 300) perDoc.delete(perDoc.keys().next().value as number)
-  perDoc.set(pageNo, pt)
-  return pt
+/** The text search uses for a page (logical order; see `pdf/pagetext`). */
+export function getSearchText(doc: PDFDocumentProxy, pageNo: number): Promise<UnifiedPageText> {
+  return unifiedPageText(doc, pageNo)
 }
 
 export interface SearchProgress {
@@ -99,13 +130,12 @@ export async function searchDocument(
   onPage: (p: SearchProgress, done: number) => void,
   signal: AbortSignal
 ): Promise<void> {
-  const re = buildRegex(query, opts)
-  if (!re) return
+  if (!query.trim()) return
   for (let p = 1; p <= doc.numPages; p++) {
     if (signal.aborted) return
-    const { text } = await getPageText(doc, p)
+    const { text } = await unifiedPageText(doc, p)
     if (signal.aborted) return
-    onPage({ page: p, matches: findMatches(text, re) }, p)
+    onPage({ page: p, matches: findInText(text, query, opts) }, p)
     if (p % 8 === 0) await new Promise((r) => setTimeout(r, 0))
   }
 }

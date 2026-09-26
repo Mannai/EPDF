@@ -1,6 +1,7 @@
 import type { PDFDocument } from 'pdf-lib'
+import { buildPageText, modelIsUsable, needsPageModel, rangeQuads, type PageTextModel as LogicalModel } from '@shared/pagetext'
 import { extractPageText, shapesForRange, type PageTextModel } from './extract'
-import type { Quad, Rect } from './geom'
+import { quadBox, type Quad, type Rect } from './geom'
 import { findPreset, presetById } from './patterns'
 import { RegexBudgetError, compileSafeRegex, type SafeRegex } from './safeRegex'
 
@@ -111,6 +112,35 @@ export function searchModel(model: PageTextModel, matcher: { find: Finder; joinL
     .filter((h) => h.rects.length > 0)
 }
 
+/** Searches a page text model (logical order); shapes are converted to PDF user space like the redaction needs. */
+export function searchLogical(model: LogicalModel, matcher: { find: Finder; joinLines: boolean }, pageIndex: number): Hit[] {
+  const t = model.transform
+  const det = t[0] * t[3] - t[1] * t[2]
+  if (!det) return []
+  const toUser = (x: number, y: number): [number, number] => {
+    const dx = x - t[4]
+    const dy = y - t[5]
+    return [(dx * t[3] - dy * t[2]) / det, (dy * t[0] - dx * t[1]) / det]
+  }
+  const ranges = matcher.find(model.text)
+  const out: Hit[] = []
+  for (const r of ranges) {
+    const rects: Rect[] = []
+    const quads: (Quad | null)[] = []
+    for (const dq of rangeQuads(model, r.start, r.end)) {
+      const q: number[] = []
+      for (let k = 0; k < 8; k += 2) q.push(...toUser(dq[k], dq[k + 1]))
+      const quad = q as Quad
+      const box = quadBox(quad)
+      rects.push(box)
+      const upright = Math.abs(quad[1] - quad[3]) < 1e-3 && Math.abs(quad[0] - quad[6]) < 1e-3
+      quads.push(upright ? null : quad)
+    }
+    if (rects.length) out.push({ pageIndex, start: r.start, end: r.end, text: model.text.slice(r.start, r.end).replace(/\s*\n\s*/g, ' '), rects, quads, hiddenOnly: false })
+  }
+  return out
+}
+
 export interface SearchOptions {
   pages?: number[]
   signal?: { aborted: boolean }
@@ -131,7 +161,17 @@ export async function searchDocument(pdf: PDFDocument, matcher: Matcher, opts: S
     } catch {
       continue
     }
-    const hits = searchModel(model, compiled)
+    let hits = searchModel(model, compiled)
+    // Right-to-left and complex-script pages: the stream-order text above is in visual order, so the page is also
+    // searched in logical order (page text model); its hits replace the visual-order ones.
+    if (needsPageModel(model.text)) {
+      try {
+        const logical = buildPageText(pdf, pi)
+        if (modelIsUsable(logical, model.text)) hits = searchLogical(logical, compiled, pi)
+      } catch {
+        /* keep the stream-order hits */
+      }
+    }
     out.push(...hits)
     opts.onPage?.(pi, hits)
     // let the UI breathe about every 30 ms of work (a timer per page would dominate on large documents)

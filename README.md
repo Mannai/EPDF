@@ -288,12 +288,11 @@ LibreOffice) and skip cleanly without them.
 - Old binary Office formats (`.doc`, `.xls`, `.ppt`) are not converted; save them as `.docx/.xlsx/.pptx` first.
 - A spreadsheet that declares absurd repeat counts (a billion cells) is capped at 512 columns x 2000 rows, but
   converting that capped sheet still takes ~40 s.
-- **Arabic and other right-to-left text in existing PDFs displays correctly, but selecting, copying and searching it
-  is not reliable yet.** Epdf currently gets page text from PDF.js, which scrambles Arabic from many producers (a
-  LibreOffice export came out as unreadable fragments) and misorders numbers and brackets inside Arabic lines. An
-  Arabic-aware page text layer is in progress. Text that Epdf *writes* is correct: the text engine
-  (`src/shared/text/`, see `docs/text-engine.md`) shapes Arabic, Hebrew, Indic, Thai and CJK and was checked against
-  Chromium's rendering and, for Arabic, with Windows' own PDF renderer. No existing feature uses the engine yet.
+- **Arabic and other right-to-left text in existing PDFs** is selected, copied and searched in logical order through
+  the page text model (`src/shared/pagetext/`, see `docs/page-text.md`), verified on LibreOffice, Chromium, the text
+  engine and legacy visual-order files. Its limits (heuristic reading order of complex layouts, fonts without any
+  Unicode mapping, vertical writing, tashkeel-sensitive library search) are listed there. Text that Epdf *writes* is
+  shaped by the text engine (`src/shared/text/`, see `docs/text-engine.md`).
 - Drag-a-tab-out-of-the-window is not implemented; use **Document ▸ Move Tab to New Window**.
 
 ## Licensing and self-containment

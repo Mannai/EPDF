@@ -208,7 +208,9 @@ because PDF.js itself NFKC-normalises: `ﬁ` -> `fi`, Thai `ำ` -> `ํา`).
   `Hello 😀 123 ⭐ مرحبا`). The PDF has the right ActualText; pdfium/Acrobat get it right.
 * **PDF.js deletes `<` and `>`** from every right-to-left run (a deliberate line in its bidi code). ToUnicode/ActualText
   in the PDF contain them.
-* Search in the app uses PDF.js text, so it inherits the above; `findNormalized` (below) is tolerant of most of it.
+* The app does not inherit these: pages with right-to-left or complex-script text are read with the page text model
+  (`src/shared/pagetext`, see `docs/page-text.md`), which honours `/ActualText` and recovers the logical order of any
+  producer's output; search, selection, copy, compare, export and the library use it.
 
 Other readers (Acrobat, pdfium/Chrome, poppler, MuPDF, macOS Preview) could not be run here; the ActualText spans are
 checked directly (tests parse them and compare with the source text), and the structure is standard.

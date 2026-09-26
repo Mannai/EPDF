@@ -25,12 +25,17 @@ export function unionBox(rects: readonly Rect[]): Rect | null {
   return { x0, y0, x1, y1 }
 }
 
-/** True when the rect overlaps any mark with a positive area (or, for degenerate rects, touches it). */
+/**
+ * True when the rect overlaps any mark with a positive area; a degenerate rect (a zero-width glyph such as a combining
+ * mark or an Arabic dot drawn on its own) when its centre lies in a mark, the same rule `coverage` applies.
+ */
 export function touches(r: Rect, marks: readonly Rect[]): boolean {
   const degenerate = r.x1 - r.x0 <= 1e-9 || r.y1 - r.y0 <= 1e-9
+  const cx = (r.x0 + r.x1) / 2
+  const cy = (r.y0 + r.y1) / 2
   for (const m of marks) {
     if (degenerate) {
-      if (r.x0 >= m.x0 && r.x1 <= m.x1 && r.y0 >= m.y0 && r.y1 <= m.y1) return true
+      if (cx >= m.x0 && cx <= m.x1 && cy >= m.y0 && cy <= m.y1) return true
     } else if (r.x0 < m.x1 && m.x0 < r.x1 && r.y0 < m.y1 && m.y0 < r.y1) return true
   }
   return false

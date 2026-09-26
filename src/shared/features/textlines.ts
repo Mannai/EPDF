@@ -1,6 +1,10 @@
+import { visualToLogicalText } from '../pagetext/visual'
+import type { PageTextModel } from '../pagetext/types'
+
 /**
- * Turns the text runs of a page (as read from its content stream) into lines with geometry, in plain
- * TypeScript with no PDF or DOM dependency. Used by heading detection (bookmarks) and URL detection (links).
+ * Text lines with geometry for heading detection (bookmarks) and URL detection (links). Pages are read with the
+ * shared page text model (`src/shared/pagetext`, see `linesFromModel`), which resolves right-to-left text, marks and
+ * /ActualText for every producer; `buildLines` remains for callers (and tests) that have plain glyph runs.
  *
  * Coordinates are PDF user space (points, y up). A "line" is one visual line of one column: runs that share a
  * baseline are joined, and a wide horizontal gap (a column gutter, a tab leader) starts a new line.
@@ -76,35 +80,75 @@ export function rtlRatio(text: string): number {
   return all === 0 ? 0 : r / all
 }
 
-const isArabicDigit = (cp: number): boolean => (cp >= 0x0660 && cp <= 0x0669) || (cp >= 0x06f0 && cp <= 0x06f9)
-const MIRROR: Record<string, string> = { '(': ')', ')': '(', '[': ']', ']': '[', '{': '}', '}': '{', '<': '>', '>': '<', '«': '»', '»': '«' }
-
 /**
- * Converts text stored in visual order (leftmost glyph first) into logical order: the whole string is reversed,
- * then embedded left-to-right runs (Latin words, numbers, URLs) are turned back, and brackets are mirrored.
- * A string with no right-to-left letters is returned unchanged.
+ * Converts text stored in visual order (leftmost glyph first) into logical order with the page text model's
+ * bidi inversion (verified against the Unicode Bidirectional Algorithm, including numbers, dates and mirrored
+ * brackets). A string with no right-to-left letters is returned unchanged.
  */
 export function visualToLogical(text: string): string {
-  if (rtlRatio(text) === 0) return text
-  const chars = Array.from(text).reverse().map((c) => MIRROR[c] ?? c)
-  const isLtr = (c: string): boolean => {
-    const cp = c.codePointAt(0)!
-    return (isLetter(c) && !isRtlCodePoint(cp)) || /\p{N}/u.test(c) || isArabicDigit(cp)
-  }
-  const joiner = (c: string): boolean => '.,:/-_%@#+&=?'.includes(c)
-  const out: string[] = []
-  for (let i = 0; i < chars.length; ) {
-    if (isLtr(chars[i])) {
-      let j = i
-      while (j < chars.length && (isLtr(chars[j]) || (joiner(chars[j]) && j + 1 < chars.length && isLtr(chars[j + 1]) && j > i))) j++
-      out.push(...chars.slice(i, j).reverse().map((c) => MIRROR[c] ?? c))
-      i = j
-    } else {
-      out.push(chars[i])
-      i++
+  // callers use it for right-to-left lines: any right-to-left letter makes the paragraph right-to-left
+  return rtlRatio(text) === 0 ? text : visualToLogicalText(text, 'rtl')
+}
+
+/**
+ * The lines of a page text model as `TextLine`s in PDF user space: upright lines only (in the unrotated page),
+ * `text` in the order the glyphs are drawn (left to right) with one box per character, `logical` the model's
+ * reading-order text.
+ */
+export function linesFromModel(model: PageTextModel): TextLine[] {
+  const t = model.transform
+  const det = t[0] * t[3] - t[1] * t[2]
+  if (!Number.isFinite(det) || Math.abs(det) < 1e-12) return []
+  // display -> user
+  const inv = [t[3] / det, -t[1] / det, -t[2] / det, t[0] / det, (t[2] * t[5] - t[3] * t[4]) / det, (t[1] * t[4] - t[0] * t[5]) / det]
+  const toUser = (x: number, y: number): [number, number] => [x * inv[0] + y * inv[2] + inv[4], x * inv[1] + y * inv[3] + inv[5]]
+  const out: TextLine[] = []
+  for (const line of model.lines) {
+    const rad = (line.angle * Math.PI) / 180
+    const ux = Math.cos(rad) * inv[0] + Math.sin(rad) * inv[2]
+    const uy = Math.cos(rad) * inv[1] + Math.sin(rad) * inv[3]
+    if (!(ux > 0) || Math.abs(uy) > 1e-3 * Math.abs(ux)) continue
+    const boxes: { i: number; x0: number; x1: number; y0: number; y1: number }[] = []
+    for (let i = line.start; i < line.end; i++) {
+      const q = model.charQuad[i]
+      if (q < 0) continue
+      let x0 = Infinity
+      let x1 = -Infinity
+      let y0 = Infinity
+      let y1 = -Infinity
+      for (let k = 0; k < 8; k += 2) {
+        const [x, y] = toUser(model.quads[q * 8 + k], model.quads[q * 8 + k + 1])
+        x0 = Math.min(x0, x)
+        x1 = Math.max(x1, x)
+        y0 = Math.min(y0, y)
+        y1 = Math.max(y1, y)
+      }
+      boxes.push({ i, x0, x1, y0, y1 })
     }
+    if (!boxes.length) continue
+    // drawn order: left to right by the centre of each character's box (characters of one glyph keep their order)
+    const drawn = [...boxes].sort((a, b) => a.x0 + a.x1 - (b.x0 + b.x1) || a.i - b.i)
+    const text = drawn.map((b) => model.text[b.i]).join('')
+    const logical = model.text.slice(line.start, line.end)
+    // a point on the baseline in display space: `baseline` is the offset along the line normal n = (-sin, cos)
+    const [, baseline] = toUser(-Math.sin(rad) * line.baseline, Math.cos(rad) * line.baseline)
+    out.push({
+      text,
+      logical,
+      rtl: line.dir === 'rtl',
+      x0: Math.min(...boxes.map((b) => b.x0)),
+      x1: Math.max(...boxes.map((b) => b.x1)),
+      y0: Math.min(...boxes.map((b) => b.y0)),
+      y1: Math.max(...boxes.map((b) => b.y1)),
+      baseline,
+      size: line.size,
+      bold: line.bold,
+      italic: line.italic,
+      fontKey: line.font,
+      chars: drawn.map((b) => ({ x0: b.x0, x1: b.x1 }))
+    })
   }
-  return out.join('')
+  return out.sort((a, b) => b.y1 - a.y1 || a.x0 - b.x0)
 }
 
 // ---------------------------------------------------------------- lines

@@ -1,6 +1,8 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist'
+import { pageText } from '../../pdf/pagetext'
 import { DEFAULT_OPTIONS, type CompareOptions, type PageModel, type RawItem } from './diff/types'
 import { buildPageModel } from './diff/words'
+import { modelPageWords } from './modelWords'
 
 /**
  * Text extraction with PDF.js: turns a page's text content into positioned runs (in displayed page coordinates,
@@ -67,8 +69,13 @@ export async function extractRuns(doc: PDFDocumentProxy, pageNo: number): Promis
   }
 }
 
-/** Extracts one page as a PageModel (reading order, words, geometry). */
+/**
+ * Extracts one page as a PageModel (reading order, words, geometry). Right-to-left and complex-script pages come
+ * from the page text model (logical order, see pdf/pagetext); other pages from PDF.js's text items.
+ */
 export async function extractPage(doc: PDFDocumentProxy, pageNo: number, opts: CompareOptions = DEFAULT_OPTIONS): Promise<PageModel> {
+  const pt = await pageText(doc, pageNo).catch(() => null)
+  if (pt?.kind === 'model') return modelPageWords(pt.model, opts)
   const { runs, width, height } = await extractRuns(doc, pageNo)
   return buildPageModel(runs, width, height, opts)
 }

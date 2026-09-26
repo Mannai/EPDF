@@ -20,7 +20,7 @@ export interface Line {
   items: TextItem[]
 }
 
-const styleKey = (i: TextItem): string => `${i.family}|${Math.round(i.size * 2) / 2}|${i.bold ? 1 : 0}${i.italic ? 1 : 0}|${i.color}|${i.url ?? ''}`
+const styleKey = (i: TextItem): string => `${i.family}|${Math.round(i.size * 2) / 2}|${i.bold ? 1 : 0}${i.italic ? 1 : 0}|${i.color}|${i.url ?? ''}|${i.rtl ? 'r' : ''}`
 
 /** Merges text items (already ordered left to right) into styled runs, inserting spaces where the gap needs one. */
 export function runsOf(items: TextItem[]): Run[] {
@@ -38,7 +38,7 @@ export function runsOf(items: TextItem[]): Run[] {
       last.text += (needSpace ? ' ' : '') + it.text
     } else {
       if (needSpace && last) last.text += ' '
-      runs.push({ key, text: it.text, size: Math.round(it.size * 2) / 2, family: it.family, bold: it.bold, italic: it.italic, color: it.color, url: it.url })
+      runs.push({ key, text: it.text, size: Math.round(it.size * 2) / 2, family: it.family, bold: it.bold, italic: it.italic, color: it.color, url: it.url, ...(it.rtl ? { rtl: true } : {}) })
     }
     prev = it
   }
@@ -95,7 +95,7 @@ export function buildLines(items: TextItem[]): Line[] {
 }
 
 const sameStyle = (a: Run, b: Run): boolean =>
-  a.family === b.family && a.size === b.size && a.bold === b.bold && a.italic === b.italic && a.color === b.color && a.url === b.url
+  a.family === b.family && a.size === b.size && a.bold === b.bold && a.italic === b.italic && a.color === b.color && a.url === b.url && !!a.rtl === !!b.rtl
 
 /** Appends `more` to `runs`, merging neighbours with the same style. */
 export function appendRuns(runs: Run[], more: Run[]): void {
