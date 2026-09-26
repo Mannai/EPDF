@@ -155,6 +155,16 @@ export function mirroredCodePoint(cp: number): number | null {
   return m === null ? null : m.charCodeAt(0)
 }
 
+/** For a bracket code point: whether it opens or closes, and the code point of its partner. */
+export function bracketPartner(cp: number): { kind: 'open' | 'close'; other: number } | null {
+  const ch = String.fromCharCode(cp)
+  const close = bidi.openingToClosingBracket(ch)
+  if (close) return { kind: 'open', other: close.charCodeAt(0) }
+  const open = bidi.closingToOpeningBracket(ch)
+  if (open) return { kind: 'close', other: open.charCodeAt(0) }
+  return null
+}
+
 /** Paragraph level chosen for `text` when the direction is left to the algorithm (0 = LTR, 1 = RTL). */
 export function detectParagraphLevel(text: string): 0 | 1 {
   const info = analyzeBidi(text, 'auto')
