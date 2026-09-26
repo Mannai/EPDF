@@ -64,24 +64,65 @@ const chunk = (type, data) => {
   crc.writeUInt32BE(crc32(td))
   return Buffer.concat([len, td, crc])
 }
-const ihdr = Buffer.alloc(13)
-ihdr.writeUInt32BE(N, 0)
-ihdr.writeUInt32BE(N, 4)
-ihdr[8] = 8 // bit depth
-ihdr[9] = 6 // RGBA
-const raw = Buffer.alloc((N * 4 + 1) * N)
-for (let y = 0; y < N; y++) {
-  raw[y * (N * 4 + 1)] = 0 // filter: none
-  px.copy(raw, y * (N * 4 + 1) + 1, y * N * 4, (y + 1) * N * 4)
-}
-mkdirSync('build', { recursive: true })
-writeFileSync(
-  'build/icon.png',
-  Buffer.concat([
+/** Encodes `size`x`size` RGBA pixels as a PNG. */
+const encodePng = (pixels, size) => {
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(size, 0)
+  ihdr.writeUInt32BE(size, 4)
+  ihdr[8] = 8 // bit depth
+  ihdr[9] = 6 // RGBA
+  const raw = Buffer.alloc((size * 4 + 1) * size)
+  for (let y = 0; y < size; y++) {
+    raw[y * (size * 4 + 1)] = 0 // filter: none
+    pixels.copy(raw, y * (size * 4 + 1) + 1, y * size * 4, (y + 1) * size * 4)
+  }
+  return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk('IHDR', ihdr),
     chunk('IDAT', deflateSync(raw, { level: 9 })),
     chunk('IEND', Buffer.alloc(0))
   ])
-)
+}
+
+/** Box-filter downscale by an integer factor (N is a power of two, so every ICO size divides it). */
+const downscale = (size) => {
+  const f = N / size
+  const out = Buffer.alloc(size * size * 4)
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    let r = 0, g = 0, b = 0, a = 0
+    for (let dy = 0; dy < f; dy++) for (let dx = 0; dx < f; dx++) {
+      const i = ((y * f + dy) * N + x * f + dx) * 4
+      const w = px[i + 3] // weight colour by alpha so transparent corners do not darken the edge
+      r += px[i] * w; g += px[i + 1] * w; b += px[i + 2] * w; a += w
+    }
+    const o = (y * size + x) * 4
+    if (a > 0) { out[o] = Math.round(r / a); out[o + 1] = Math.round(g / a); out[o + 2] = Math.round(b / a) }
+    out[o + 3] = Math.round(a / (f * f))
+  }
+  return out
+}
+
+mkdirSync('build', { recursive: true })
+writeFileSync('build/icon.png', encodePng(px, N))
 console.log('wrote build/icon.png')
+
+// Windows icon: PNG-compressed entries (supported since Vista) at the sizes Explorer, the taskbar and the installer use.
+const sizes = [16, 24, 32, 48, 64, 128, 256]
+const images = sizes.map((s) => encodePng(downscale(s), s))
+const header = Buffer.alloc(6)
+header.writeUInt16LE(1, 2) // type: icon
+header.writeUInt16LE(sizes.length, 4)
+let offset = 6 + 16 * sizes.length
+const dir = sizes.map((s, i) => {
+  const e = Buffer.alloc(16)
+  e[0] = s === 256 ? 0 : s // 0 means 256
+  e[1] = s === 256 ? 0 : s
+  e.writeUInt16LE(1, 4) // colour planes
+  e.writeUInt16LE(32, 6) // bits per pixel
+  e.writeUInt32LE(images[i].length, 8)
+  e.writeUInt32LE(offset, 12)
+  offset += images[i].length
+  return e
+})
+writeFileSync('build/icon.ico', Buffer.concat([header, ...dir, ...images]))
+console.log('wrote build/icon.ico')

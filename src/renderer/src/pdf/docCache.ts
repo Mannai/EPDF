@@ -6,11 +6,24 @@ import type { PageSize } from '../viewer/layout'
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 // Start the PDF.js worker thread right away, so it boots (compiles its 1.2 MB script) while the UI mounts instead
 // of only once the first document is requested. All documents in this window share it.
-try {
-  pdfjs.GlobalWorkerOptions.workerPort = new Worker(workerUrl, { type: 'module' })
-} catch {
-  /* fall back to PDF.js creating its own worker on demand */
+//
+// It is passed to every getDocument() as `worker`, NOT set as GlobalWorkerOptions.workerPort: with a global port,
+// PDF.js hands every document the same PDFWorker but lets whichever loading task created it destroy it, so retiring
+// an old version after an edit or a reload killed the worker under the documents still using it. A worker passed in
+// explicitly is owned by us and never destroyed by a loading task.
+let sharedWorker: pdfjs.PDFWorker | null = null
+function workerForLoad(): pdfjs.PDFWorker | undefined {
+  if (sharedWorker && !sharedWorker.destroyed) return sharedWorker
+  try {
+    // (PDF.js's typings declare `port` as null, but the runtime takes a Worker; see PDFWorker#initializeFromPort.)
+    const port = new Worker(workerUrl, { type: 'module' }) as unknown as null
+    sharedWorker = new pdfjs.PDFWorker({ port })
+    return sharedWorker
+  } catch {
+    return undefined // fall back to PDF.js creating its own worker per document
+  }
 }
+workerForLoad()
 
 /** Fonts, CMaps and WASM decoders are bundled in /pdfjs so nothing is fetched from the network. */
 const ASSETS = {
@@ -80,6 +93,7 @@ export function loadDoc(docId: string, key: string, source: DocSource, askPasswo
     const loadingTask = pdfjs.getDocument({
       // PDF.js takes ownership of `data`'s buffer, so hand it a copy: the edit history keeps its own.
       ...('url' in source ? { url: source.url } : { data: source.data.slice() }),
+      worker: workerForLoad(),
       rangeChunkSize: 1 << 20,
       disableAutoFetch: true, // only fetch the byte ranges pages actually need
       enableXfa: false, // XFA forms embed scripts; PDF scripting is never enabled in Epdf
