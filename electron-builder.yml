@@ -29,6 +29,14 @@ extraResources:
   - from: resources/fonts
     to: fonts
     filter: ['*.ttf', '*.txt']
+  # The text engine adds the Noto script fonts (Arabic, Hebrew, Thai, Indic, CJK .otf, symbols, emoji) in textfonts/,
+  # with the font catalogue text-fonts.json and licence notices, and the two HarfBuzz WebAssembly modules (text/).
+  - from: resources/textfonts
+    to: textfonts
+    filter: ['*.ttf', '*.otf', '*.json', '*.txt']
+  - from: resources/text
+    to: text
+    filter: ['*.wasm', '*.txt']
   # OCR: the English trained data (tessdata_fast, Apache-2.0) with its license. Other languages are downloaded on demand.
   - from: resources/ocr
     to: ocr
