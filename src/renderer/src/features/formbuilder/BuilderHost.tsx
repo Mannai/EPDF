@@ -60,7 +60,7 @@ function DetectScopeDialog(): JSX.Element | null {
         />
       </fieldset>
       {problem && (
-        <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="mt-2 text-sm text-danger">
           {problem}
         </p>
       )}

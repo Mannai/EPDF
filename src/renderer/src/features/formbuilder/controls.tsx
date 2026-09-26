@@ -75,7 +75,7 @@ export function TextCommit({
       <label htmlFor={id}>{label}</label>
       {multiline ? <textarea {...common} rows={4} className="field h-auto py-1 select-text" /> : <input {...common} type="text" className="field select-text" />}
       {error && (
-        <p id={`${id}-err`} role="alert" className="text-red-700 dark:text-red-400">
+        <p id={`${id}-err`} role="alert" className="text-danger">
           {error}
         </p>
       )}

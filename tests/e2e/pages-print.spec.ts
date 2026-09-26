@@ -252,7 +252,7 @@ test.describe('organizer: actions on the selection', () => {
       await page.getByRole('button', { name: /^Undo Delete page 3/ }).click()
       await expect(thumbs(page)).toHaveCount(6)
       await page.getByRole('button', { name: 'Done' }).click()
-      await expect(page.getByText('/ 6', { exact: true })).toBeVisible() // the viewer knows the new page count
+      await expect(page.getByText('of 6', { exact: true })).toBeVisible() // the viewer knows the new page count
     } finally {
       await quitDiscarding(app, page)
     }

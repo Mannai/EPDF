@@ -97,7 +97,7 @@ export function CreateWebDialog(): JSX.Element | null {
           onChange={(e) => s.setUrl(e.target.value)}
         />
         {problem ? (
-          <p id="web-url-error" role="alert" className="mb-2 text-sm text-red-600 dark:text-red-400">
+          <p id="web-url-error" role="alert" className="mb-2 text-sm text-danger">
             {problem}
           </p>
         ) : (

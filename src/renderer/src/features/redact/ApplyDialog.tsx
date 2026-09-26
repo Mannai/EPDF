@@ -126,7 +126,7 @@ export function RedactDialog(): JSX.Element | null {
         </div>
 
         {failure && (
-          <div role="alert" className="rounded-md border border-red-600 bg-red-50 p-2 text-red-900 dark:bg-red-950 dark:text-red-100" data-testid="redact-error">
+          <div role="alert" className="alert alert-danger" data-testid="redact-error">
             <p className="font-semibold">{failure.kind === 'verify' ? 'Not applied: the self-check found redacted content that would remain.' : failure.kind === 'refused' ? 'Not applied: this document cannot be redacted safely.' : 'Not applied.'}</p>
             <p className="mt-1">{failure.message}</p>
             {failure.findings && (
@@ -154,7 +154,7 @@ export function RedactDialog(): JSX.Element | null {
                 ))}
               </ul>
             )}
-            <p className={`mt-1 ${preview.findings.length ? 'text-red-700 dark:text-red-400' : 'text-green-800 dark:text-green-300'}`} data-testid="redact-selfcheck">
+            <p className={`mt-1 ${preview.findings.length ? 'text-danger' : 'text-green-800 dark:text-green-300'}`} data-testid="redact-selfcheck">
               {preview.findings.length ? `Self-check FAILED (${preview.findings.length} finding${preview.findings.length === 1 ? '' : 's'}): applying is blocked until this is resolved.` : 'Self-check passed: the redacted text, images and metadata were not found anywhere in the result.'}
             </p>
             {preview.findings.length > 0 && (

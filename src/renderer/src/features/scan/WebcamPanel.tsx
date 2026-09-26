@@ -148,8 +148,8 @@ export function WebcamPanel(): JSX.Element {
   return (
     <div data-testid="webcam-panel">
       {cam.kind === 'error' && (
-        <div className="mb-3 rounded-md border border-red-500 p-3 text-sm" role="alert" data-testid="webcam-error">
-          <p className="text-red-700 dark:text-red-300">{cam.message}</p>
+        <div className="mb-3 rounded-md border border-danger-line p-3 text-sm" role="alert" data-testid="webcam-error">
+          <p className="text-danger">{cam.message}</p>
           <button type="button" className="btn mt-2" onClick={() => setRetry((n) => n + 1)}>
             Try again
           </button>

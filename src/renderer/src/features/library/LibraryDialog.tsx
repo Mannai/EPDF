@@ -186,7 +186,7 @@ function ScopeBar(): JSX.Element {
         </div>
       </div>
       {root && root.status !== 'ok' && (
-        <p className="mt-1 flex items-center gap-1 text-sm text-red-700 dark:text-red-400" role="alert">
+        <p className="mt-1 flex items-center gap-1 text-sm text-danger" role="alert">
           <WarnIcon />
           {root.status === 'missing' ? 'This folder is not available right now (is the drive connected?). Its files are kept and searchable; they cannot be opened until it is back.' : 'This folder cannot be read.'} {root.note}
         </p>

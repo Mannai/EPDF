@@ -124,7 +124,7 @@ export function SignOptions({ kind }: { kind: SignatureKind }): JSX.Element {
         Visual signature only. Not a digital certificate signature.
       </span>
       {encryption === false && (
-        <span role="alert" className="text-xs text-red-600 dark:text-red-400">
+        <span role="alert" className="text-xs text-danger">
           Secure storage unavailable
         </span>
       )}

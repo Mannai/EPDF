@@ -196,7 +196,7 @@ export function TypePad({ onChange, initialText = '' }: PadProps & { initialText
       </label>
       <input id="typed-signature-text" className="field mt-1 w-full" value={text} maxLength={60} onChange={(e) => setText(e.target.value)} autoComplete="off" />
       {error && (
-        <p role="alert" className="mt-2 text-red-600 dark:text-red-400">
+        <p role="alert" className="mt-2 text-danger">
           {error}
         </p>
       )}
@@ -308,7 +308,7 @@ export function ImportPad({ onChange }: PadProps): JSX.Element {
         onChange={(e) => void onFile(e.target.files?.[0])}
       />
       {error && (
-        <p role="alert" className="mt-2 text-red-600 dark:text-red-400">
+        <p role="alert" className="mt-2 text-danger">
           {error}
         </p>
       )}

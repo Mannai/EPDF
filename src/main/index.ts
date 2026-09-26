@@ -9,6 +9,7 @@ import { registerIpcHandlers } from './ipc/handlers'
 import { createJobs } from './jobs'
 import { installMenus } from './menu/appMenu'
 import { installSecurity } from './security'
+import { applyHardwareAccelerationChoice } from './services/gpu'
 import { registerAppProtocol, registerSchemePrivileges } from './services/protocol'
 
 registerSchemePrivileges()
@@ -21,6 +22,9 @@ if (process.env['EPDF_FAKE_MEDIA']) {
 
 // Tests (and multi-profile use) can point the app at an isolated profile directory.
 if (process.env['EPDF_USER_DATA']) app.setPath('userData', process.env['EPDF_USER_DATA'])
+
+// View > Use Hardware Acceleration (read from the profile, so after userData is known and before the app is ready).
+applyHardwareAccelerationChoice()
 
 const hasLock = app.requestSingleInstanceLock()
 if (!hasLock) {

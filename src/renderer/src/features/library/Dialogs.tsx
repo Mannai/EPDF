@@ -91,7 +91,7 @@ export function AddToFolderDialog(): JSX.Element | null {
         </p>
       </form>
       {error && (
-        <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="mt-2 text-sm text-danger">
           {error}
         </p>
       )}
@@ -152,7 +152,7 @@ export function FolderNameDialog(): JSX.Element | null {
           </p>
         )}
         {error && (
-          <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">
+          <p role="alert" className="mt-2 text-sm text-danger">
             {error}
           </p>
         )}
@@ -282,7 +282,7 @@ export function SettingsDialog(): JSX.Element | null {
           </button>
           <button
             type="button"
-            className="btn text-red-600 dark:text-red-400"
+            className="btn text-danger"
             onClick={async () => {
               if (!(await confirm('Forget everything?', 'This clears the whole library: the watched folder list, the search index, thumbnails and your library folders. Your PDF files are not touched.', 'Forget everything'))) return
               await libraryApi.forget(false)

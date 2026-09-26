@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PDFCheckBox, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRadioGroup, PDFTextField } from 'pdf-lib'
-import { FIX, axeViolations, copyFixture, launch, menuClick, quitDiscarding } from './helpers'
+import { FIX, axeViolations, copyFixture, launch, menuClick, quitDiscarding, clickTool, showToolTask } from './helpers'
 
 test.beforeAll(() => {
   execFileSync(process.execPath, ['tests/fixtures/forms-signing.mjs', resolve(FIX)], { stdio: 'inherit' })
@@ -233,7 +233,8 @@ test.describe('manual field tools', () => {
     const path = copyFixture('flat.pdf')
     const { app, page } = await openDoc([path])
     try {
-      // The tools live in their own ribbon group.
+      // The tools live in their own ribbon group, in the "Links & forms" task.
+      await showToolTask(page, 'formbuilder.text')
       await expect(page.getByRole('group', { name: 'Form builder' })).toBeVisible()
       await drawTool(page, 'formbuilder.text', [72, 700, 272, 722])
       await expect(fieldCount(page)).toContainText('Fields (1)', { timeout: 20_000 })
@@ -774,7 +775,7 @@ test.describe('cancel and failure paths', () => {
       await expect(undoBtn(page)).toBeDisabled()
 
       // Drawing: Escape while dragging cancels the field but keeps the tool.
-      await page.locator('button[data-tool="formbuilder.text"]').click()
+      await clickTool(page, 'formbuilder.text')
       const b = await pageBox(page)
       await page.mouse.move(b.x + 100, b.y + 400)
       await page.mouse.down()

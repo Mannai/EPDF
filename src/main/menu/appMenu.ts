@@ -1,4 +1,5 @@
-import { app, Menu, shell, type MenuItemConstructorOptions } from 'electron'
+import { app, dialog, Menu, shell, type MenuItemConstructorOptions } from 'electron'
+import { hardwareAccelerationEnabled, setHardwareAcceleration } from '../services/gpu'
 import type { MenuAction } from '../../shared/types'
 import type { Controller } from '../controller'
 import { commandItem, contributionsFor, setCommandSender, type MenuName } from './contributions'
@@ -129,6 +130,32 @@ export function installMenus(c: Controller): void {
         { type: 'separator' },
         item('Toggle Sidebar', { type: 'toggle-sidebar' }, 'CmdOrCtrl+Shift+B'),
         { role: 'togglefullscreen' },
+        { type: 'separator' },
+        {
+          // If the window flashes black or stops repainting with some graphics drivers, turning this off fixes it.
+          label: 'Use Hardware Acceleration',
+          type: 'checkbox',
+          checked: hardwareAccelerationEnabled(),
+          click: (menuItem) => {
+            setHardwareAcceleration(menuItem.checked)
+            void dialog
+              .showMessageBox({
+                type: 'info',
+                title: 'Epdf',
+                message: menuItem.checked ? 'Hardware acceleration will be turned on' : 'Hardware acceleration will be turned off',
+                detail: 'Restart Epdf for the change to take effect. You will be asked about unsaved changes first.',
+                buttons: ['Restart Now', 'Later'],
+                defaultId: 0,
+                cancelId: 1,
+                noLink: true
+              })
+              .then(({ response }) => {
+                if (response !== 0) return
+                app.relaunch({ args: process.argv.slice(1).filter((a) => a !== '--disable-gpu') })
+                app.quit()
+              })
+          }
+        },
         ...(app.isPackaged ? [] : ([{ type: 'separator' }, { role: 'toggleDevTools' }] as Item[]))
       ])
     },

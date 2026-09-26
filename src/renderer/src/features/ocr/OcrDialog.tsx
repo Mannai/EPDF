@@ -53,7 +53,7 @@ export function OcrDialog(): JSX.Element | null {
             />
           </div>
           {rangeError && (
-            <p id={`${uid}-range-error`} role="alert" className="text-sm text-red-700 dark:text-red-300">
+            <p id={`${uid}-range-error`} role="alert" className="text-sm text-danger">
               {rangeError}
             </p>
           )}
@@ -118,7 +118,7 @@ export function OcrDialog(): JSX.Element | null {
           })}
         </ul>
         {s.downloadError && (
-          <p role="alert" className="mt-1 text-sm text-red-700 dark:text-red-300" data-testid="ocr-download-error">
+          <p role="alert" className="mt-1 text-sm text-danger" data-testid="ocr-download-error">
             {s.downloadError}
           </p>
         )}

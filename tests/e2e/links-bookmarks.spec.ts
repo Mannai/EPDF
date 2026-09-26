@@ -9,7 +9,7 @@ import type { BmNode } from '../../src/renderer/src/features/bookmarks/pdf/model
 import { readLinks } from '../../src/renderer/src/features/links/pdf/read'
 import { writeLbFixtures } from '../fixtures/lbFixtures'
 import { openWith } from '../unit/helpers/securityHelpers'
-import { axeViolations, copyFixture, launch, menuClick, quitDiscarding } from './helpers'
+import { axeViolations, clickTool, copyFixture, launch, menuClick, quitDiscarding } from './helpers'
 
 const FIXTURES = resolve('test-results/fixtures')
 
@@ -753,7 +753,7 @@ test.describe('bookmarks: protected documents', () => {
       expect(await axeViolations(page, 'bookmarks locked')).toEqual([])
       await unlockButton.click()
       await expect(page.getByTestId('bookmarks-empty')).toBeVisible()
-      await page.getByRole('button', { name: 'Add bookmark for this page' }).click()
+      await page.getByRole('button', { name: 'Bookmark this page' }).click()
       await tree(page).getByLabel('Bookmark title').press('Enter')
       await expect(item(page, /Page 1/)).toBeVisible()
       await save(page)
@@ -877,7 +877,7 @@ const linkTool = (page: Page, name: 'Add link' | 'Edit links'): Locator => tool(
 const linkDialog = (page: Page, name: 'Add link' | 'Edit link'): Locator => page.getByRole('dialog', { name })
 
 async function activate(page: Page, name: 'Add link' | 'Edit links'): Promise<void> {
-  await linkTool(page, name).click()
+  await clickTool(page, name)
   await expect(linkTool(page, name)).toHaveAttribute('aria-pressed', 'true')
   await expect(page.locator(name === 'Add link' ? '[data-testid="links-draw-layer"]' : '[data-testid="links-select-layer"][data-ready="true"]').first()).toBeAttached()
 }

@@ -2,30 +2,139 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Design tokens (Epdf design system, tokens/tokens.css). Colours are RGB triplets so Tailwind can apply
+   alpha: rgb(var(--c-x) / <alpha-value>). */
 :root {
-  --c-surface: 255 255 255;
-  --c-surface-alt: 244 245 247;
-  --c-raised: 255 255 255;
-  --c-ink: 31 35 40;
-  --c-ink-muted: 89 99 110;
-  --c-line: 208 213 219;
-  --c-accent: 36 87 214;
-  --c-accent-ink: 255 255 255;
-  --c-canvas: 223 226 230;
   color-scheme: light;
+
+  /* Neutrals: canvas < sunken < surface-alt < surface/raised */
+  --c-canvas: 222 225 230; /* behind the white paper */
+  --c-sunken: 234 236 239; /* segmented-control track */
+  --c-surface-alt: 246 247 249; /* side panels */
+  --c-surface: 255 255 255; /* ribbon, cards */
+  --c-raised: 255 255 255; /* dialogs, menus, popovers, toasts */
+  --c-field: 255 255 255;
+  --c-control: 255 255 255; /* secondary button */
+  --c-control-hover: 243 244 246;
+  --c-control-press: 232 234 237;
+  --c-disabled: 238 240 243;
+  /* Window chrome (title bar, ribbon tabs, status bar): the Windows 11 "Mica" tone, flat so it is the same everywhere */
+  --c-chrome: 238 241 245;
+  --c-dialog-footer: 243 243 243;
+
+  --c-line: 214 218 224; /* dividers, card and button borders (decorative) */
+  --c-line-strong: 125 133 144; /* input / checkbox / switch boundaries, >= 3:1 on every surface */
+
+  --c-ink: 31 35 40;
+  --c-ink-muted: 89 99 110; /* help text, captions, placeholders, >= 4.5:1 on every surface */
+  --c-ink-disabled: 160 167 176;
+
+  --c-fill: 31 35 40; /* transparent hover/press overlay for ghost and icon buttons, rows */
+  --a-hover: 0.06;
+  --a-press: 0.11;
+
+  --c-accent: 36 87 214;
+  --c-accent-hover: 29 72 184;
+  --c-accent-press: 23 59 153;
+  --c-accent-ink: 255 255 255;
+  --c-accent-subtle: 232 239 253;
+  --c-accent-subtle-strong: 210 224 251;
+  --c-focus: 36 87 214;
+
+  --c-danger: 180 35 24; --c-danger-bg: 254 243 242; --c-danger-line: 217 45 32; --c-danger-ink: 255 255 255; --c-danger-hover: 145 32 24;
+  --c-warning: 138 75 0; --c-warning-bg: 255 247 230; --c-warning-line: 183 110 0;
+  --c-success: 26 106 51; --c-success-bg: 236 247 239; --c-success-line: 46 138 74;
+  --c-info: 29 79 184; --c-info-bg: 238 243 253; --c-info-line: 61 111 224;
+
+  --c-inverse: 31 35 40;
+  --c-inverse-ink: 255 255 255;
+
+  --c-scrim: 15 18 22;
+  --a-scrim: 0.4;
+
+  /* On-paper colours: the page is always white, so these do not change with the theme */
+  --c-hit: 255 200 0;
+  --c-hit-active: 255 128 0;
+  --c-hit-outline: 194 65 12;
+  --c-paper-link: 36 87 214;
+  --c-paper-selection: 36 87 214;
+  --c-diff-add: 26 127 55;
+  --c-diff-del: 207 34 46;
+  --c-diff-change: 191 135 0;
+
+  --shadow-1: 0 1px 2px rgb(16 24 40 / 0.06), 0 1px 3px rgb(16 24 40 / 0.1);
+  --shadow-2: 0 4px 12px rgb(16 24 40 / 0.1), 0 1px 3px rgb(16 24 40 / 0.08);
+  --shadow-3: 0 8px 24px rgb(16 24 40 / 0.14), 0 2px 6px rgb(16 24 40 / 0.08);
+  --shadow-4: 0 32px 64px rgb(0 0 0 / 0.28), 0 2px 21px rgb(0 0 0 / 0.2); /* Windows 11 dialog */
+  --shadow-paper: 0 1px 3px rgb(0 0 0 / 0.25), 0 0 0 1px rgb(0 0 0 / 0.04);
+
+  --dur-fast: 100ms;
+  --dur-base: 160ms;
+  --dur-slow: 240ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
 }
 
 .dark {
-  --c-surface: 27 28 31;
-  --c-surface-alt: 35 37 41;
-  --c-raised: 43 45 49;
-  --c-ink: 230 232 235;
-  --c-ink-muted: 154 161 171;
-  --c-line: 64 68 75;
-  --c-accent: 107 155 255;
-  --c-accent-ink: 11 18 32;
-  --c-canvas: 20 21 23;
   color-scheme: dark;
+
+  --c-canvas: 14 15 17;
+  --c-sunken: 17 18 20;
+  --c-surface-alt: 25 27 30;
+  --c-surface: 36 38 43;
+  --c-raised: 46 49 55;
+  --c-field: 26 28 32;
+  --c-control: 50 53 60;
+  --c-control-hover: 60 64 72;
+  --c-control-press: 72 76 85;
+  --c-disabled: 40 43 49;
+  --c-chrome: 28 30 34;
+  --c-dialog-footer: 38 41 46;
+
+  --c-line: 58 62 70;
+  --c-line-strong: 118 125 136;
+
+  --c-ink: 232 234 237;
+  --c-ink-muted: 160 167 177;
+  --c-ink-disabled: 104 110 120;
+
+  --c-fill: 255 255 255;
+  --a-hover: 0.07;
+  --a-press: 0.12;
+
+  --c-accent: 107 155 255;
+  --c-accent-hover: 138 176 255;
+  --c-accent-press: 168 196 255;
+  --c-accent-ink: 11 18 32;
+  --c-accent-subtle: 28 40 66;
+  --c-accent-subtle-strong: 33 52 92;
+  --c-focus: 107 155 255;
+
+  --c-danger: 255 138 128; --c-danger-bg: 58 29 29; --c-danger-line: 229 83 75; --c-danger-ink: 26 8 6; --c-danger-hover: 255 168 160;
+  --c-warning: 242 184 102; --c-warning-bg: 58 42 18; --c-warning-line: 201 138 46;
+  --c-success: 111 208 140; --c-success-bg: 21 48 31; --c-success-line: 63 165 99;
+  --c-info: 138 180 255; --c-info-bg: 27 42 71; --c-info-line: 91 141 239;
+
+  --c-inverse: 232 234 237;
+  --c-inverse-ink: 31 35 40;
+
+  --c-scrim: 0 0 0;
+  --a-scrim: 0.6;
+
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.5);
+  --shadow-2: 0 4px 12px rgb(0 0 0 / 0.45), 0 1px 3px rgb(0 0 0 / 0.4);
+  --shadow-3: 0 8px 24px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.4);
+  --shadow-4: 0 32px 64px rgb(0 0 0 / 0.6), 0 2px 21px rgb(0 0 0 / 0.45);
+  --shadow-paper: 0 1px 3px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(0 0 0 / 0.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  .dark {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+    --dur-slow: 0ms;
+  }
 }
 
 html,
@@ -35,39 +144,401 @@ body,
   margin: 0;
 }
 
-body {
-  @apply bg-surface text-ink antialiased;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  font-size: 14px;
-  overflow: hidden;
-  user-select: none;
+@layer base {
+  body {
+    @apply bg-surface font-sans text-body text-ink antialiased;
+    overflow: hidden;
+    user-select: none;
+  }
+  /* One focus ring for everything. `outline` survives Windows High Contrast (forced-colors); box-shadow rings don't. */
+  :focus-visible {
+    @apply outline outline-2 outline-offset-2 outline-focus;
+  }
+  ::selection {
+    background: rgb(var(--c-accent) / 0.3);
+  }
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full border-[3px] border-solid border-transparent bg-line-strong/60 bg-clip-padding;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-line-strong;
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
 }
 
 @layer components {
+  /* Inset ring for items inside a clipped container (tabs, rows, segmented items). */
+  .focus-inset:focus-visible {
+    @apply -outline-offset-2;
+  }
+
+  /* ---------- Buttons (Windows 11: 4 px corners, a slightly darker bottom edge) ---------- */
   .btn {
-    @apply inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-raised px-3 text-ink
-      outline-none hover:bg-surface-alt focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40 disabled:pointer-events-none;
+    @apply inline-flex h-8 shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border border-black/[.08] border-b-black/[.18] bg-control px-3
+      text-body text-ink transition-colors duration-fast ease-standard
+      hover:bg-control-hover active:bg-control-press
+      disabled:cursor-not-allowed disabled:border-transparent disabled:bg-disabled disabled:text-ink-disabled
+      aria-[busy=true]:pointer-events-none aria-[busy=true]:cursor-progress
+      dark:border-white/[.08] dark:border-b-white/[.04];
   }
   .btn-primary {
-    @apply inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-transparent bg-accent px-3 font-medium text-accent-ink
-      outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface;
+    @apply btn border-black/[.08] border-b-black/30 bg-accent font-semibold text-accent-ink hover:bg-accent-hover active:bg-accent-press
+      disabled:bg-disabled disabled:text-ink-disabled;
   }
+  .btn-ghost {
+    @apply btn border-transparent bg-transparent hover:bg-hover active:bg-press disabled:bg-transparent;
+  }
+  .btn-danger {
+    @apply btn border-danger-line/60 text-danger hover:bg-danger-bg active:bg-danger-bg;
+  }
+  .btn-danger-solid {
+    @apply btn border-transparent bg-danger text-danger-ink hover:bg-danger-hover active:bg-danger-hover;
+  }
+  .btn-sm {
+    @apply h-7 gap-1 px-2.5;
+  }
+  .btn-xs {
+    @apply h-6 gap-1 rounded-sm px-2 text-caption font-medium;
+  }
+
+  /* Icon button; add aria-pressed for toggles. Pressed = subtle fill + 1px accent ring (shape cue, not colour only). */
   .btn-icon {
-    @apply inline-flex h-8 w-8 items-center justify-center rounded-md text-ink outline-none hover:bg-surface-alt
-      focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40 disabled:pointer-events-none aria-pressed:bg-accent/20 aria-pressed:ring-1 aria-pressed:ring-accent;
+    @apply inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-ink transition-colors duration-fast
+      hover:bg-hover active:bg-press disabled:cursor-not-allowed disabled:bg-transparent disabled:text-ink-disabled
+      aria-pressed:bg-accent-subtle aria-pressed:text-accent aria-pressed:shadow-[inset_0_0_0_1px_rgb(var(--c-accent))];
   }
+  .btn-icon-sm {
+    @apply h-7 w-7;
+  }
+  .btn-icon-xs {
+    @apply h-6 w-6 rounded-sm;
+  }
+  .spinner {
+    @apply inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-e-transparent motion-reduce:animate-none;
+  }
+
+  /* ---------- Fields (Windows 11: bottom edge darker, accent underline when focused) ---------- */
   .field {
-    @apply h-8 rounded-md border border-line bg-surface px-2 text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent;
+    @apply h-8 min-w-0 rounded-sm border border-black/[.08] border-b-line-strong bg-field px-2 text-body text-ink transition-colors duration-fast
+      placeholder:text-ink-muted hover:bg-control-hover
+      focus-visible:border-b-2 focus-visible:border-b-accent focus-visible:bg-field focus-visible:outline-none
+      disabled:cursor-not-allowed disabled:border-line disabled:bg-disabled disabled:text-ink-disabled
+      aria-[invalid=true]:border-b-danger-line
+      dark:border-white/[.08] dark:border-b-line-strong;
+  }
+  .field-sm {
+    @apply h-7;
+  }
+  .field-textarea {
+    @apply field h-auto min-h-[64px] resize-y py-1.5;
+  }
+  .select {
+    @apply relative inline-flex min-w-0;
+  }
+  .select > select {
+    @apply appearance-none pe-8;
+  }
+  .select-chevron {
+    @apply pointer-events-none absolute end-2 top-1/2 -translate-y-1/2 text-ink-muted;
+  }
+  .field-unit {
+    @apply flex h-8 min-w-0 items-center rounded-sm border border-black/[.08] border-b-line-strong bg-field text-body
+      focus-within:border-b-2 focus-within:border-b-accent dark:border-white/[.08] dark:border-b-line-strong;
+  }
+  .field-unit > input {
+    @apply h-full min-w-0 flex-1 bg-transparent ps-2 text-end tabular-nums text-ink outline-none;
+  }
+  .field-unit > span {
+    @apply pe-2 ps-1 text-ink-muted;
+  }
+  .field-unit:has(input[aria-invalid='true']) {
+    @apply border-danger-line;
+  }
+  .search-field {
+    @apply relative flex min-w-0 items-center;
+  }
+  .search-field > input {
+    @apply field w-full pe-8 ps-8;
+  }
+  .search-field > .search-icon {
+    @apply pointer-events-none absolute start-2 text-ink-muted;
+  }
+  .search-field > button {
+    @apply btn-icon btn-icon-xs absolute end-1;
+  }
+  .label {
+    @apply mb-1 block text-label text-ink;
+  }
+  .help {
+    @apply mt-1 block text-caption text-ink-muted;
+  }
+  .error-text {
+    @apply mt-1 flex items-start gap-1 text-caption text-danger;
+  }
+
+  /* ---------- Checkbox / radio / switch (native inputs, restyled) ---------- */
+  .check,
+  .radio {
+    @apply relative m-0 h-5 w-5 shrink-0 cursor-pointer appearance-none border border-line-strong bg-field
+      checked:border-accent checked:bg-accent disabled:cursor-not-allowed disabled:border-line disabled:bg-disabled;
+  }
+  .check {
+    @apply rounded-sm;
+  }
+  .radio {
+    @apply rounded-full;
+  }
+  .check::before,
+  .radio::before {
+    content: '';
+    @apply absolute inset-0 hidden bg-accent-ink;
+  }
+  .check:checked::before,
+  .check:indeterminate::before,
+  .radio:checked::before {
+    @apply block;
+  }
+  .check::before {
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-6.5' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+      center / 14px no-repeat;
+  }
+  .check:indeterminate {
+    @apply border-accent bg-accent;
+  }
+  .check:indeterminate::before {
+    mask: linear-gradient(#000 0 0) center / 8px 2px no-repeat;
+  }
+  .radio::before {
+    @apply inset-[5px] rounded-full;
+  }
+  .check:disabled::before,
+  .radio:disabled::before {
+    @apply bg-ink-disabled;
+  }
+  .switch {
+    @apply relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full bg-line-strong transition-colors duration-fast
+      aria-checked:bg-accent disabled:cursor-not-allowed disabled:bg-disabled;
+  }
+  .switch > span {
+    @apply ms-0.5 h-3.5 w-3.5 rounded-full bg-field shadow-1 transition-transform duration-fast;
+  }
+  .switch[aria-checked='true'] > span {
+    @apply translate-x-[14px] bg-accent-ink rtl:-translate-x-[14px];
+  }
+
+  /* ---------- Segmented control and tabs ---------- */
+  .segmented {
+    @apply inline-flex h-8 items-center gap-0.5 rounded border border-line bg-sunken p-0.5;
+  }
+  .segmented > button {
+    @apply focus-inset inline-flex h-full items-center gap-1.5 rounded-sm px-2.5 text-body text-ink-muted hover:text-ink
+      aria-checked:bg-raised aria-checked:font-medium aria-checked:text-ink aria-checked:shadow-1
+      aria-pressed:bg-raised aria-pressed:font-medium aria-pressed:text-ink aria-pressed:shadow-1;
+  }
+  /* Underlined tabs (Windows 11 / Office): a 3 px rounded accent bar under the selected tab. */
+  .tabs {
+    @apply flex gap-1 border-b border-line;
+  }
+  .tab {
+    @apply focus-inset relative -mb-px inline-flex h-9 items-center whitespace-nowrap px-2.5 text-body text-ink-muted hover:text-ink
+      aria-selected:font-semibold aria-selected:text-ink disabled:text-ink-disabled;
+  }
+  .tab[aria-selected='true']::after {
+    content: '';
+    @apply absolute inset-x-2.5 bottom-0 h-[3px] rounded-full bg-accent;
+  }
+
+  /* ---------- Section card (fieldset) ---------- */
+  .section {
+    @apply m-0 min-w-0 rounded-lg border border-line bg-surface p-4;
+  }
+  .section-title {
+    @apply float-left mb-3 w-full p-0 text-title text-ink;
+  }
+  .section-desc {
+    @apply -mt-2 mb-3 text-caption text-ink-muted;
+  }
+
+  /* ---------- Toolbars and menus ---------- */
+  .toolbar {
+    @apply flex h-10 shrink-0 items-center gap-0.5 px-2;
+  }
+  .toolbar-group {
+    @apply flex items-center gap-0.5;
+  }
+  .toolbar-sep {
+    @apply mx-1.5 h-5 w-px shrink-0 bg-line;
+  }
+  /* A labelled ribbon tool: icon + text, one line. */
+  .tool {
+    @apply inline-flex h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm px-2 text-body text-ink transition-colors duration-fast
+      hover:bg-hover active:bg-press disabled:cursor-not-allowed disabled:bg-transparent disabled:text-ink-disabled
+      aria-pressed:bg-accent-subtle aria-pressed:font-semibold aria-pressed:text-accent aria-pressed:shadow-[inset_0_0_0_1px_rgb(var(--c-accent))];
+  }
+  .menu {
+    @apply z-dropdown min-w-[200px] rounded-lg border border-line bg-raised p-1 shadow-2;
+  }
+  .menu-item {
+    @apply flex h-8 w-full items-center gap-2 rounded-sm px-2 text-start text-body text-ink hover:bg-hover focus-visible:bg-hover focus-visible:outline-none aria-checked:font-semibold;
+  }
+  .menu-label {
+    @apply px-2 pb-1 pt-2 text-caption font-semibold text-ink-muted;
+  }
+
+  /* ---------- Rows ---------- */
+  .row {
+    @apply relative flex h-7 items-center gap-1 rounded-sm pe-2 text-body text-ink hover:bg-hover
+      aria-selected:bg-accent-subtle-strong aria-[current=location]:font-semibold;
+  }
+  .row[aria-current='location']::before {
+    content: '';
+    @apply absolute inset-y-1 start-0 w-[3px] rounded-full bg-accent;
+  }
+  .row-drop-inside {
+    @apply bg-accent-subtle shadow-[inset_0_0_0_2px_rgb(var(--c-accent))];
+  }
+  .row-drop-line {
+    @apply pointer-events-none absolute inset-x-0 h-0.5 bg-accent;
+  }
+
+  /* ---------- Badge, progress, feedback ---------- */
+  .badge {
+    @apply inline-flex h-5 items-center gap-1 rounded-sm bg-sunken px-1.5 text-caption font-medium text-ink-muted;
+  }
+  .badge-accent {
+    @apply bg-accent-subtle text-accent;
+  }
+  .badge-danger {
+    @apply bg-danger-bg text-danger;
+  }
+  .badge-warning {
+    @apply bg-warning-bg text-warning;
+  }
+  .badge-success {
+    @apply bg-success-bg text-success;
+  }
+  .badge-info {
+    @apply bg-info-bg text-info;
+  }
+  .progress {
+    @apply h-1.5 w-full appearance-none overflow-hidden rounded-full bg-line;
+  }
+  .progress::-webkit-progress-bar {
+    @apply bg-line;
+  }
+  .progress::-webkit-progress-value {
+    @apply rounded-full bg-accent transition-[width] duration-base;
+  }
+  .alert {
+    @apply flex items-start gap-2 rounded border px-3 py-2 text-body text-ink;
+  }
+  .alert-info {
+    @apply border-info-line/50 bg-info-bg;
+  }
+  .alert-success {
+    @apply border-success-line/50 bg-success-bg;
+  }
+  .alert-warning {
+    @apply border-warning-line/50 bg-warning-bg;
+  }
+  .alert-danger {
+    @apply border-danger-line/50 bg-danger-bg;
+  }
+  .toast {
+    @apply pointer-events-auto flex max-w-xl items-center gap-3 rounded-lg border border-line bg-raised py-2 pe-2 ps-3 text-body text-ink shadow-3;
+  }
+  .tooltip {
+    @apply pointer-events-none z-tooltip max-w-xs rounded-sm bg-inverse px-2 py-1 text-caption text-inverse-ink shadow-2;
+  }
+
+  /* ---------- Dialog (Windows 11: title + description, content, equal-width buttons in a grey footer) ---------- */
+  .dialog-scrim {
+    @apply fixed inset-0 z-modal flex items-center justify-center bg-black/30 dark:bg-black/50;
+  }
+  /* (Not ".dialog": pdf.js's viewer CSS styles that class, with padding, globally.) */
+  .modal {
+    @apply flex max-h-[85vh] max-w-[92vw] flex-col overflow-hidden rounded-lg border border-black/10 bg-surface shadow-4 dark:border-white/10;
+  }
+  .dialog-title {
+    @apply text-display text-ink;
+  }
+  .dialog-desc {
+    @apply text-body text-ink-muted;
+  }
+  .dialog-footer {
+    @apply flex shrink-0 items-center gap-2 border-t border-black/[.06] bg-dialog-footer px-6 py-5 dark:border-white/[.06];
+  }
+  /* Buttons in a dialog footer share the width equally, primary first (Windows convention). */
+  .dialog-footer > .btn,
+  .dialog-footer > .btn-primary,
+  .dialog-footer > .btn-danger,
+  .dialog-footer > .btn-danger-solid {
+    @apply min-w-[120px] flex-1;
   }
 }
 
-/* Pages are always white paper, in dark mode too. */
+/* ---------- Modal footer (Windows 11) ----------
+   Dialogs end with a row of buttons; that row becomes the grey footer band across the bottom of the dialog, with the
+   buttons sharing its width and the primary (submit / blue) button first. It bleeds over the body's padding
+   (px-6 pb-5 in Modal.tsx), so it must be the body's last element (or the last element of a form that is). */
+.epdf-dialog-body > div:last-child:has(> button),
+.epdf-dialog-body > form:last-child > div:last-child:has(> button) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: stretch;
+  gap: 8px;
+  margin: 16px -24px -20px;
+  padding: 20px 24px;
+  background: rgb(var(--c-dialog-footer));
+  border-top: 1px solid rgb(0 0 0 / 0.06);
+}
+.dark .epdf-dialog-body > div:last-child:has(> button),
+.dark .epdf-dialog-body > form:last-child > div:last-child:has(> button) {
+  border-top-color: rgb(255 255 255 / 0.06);
+}
+.epdf-dialog-body > div:last-child:has(> button) > button,
+.epdf-dialog-body > form:last-child > div:last-child:has(> button) > button {
+  flex: 1 1 0;
+  min-width: 110px;
+}
+.epdf-dialog-body > div:last-child:has(> button) > :is(.btn-primary, .btn-danger-solid, button[type='submit']),
+.epdf-dialog-body > form:last-child > div:last-child:has(> button) > :is(.btn-primary, .btn-danger-solid, button[type='submit']) {
+  order: -1;
+}
+
+.theme-switching,
+.theme-switching * {
+  transition: none !important;
+}
+
+/* ---------- Window chrome ---------- */
+/* Areas of the custom title bar that drag the window; anything clickable inside must opt out. */
+.app-drag {
+  -webkit-app-region: drag;
+}
+.app-drag button,
+.app-drag input,
+.app-drag select,
+.app-drag a,
+.app-drag [role='tab'],
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* ---------- Paper (pages are always white, in dark mode too) ---------- */
 .epdf-page {
   position: relative;
   flex: none;
   overflow: hidden;
   background: #fff;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+  box-shadow: var(--shadow-paper);
   user-select: text;
   /* pdf.js sizes its layers with round(down, scale * pageSize, var(--scale-round-*)); the viewer normally
      defines these on `.pdfViewer`. Without them the width/height are invalid and the text layer of a rotated
@@ -77,13 +548,13 @@ body {
 }
 .epdf-hit {
   position: absolute;
-  background: rgb(255 214 0 / 0.45);
+  background: rgb(var(--c-hit) / 0.4);
   border-radius: 2px;
   mix-blend-mode: multiply;
 }
 .epdf-hit-active {
-  background: rgb(255 128 0 / 0.6);
-  outline: 2px solid rgb(255 128 0);
+  background: rgb(var(--c-hit-active) / 0.55);
+  outline: 2px solid rgb(var(--c-hit-outline));
 }
 .epdf-link {
   position: absolute;
@@ -91,10 +562,13 @@ body {
   outline-offset: 0;
 }
 .epdf-link:hover {
-  background: rgb(36 87 214 / 0.12);
+  background: rgb(var(--c-paper-link) / 0.12);
 }
 .epdf-link:focus-visible {
-  outline: 2px solid rgb(36 87 214);
+  outline: 2px solid rgb(var(--c-paper-link));
+}
+.textLayer ::selection {
+  background: rgb(var(--c-paper-selection) / 0.28);
 }
 .textLayer {
   z-index: 1;

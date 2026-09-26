@@ -56,8 +56,8 @@ export function PhonePanel(): JSX.Element {
   if (state.kind === 'starting') return <Spinner label="Opening a temporary link for your phone…" />
   if (state.kind === 'error') {
     return (
-      <div role="alert" className="rounded-md border border-red-500 p-3 text-sm" data-testid="phone-error">
-        <p className="text-red-700 dark:text-red-300">{state.message}</p>
+      <div role="alert" className="rounded-md border border-danger-line p-3 text-sm" data-testid="phone-error">
+        <p className="text-danger">{state.message}</p>
         <button type="button" className="btn mt-2" onClick={() => void start()}>
           Try again
         </button>

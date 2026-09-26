@@ -9,7 +9,7 @@ import { grayPng } from '../support/png'
 import { inkBox as inkBoxOf, similarity, toInk, type Ink } from '../support/textCompare'
 import { seePages } from '../unit/helpers/hfPdfjs'
 import { openWith } from '../unit/helpers/securityHelpers'
-import { axeViolations, copyFixture, fixture, gotoPage, launch, menuClick, quitDiscarding } from './helpers'
+import { axeViolations, copyFixture, fixture, gotoPage, launch, menuClick, quitDiscarding, clickTool } from './helpers'
 
 /**
  * Headers & footers, Bates numbers, watermarks and backgrounds in the real app. Every visual claim is checked on the
@@ -321,7 +321,7 @@ test.describe('headers and footers (more)', () => {
   test('Bates numbering on 3 pages from the ribbon', async () => {
     const { page, app, path } = await open('hf-basic.pdf')
     try {
-      await page.getByRole('toolbar', { name: 'Editing tools' }).getByRole('button', { name: 'Bates…' }).click()
+      await clickTool(page, 'Bates…')
       const d = dialog(page)
       await expect(d.getByTestId('hf-dialog')).toHaveAttribute('data-ready', 'true', { timeout: 30_000 })
       await expect(d.getByRole('tab', { name: 'Bates numbering' })).toHaveAttribute('aria-selected', 'true')
