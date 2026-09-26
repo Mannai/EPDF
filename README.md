@@ -286,6 +286,14 @@ LibreOffice) and skip cleanly without them.
 - **Compression** does not do linearization ("Fast Web View"); a wrong one is worse than none.
 - **HEIC** depends on the operating system's codec (Microsoft HEIF extension on Windows); everything else is built in.
 - Old binary Office formats (`.doc`, `.xls`, `.ppt`) are not converted; save them as `.docx/.xlsx/.pptx` first.
+- A spreadsheet that declares absurd repeat counts (a billion cells) is capped at 512 columns x 2000 rows, but
+  converting that capped sheet still takes ~40 s.
+- **Arabic and other right-to-left text in existing PDFs displays correctly, but selecting, copying and searching it
+  is not reliable yet.** Epdf currently gets page text from PDF.js, which scrambles Arabic from many producers (a
+  LibreOffice export came out as unreadable fragments) and misorders numbers and brackets inside Arabic lines. An
+  Arabic-aware page text layer is in progress. Text that Epdf *writes* is correct: the text engine
+  (`src/shared/text/`, see `docs/text-engine.md`) shapes Arabic, Hebrew, Indic, Thai and CJK and was checked against
+  Chromium's rendering and, for Arabic, with Windows' own PDF renderer. No existing feature uses the engine yet.
 - Drag-a-tab-out-of-the-window is not implemented; use **Document ▸ Move Tab to New Window**.
 
 ## Licensing and self-containment
