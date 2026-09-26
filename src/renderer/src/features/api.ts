@@ -38,6 +38,8 @@ export interface PanelDef {
   icon: ReactNode
   side: 'left' | 'right'
   order?: number
+  /** Width in CSS pixels of a LEFT panel (default 160, sized for page thumbnails). */
+  width?: number
   Component: ComponentType<{ tab: Tab }>
 }
 

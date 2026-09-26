@@ -15,24 +15,23 @@ export function LeftSidebar({ tab }: { tab: Tab }): JSX.Element | null {
   return (
     <aside aria-label={panels.length > 1 ? 'Sidebar' : active.label} className="flex shrink-0 border-r border-line bg-surface-alt">
       {panels.length > 1 && (
-        <div role="tablist" aria-label="Sidebar panels" aria-orientation="vertical" className="flex w-10 flex-col items-center gap-1 border-r border-line py-2">
+        <div role="toolbar" aria-label="Sidebar panels" aria-orientation="vertical" className="flex w-10 flex-col items-center gap-1 border-r border-line py-2">
           {panels.map((p) => (
             <button
               key={p.id}
-              role="tab"
               type="button"
-              aria-selected={p.id === active.id}
+              aria-pressed={p.id === active.id}
               aria-label={p.label}
               title={p.label}
               onClick={() => setLeft(p.id)}
-              className="btn-icon aria-selected:bg-accent/20 aria-selected:ring-1 aria-selected:ring-accent"
+              className="btn-icon"
             >
               {p.icon}
             </button>
           ))}
         </div>
       )}
-      <div role={panels.length > 1 ? 'tabpanel' : undefined} aria-label={active.label} className="w-40 min-w-0">
+      <div role={panels.length > 1 ? 'region' : undefined} aria-label={active.label} className="min-w-0" style={{ width: active.width ?? 160 }}>
         <Active tab={tab} />
       </div>
     </aside>
