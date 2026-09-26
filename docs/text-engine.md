@@ -320,7 +320,8 @@ within the 60 MB budget. `dist/win-unpacked/resources/textfonts` measured 29.3 M
 <a id="testing"></a>
 ## 10. Testing and how correctness was verified
 
-Unit (`npm test`, files `tests/unit/text-*.test.ts`, 190 tests) and end-to-end (`tests/e2e/text-engine*.spec.ts`).
+Unit (`npm test`, files `tests/unit/text-*.test.ts`: 162 tests in 11 files) and end-to-end (`tests/e2e/text-engine*.spec.ts`: 35
+comparison tests + 1 real-app test + 1 packaged-build test).
 
 | What | How |
 |---|---|
