@@ -513,6 +513,45 @@ describe('editing annotations', () => {
     expect(infoOfDict(d)!.contents).toContain('several lines')
   })
 
+  it('a placed stamp can become another built-in stamp: name, word, width and appearance change, the centre stays', async () => {
+    const pdf = await makePdf()
+    const id = await addStamp(pdf, 0, { ...who, name: 'Draft', center: [300, 400] })
+    const r0 = getNumbers(annotsOf(pdf)[0], 'Rect')!
+    await updateAnnotation(pdf, id, { stamp: 'Confidential' })
+    const [d] = annotsOf(await roundTrip(pdf))
+    expect(nameOf(d, 'Name')).toBe('Confidential')
+    expect(getString(d, 'Contents')).toBe('CONFIDENTIAL') // it was the stamp's word, so it follows
+    expect(getString(d, 'Subj')).toBe('CONFIDENTIAL')
+    const r1 = getNumbers(d, 'Rect')!
+    expect(r1[2] - r1[0]).toBeGreaterThan(r0[2] - r0[0] + 20)
+    expect((r1[0] + r1[2]) / 2).toBeCloseTo((r0[0] + r0[2]) / 2, 0)
+    expect((r1[1] + r1[3]) / 2).toBeCloseTo((r0[1] + r0[3]) / 2, 0)
+    expect(apOps(d)).toContain(STAMPS.find((s) => s.name === 'Confidential')!.color.join(' '))
+  })
+
+  it('changing the stamp keeps a comment the user wrote, and refuses image and foreign stamps', async () => {
+    const pdf = await makePdf()
+    const id = await addStamp(pdf, 0, { ...who, name: 'Draft', center: [300, 400] })
+    await updateAnnotation(pdf, id, { contents: 'Needs legal review' })
+    await updateAnnotation(pdf, id, { stamp: 'Final' })
+    expect(getString(annotsOf(pdf)[0], 'Contents')).toBe('Needs legal review')
+    const img = await addImageStamp(pdf, 0, { ...who, kind: 'png', bytes: PNG, label: 'logo.png', center: [100, 100] })
+    await expect(updateAnnotation(pdf, img, { stamp: 'Final' })).rejects.toThrow(/cannot be changed/)
+  })
+
+  it('a line gets and loses its arrowhead: /LE and /IT', async () => {
+    const pdf = await makePdf()
+    const id = await addLine(pdf, 0, { ...who, from: [100, 100], to: [200, 150], color: [1, 0, 0], width: 2, opacity: 1, dashed: false, arrow: false })
+    await updateAnnotation(pdf, id, { arrow: true })
+    let [d] = annotsOf(await roundTrip(pdf))
+    expect(d.lookup(PDFName.of('LE'), PDFArray).asArray().map(String)).toEqual(['/None', '/OpenArrow'])
+    expect(nameOf(d, 'IT')).toBe('LineArrow')
+    await updateAnnotation(pdf, id, { arrow: false })
+    ;[d] = annotsOf(await roundTrip(pdf))
+    expect(d.lookup(PDFName.of('LE'), PDFArray).asArray().map(String)).toEqual(['/None', '/None'])
+    expect(d.get(PDFName.of('IT'))).toBeUndefined()
+  })
+
   it('shape options: width, dash, fill and removing the fill', async () => {
     const pdf = await makePdf()
     const id = await addShape(pdf, 0, { ...who, kind: 'Square', rect: [100, 100, 200, 160], color: [1, 0, 0], fill: [1, 1, 0], width: 1, opacity: 1, dashed: false })

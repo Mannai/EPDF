@@ -1,6 +1,7 @@
 import type { PageViewport } from 'pdfjs-dist'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useEditInfo } from '../../edit/session'
+import { confirmDelete } from '../../state/confirmDelete'
 import { notify } from '../../state/notify'
 import { useTabs } from '../../state/tabs'
 import { useWorkspace } from '../../state/workspace'
@@ -154,17 +155,30 @@ function Layer({ docId, pageIndex, pageNumber, scale, width, height, viewport }:
     void applyImageBox(sel, { x0: sel.bbox.x0 + ux, y0: sel.bbox.y0 + uy, x1: sel.bbox.x1 + ux, y1: sel.bbox.y1 + uy })
   }
 
+  /** Where a picture being inserted lands for a click at (cx, cy): its natural size, at most half the page, on the page. */
+  const placementBox = (p: NonNullable<typeof pending>, cx: number, cy: number): Box => {
+    const natW = p.width * 0.75 * scale
+    const natH = p.height * 0.75 * scale
+    const k = Math.min(1, (0.5 * width) / natW, (0.5 * height) / natH)
+    const w = natW * k
+    const h = natH * k
+    return { left: Math.min(Math.max(0, cx - w / 2), Math.max(0, width - w)), top: Math.min(Math.max(0, cy - h / 2), Math.max(0, height - h)), width: w, height: h }
+  }
+
   const placeAt = (cx: number, cy: number): void => {
     if (!pending) return
-    const pageW = width
-    const natW = pending.width * 0.75 * scale
-    const k = Math.min(1, (0.5 * pageW) / natW, (0.5 * height) / (pending.height * 0.75 * scale))
-    const w = natW * k
-    const h = pending.height * 0.75 * scale * k
-    const x = Math.min(Math.max(0, cx - w / 2), Math.max(0, width - w))
-    const y = Math.min(Math.max(0, cy - h / 2), Math.max(0, height - h))
-    void placeImage(pending, pageIndex, placementFromViewportRect(viewport, x, y, w, h))
+    const b = placementBox(pending, cx, cy)
+    void placeImage(pending, pageIndex, placementFromViewportRect(viewport, b.left, b.top, b.width, b.height))
   }
+
+  // The picture being inserted follows the pointer, see-through, where a click would put it.
+  const [hover, setHover] = useState<[number, number] | null>(null)
+  const pendingUrl = useMemo(
+    () => (pending ? URL.createObjectURL(new Blob([pending.picture.bytes.slice()], { type: pending.picture.kind === 'png' ? 'image/png' : 'image/jpeg' })) : null),
+    [pending]
+  )
+  useEffect(() => () => void (pendingUrl && URL.revokeObjectURL(pendingUrl)), [pendingUrl])
+  const ghost = pending && hover ? placementBox(pending, hover[0], hover[1]) : null
 
   // "Place at page center" applies to the page being viewed.
   const firstCenter = useRef(centerRequest)
@@ -212,12 +226,31 @@ function Layer({ docId, pageIndex, pageNumber, scale, width, height, viewport }:
         onMouseDown={(e) => {
           if (pending) {
             const r = layerRef.current!.getBoundingClientRect()
+            setHover(null)
             placeAt(e.clientX - r.left, e.clientY - r.top)
           } else {
             useImageEdit.getState().select(null)
           }
         }}
+        onPointerMove={(e) => {
+          if (!pending || e.pointerType === 'touch') return
+          const r = layerRef.current!.getBoundingClientRect()
+          setHover([e.clientX - r.left, e.clientY - r.top])
+        }}
+        onPointerLeave={() => setHover(null)}
       />
+      {ghost && pendingUrl && (
+        <img
+          data-testid="place-ghost"
+          data-ghost="image"
+          src={pendingUrl}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+          className="pointer-events-none absolute outline outline-1 outline-dashed outline-accent"
+          style={{ left: ghost.left, top: ghost.top, width: ghost.width, height: ghost.height, opacity: 0.55 }}
+        />
+      )}
       {!pending &&
         images.map((im, i) => {
           const isSel = selected?.id === im.id
@@ -262,7 +295,7 @@ function Layer({ docId, pageIndex, pageNumber, scale, width, height, viewport }:
                   } else if ((e.key === 'Delete' || e.key === 'Backspace') && !im.shared) {
                     e.preventDefault()
                     useImageEdit.getState().select(sel)
-                    void removeImage(sel)
+                    void confirmDelete('this image').then((yes) => yes && removeImage(sel))
                   } else if (e.key.startsWith('Arrow') && !im.shared) {
                     e.preventDefault()
                     if (!isSel) useImageEdit.getState().select(sel)

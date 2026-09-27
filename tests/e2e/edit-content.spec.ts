@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { PDFArray, PDFDocument, PDFName, PDFRawStream, decodePDFRawStream } from 'pdf-lib'
 import { analyzePage } from '../../src/renderer/src/features/textedit/pdfcontent/analyze'
 import { buildBlocks } from '../../src/renderer/src/features/textedit/pdfcontent/blocks'
-import { FIX, axeViolations, canvasHasInk, copyFixture, gotoPage, launch, quitDiscarding, clickTool } from './helpers'
+import { FIX, answerDelete, axeViolations, canvasHasInk, copyFixture, gotoPage, launch, quitDiscarding, clickTool } from './helpers'
 
 test.beforeAll(() => {
   execFileSync(process.execPath, ['tests/fixtures/edit-content.mjs', FIX], { stdio: 'ignore' })
@@ -541,6 +541,8 @@ test.describe('edit images', () => {
       await first.click()
       await first.focus()
       await page.keyboard.press('Delete')
+      // It asks first; "Don't ask again" turns the question off for good (Edit > Ask Before Deleting brings it back).
+      await answerDelete(page, { dontAsk: true })
       await expect(toast(page, 'Image deleted')).toBeVisible()
       await expect(outlines(page)).toHaveCount(1)
       await page.getByRole('button', { name: 'Undo Delete image' }).click()

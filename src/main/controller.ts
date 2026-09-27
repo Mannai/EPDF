@@ -24,6 +24,8 @@ export class Controller {
   /** A quit was paused while a window asks about unsaved edits; continue it once that window has closed. */
   resumeQuit = false
   onRecentsChanged?: () => void
+  /** A setting shown in the menu (a checkbox) changed: rebuild the menu. */
+  onMenuSettingChanged?: () => void
 
   constructor(
     readonly repos: Repos,

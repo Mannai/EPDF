@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { createNote, createTextBox } from './actions'
+import { createNote, createTextBox, selectPlaced } from './actions'
 import { hexToRgb } from './pdf/basics'
 import { pdfRectToView, pdfToView, type PageGeom } from './pdf/geometry'
 import { useMarkup, type Draft } from './store'
@@ -96,9 +96,10 @@ export function TextBoxDraftEditor({ draft, scale, geom }: { draft: BoxDraft; sc
     if (done.current || busy.current) return
     done.current = true
     busy.current = true
-    if (commit && text.trim()) await createTextBox(draft.docId, draft.pageIndex, draft.rect, text)
+    const id = commit && text.trim() ? await createTextBox(draft.docId, draft.pageIndex, draft.rect, text) : undefined
     busy.current = false
     useMarkup.getState().setDraft(null)
+    selectPlaced(draft.docId, id)
   }
 
   return (

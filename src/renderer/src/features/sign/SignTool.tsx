@@ -1,5 +1,5 @@
 import type { SignatureKind } from '@shared/features/sign'
-import { useEffect, useMemo, useRef, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { create } from 'zustand'
 import { degrees } from 'pdf-lib'
 import { editPdf } from '../../edit/session'
@@ -241,8 +241,15 @@ function Draft({ docId, pageIndex, viewport, scale }: PageOverlayProps): JSX.Ele
 export function SignOverlay(props: PageOverlayProps): JSX.Element | null {
   const tool = useWorkspace((s) => s.activeTool)
   const kind = kindOfTool(tool)
+  const [hover, setHover] = useState<[number, number] | null>(null)
+  const placing = usePlacement((s) => s.draft !== null)
+  // The signature a click would place, shown see-through under the pointer at its real size.
+  const item = useSignatures((s) => (kind ? selectedItem(s, kind) : undefined))
+  useEffect(() => setHover(null), [tool])
   const { docId, pageIndex, viewport, scale } = props
   if (!kind || !viewport) return null
+  const ghostW = DEFAULT_WIDTH[kind] * scale
+  const ghostH = item ? heightOf(item, DEFAULT_WIDTH[kind]) * scale : 0
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
     if (e.button !== 0) return
@@ -275,7 +282,30 @@ export function SignOverlay(props: PageOverlayProps): JSX.Element | null {
 
   return (
     <>
-      <div className="pointer-events-auto absolute inset-0" style={{ cursor: 'crosshair' }} data-testid="sign-layer" onPointerDown={onPointerDown} />
+      <div
+        className="pointer-events-auto absolute inset-0"
+        style={{ cursor: 'crosshair' }}
+        data-testid="sign-layer"
+        onPointerDown={onPointerDown}
+        onPointerMove={(e) => {
+          if (e.pointerType === 'touch') return
+          const b = e.currentTarget.getBoundingClientRect()
+          setHover([e.clientX - b.left, e.clientY - b.top])
+        }}
+        onPointerLeave={() => setHover(null)}
+      />
+      {hover && item && !placing && (
+        <img
+          data-testid="place-ghost"
+          data-ghost={kind}
+          src={item.url}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+          className="pointer-events-none absolute outline outline-1 outline-dashed outline-accent"
+          style={{ left: hover[0] - ghostW / 2, top: hover[1] - ghostH / 2, width: ghostW, height: ghostH, opacity: 0.55 }}
+        />
+      )}
       <Draft {...props} />
     </>
   )

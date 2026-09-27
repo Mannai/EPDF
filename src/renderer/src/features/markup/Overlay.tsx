@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspace } from '../../state/workspace'
 import type { PageOverlayProps } from '../api'
-import { createInk, createShape, createStamp, deleteAnnot, moveAnnot, resizeAnnot, type ShapeKind } from './actions'
+import { createInk, createShape, createStamp, deleteAnnot, deleteAnnotByKey, moveAnnot, resizeAnnot, selectPlaced, type ShapeKind } from './actions'
 import { useDocAnnots } from './data'
 import { hexToRgb } from './pdf/basics'
 import { geomOfViewport, pdfRectToView, viewRectToPdf, viewToPdf, type PageGeom, type Pt, type Rect } from './pdf/geometry'
@@ -10,6 +10,7 @@ import { smoothStroke } from './pdf/ink'
 import { capabilities, subtypeLabel, type AnnotInfo } from './pdf/model'
 import { registerPage } from './pages'
 import { NoteDraftEditor, TextBoxDraftEditor } from './DraftEditors'
+import { NoteGhost, StampGhost, TextBoxGhost } from './Ghost'
 import { TOOL, useMarkup } from './store'
 import { openContextMenu, type ContextItem } from '../../components/contextMenu'
 import { COMMENTS_PANEL } from './Options'
@@ -246,7 +247,7 @@ function SelectionFrame({ docId, scale, geom, annot }: { docId: string; scale: n
     } else if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault()
       e.stopPropagation()
-      void deleteAnnot(docId, annot)
+      void deleteAnnotByKey(docId, annot)
     } else if (e.key === 'Enter') {
       e.preventDefault()
       useMarkup.getState().requestFocusText()
@@ -292,9 +293,14 @@ function SelectionFrame({ docId, scale, geom, annot }: { docId: string; scale: n
 function DrawCatcher({ docId, pageIndex, scale, geom, width, height, tool }: { docId: string; pageIndex: number; scale: number; geom: PageGeom; width: number; height: number; tool: string }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const [preview, setPreview] = useState<Preview | null>(null)
+  // Where the pointer is while no button is down: stamps, notes and text boxes preview there before the click.
+  const [hover, setHover] = useState<Pt | null>(null)
   const opts = useMarkup((s) => s.options)
   const shape = SHAPE_TOOLS[tool]
   const start = useRef<Pt | null>(null)
+  const clickToPlace = tool === TOOL.stamp || tool === TOOL.note || tool === TOOL.textbox
+  // While a note or text box is being typed, the next click finishes it rather than placing another: no preview.
+  const draftOpen = useMarkup((s) => s.draft !== null)
 
   const pos = (e: React.PointerEvent | PointerEvent): Pt => {
     const b = ref.current!.getBoundingClientRect()
@@ -308,13 +314,17 @@ function DrawCatcher({ docId, pageIndex, scale, geom, width, height, tool }: { d
     ref.current!.setPointerCapture(e.pointerId)
     const p = pos(e)
     start.current = p
+    setHover(null)
     if (tool === TOOL.ink) setPreview({ kind: 'ink', pts: [p] })
     else if (shape) setPreview({ kind: 'shape', shape, a: p, b: p })
     else if (tool === TOOL.textbox) setPreview({ kind: 'shape', shape: 'textbox', a: p, b: p })
   }
 
   const onMove = (e: React.PointerEvent): void => {
-    if (!start.current) return
+    if (!start.current) {
+      if (clickToPlace && e.pointerType !== 'touch') setHover(pos(e))
+      return
+    }
     if (tool === TOOL.ink) {
       const events = e.nativeEvent.getCoalescedEvents?.() ?? []
       const pts = (events.length ? events : [e.nativeEvent]).map((ev) => pos(ev))
@@ -337,7 +347,7 @@ function DrawCatcher({ docId, pageIndex, scale, geom, width, height, tool }: { d
       if (stroke.length >= 2) void createInk(docId, pageIndex, [stroke])
     } else if (shape) {
       if (Math.hypot(p[0] - s[0], p[1] - s[1]) < 4) return // a click without a drag draws nothing
-      void createShape(docId, pageIndex, shape, toPdf(s), toPdf(p))
+      void createShape(docId, pageIndex, shape, toPdf(s), toPdf(p)).then((id) => selectPlaced(docId, id))
     } else if (tool === TOOL.textbox) {
       const small = Math.abs(p[0] - s[0]) < 20 || Math.abs(p[1] - s[1]) < 14
       const view: Rect = small
@@ -347,7 +357,7 @@ function DrawCatcher({ docId, pageIndex, scale, geom, width, height, tool }: { d
     } else if (tool === TOOL.note) {
       useMarkup.getState().setDraft({ kind: 'note', docId, pageIndex, at: toPdf(p) })
     } else if (tool === TOOL.stamp) {
-      void createStamp(docId, pageIndex, toPdf(p))
+      void createStamp(docId, pageIndex, toPdf(p)).then((id) => selectPlaced(docId, id))
     }
   }
 
@@ -367,8 +377,12 @@ function DrawCatcher({ docId, pageIndex, scale, geom, width, height, tool }: { d
       onPointerMove={onMove}
       onPointerUp={onUp}
       onPointerCancel={cancel}
+      onPointerLeave={() => setHover(null)}
     >
       {preview && <svg className="pointer-events-none absolute inset-0" width={width} height={height} aria-hidden="true">{renderPreview(preview, opts, scale)}</svg>}
+      {hover && !preview && tool === TOOL.stamp && <StampGhost at={hover} scale={scale} pageW={width} pageH={height} />}
+      {hover && !preview && tool === TOOL.note && !draftOpen && <NoteGhost at={hover} scale={scale} pageW={width} pageH={height} />}
+      {hover && !preview && tool === TOOL.textbox && !draftOpen && <TextBoxGhost at={hover} scale={scale} />}
     </div>
   )
 }

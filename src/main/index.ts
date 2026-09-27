@@ -72,6 +72,7 @@ async function start(): Promise<void> {
     pathOfDoc: (docId) => c.registry.pathOf(docId)
   })
   installMenus(c)
+  c.onMenuSettingChanged = () => installMenus(c)
   c.onRecentsChanged = () => {
     installMenus(c)
     c.windows.broadcast('recent:changed', undefined)

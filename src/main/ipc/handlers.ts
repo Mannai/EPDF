@@ -153,6 +153,7 @@ export function registerIpcHandlers(c: Controller): void {
     // Discriminated union guarantees key/value agree; the cast only bridges the generic setter.
     c.repos.settings.set(req.key, req.value as never)
     if (req.key === 'theme') c.applyTheme()
+    if (req.key === 'confirmDelete') c.onMenuSettingChanged?.() // Edit ▸ Ask Before Deleting shows it
   })
 
   handle('app:info', () => ({

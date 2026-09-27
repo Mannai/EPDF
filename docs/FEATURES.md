@@ -104,7 +104,8 @@ State & helpers you can import:
 * `state/tabs` — `useTabs`, `selectActiveTab`, `Tab` (`docId`, `name`, `path`, `view: {page, zoom, …}`, `numPages`, `status`).
 * `state/actions` — `activeTab()`, `openFiles()`, `pageTo()`, …
 * `state/notify` — `notify('error'|'info'|'success', message, action?)`, `errorMessage(err)`.
-* `state/confirm` — `askConfirm({ title, message, buttons, cancelValue })` → chosen `value`.
+* `state/confirm` — `askConfirm({ title, message, buttons, cancelValue })` → chosen `value`; `askConfirmChecked({ …, checkbox })` also returns whether the checkbox was ticked.
+* `state/confirmDelete` — `await confirmDelete('this thing')` before deleting a selected page object with Delete / Backspace (asks unless the user chose "Don't ask again").
 * `state/jobs` — `startJob<R>(kind, payload)` → `{ promise, cancel }`. Progress + Cancel show in the jobs tray automatically.
 * `state/viewerOptions` — `useViewerOptions.getState().setAnnotationMode(AnnotationMode.ENABLE_FORMS)` stops
   PDF.js painting form widgets on the page canvas (use it when you draw your own interactive inputs); restore
@@ -237,7 +238,8 @@ npx playwright test        # the whole suite must still pass before you finish
 * **E2E tests** (`tests/e2e/<name>.spec.ts`): use `tests/e2e/helpers.ts` — `launch({ files, env })`,
   `copyFixture(name)` (always edit copies, never shared fixtures), `menuClick(app, 'Menu', 'Item')`,
   `gotoPage`, `canvasHasInk`, `axeViolations(page, label)`, `crash(app)`, `quitDiscarding(app, page)`,
-  `contextMenu(app, target, 'Item label')` (right-click and pick an item; `null` only records the menu).
+  `contextMenu(app, target, 'Item label')` (right-click and pick an item; `null` only records the menu),
+  `answerDelete(page, { dontAsk?, cancel? })` (answers the Delete / Backspace question).
   Tests that end with unsaved edits must end with `quitDiscarding` (a plain `app.close()` waits on the
   "Save changes?" prompt). Verify the **saved file on disk** with pdf-lib, and that it renders.
 * Fixtures: generate deterministic PDFs with pdf-lib in `tests/fixtures/<name>.mjs` (call it from your spec

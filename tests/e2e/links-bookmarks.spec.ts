@@ -9,7 +9,7 @@ import type { BmNode } from '../../src/renderer/src/features/bookmarks/pdf/model
 import { readLinks } from '../../src/renderer/src/features/links/pdf/read'
 import { writeLbFixtures } from '../fixtures/lbFixtures'
 import { openWith } from '../unit/helpers/securityHelpers'
-import { axeViolations, clickTool, contextMenu, copyFixture, launch, menuClick, quitDiscarding } from './helpers'
+import { answerDelete, axeViolations, clickTool, contextMenu, copyFixture, launch, menuClick, quitDiscarding } from './helpers'
 
 const FIXTURES = resolve('test-results/fixtures')
 
@@ -1206,6 +1206,7 @@ test.describe('links: edit', () => {
       await page.getByLabel('Choose a link').selectOption({ label: 'Page 1: Launch: program.exe' })
       await expect(page.getByTestId('link-frame')).toBeFocused()
       await page.keyboard.press('Delete')
+      await answerDelete(page)
       await expect(undoButton(page, 'Delete link')).toBeVisible()
       await save(page)
       const after = await linksOnDisk(path)

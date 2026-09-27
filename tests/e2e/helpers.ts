@@ -35,6 +35,18 @@ export function menuClick(app: ElectronApplication, menu: string, item: string):
   )
 }
 
+/**
+ * Answers the "Delete this …?" question that Delete / Backspace on a page object asks (state/confirmDelete.ts).
+ * `dontAsk` ticks "Don't ask again" first.
+ */
+export async function answerDelete(page: Page, opts: { dontAsk?: boolean; cancel?: boolean } = {}): Promise<void> {
+  const dlg = page.getByRole('dialog', { name: /^Delete .*\?$/ })
+  await dlg.waitFor()
+  if (opts.dontAsk) await dlg.getByLabel('Don’t ask again').check()
+  await dlg.getByRole('button', { name: opts.cancel ? 'Cancel' : 'Delete', exact: true }).click()
+  await dlg.waitFor({ state: 'detached' })
+}
+
 /** One item of a right-click menu as main received it (see src/main/features/chrome/contextMenu.ts). */
 export interface MenuEntry {
   id?: string

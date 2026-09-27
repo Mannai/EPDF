@@ -4,7 +4,7 @@ import { useWorkspace } from '../../state/workspace'
 import { isEditableTarget } from '../keys'
 import { registerCommand, registerContextItems, registerPageOverlay, registerPanel, registerTool } from '../api'
 import { CommentsPanel } from './CommentsPanel'
-import { createTextMarkup, deleteAnnot } from './actions'
+import { createTextMarkup, deleteAnnotByKey } from './actions'
 import { useAnnots } from './data'
 import {
   COMMENTS_PANEL,
@@ -167,7 +167,7 @@ window.addEventListener('keydown', (e) => {
     const a = useAnnots.getState().byDoc[sel.docId]?.annots.find((x) => x.id === sel.id)
     if (a) {
       e.preventDefault()
-      void deleteAnnot(sel.docId, a)
+      void deleteAnnotByKey(sel.docId, a)
     }
   } else if (e.key === 'Escape' && sel) {
     state.select(sel.docId, null)

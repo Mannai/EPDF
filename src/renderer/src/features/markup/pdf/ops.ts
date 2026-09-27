@@ -387,6 +387,10 @@ export interface Patch {
   dashed?: boolean
   fontSize?: number
   icon?: 'Note' | 'Comment'
+  /** One of Epdf's built-in stamps (STAMPS): swaps the stamp's word, colour and size, keeping its centre. */
+  stamp?: string
+  /** Line: an arrowhead at the end, or none. */
+  arrow?: boolean
 }
 
 const touch = (dict: PDFDict, now = new Date()): void => {
@@ -450,6 +454,25 @@ export async function updateAnnotation(pdf: PDFDocument, id: string, patch: Patc
   }
   if (patch.icon && info.subtype === 'Text') {
     d.set(PDFName.of('Name'), PDFName.of(patch.icon))
+    redraw = true
+  }
+  if (patch.stamp !== undefined && info.subtype === 'Stamp' && info.ours) {
+    const def = stampByName(patch.stamp)
+    const old = stampByName(info.iconName ?? '')
+    if (!def || !old) throw new Error('This stamp cannot be changed to another one.')
+    d.set(PDFName.of('Name'), PDFName.of(def.name))
+    d.set(PDFName.of('Subj'), text(def.label))
+    // The stamp's word is also its comment text unless the user wrote their own.
+    if (!info.contents || info.contents === old.label) d.set(PDFName.of('Contents'), text(def.label))
+    const [w, h] = await stampSize(pdf, def)
+    const r = info.rect
+    setNumbers(ctx, d, 'Rect', placeRect(geomOfPage(loc.page), [(r[0] + r[2]) / 2, (r[1] + r[3]) / 2], w, h))
+    redraw = true
+  }
+  if (patch.arrow !== undefined && info.subtype === 'Line') {
+    d.set(PDFName.of('LE'), ctx.obj([PDFName.of('None'), PDFName.of(patch.arrow ? 'OpenArrow' : 'None')]))
+    if (patch.arrow) d.set(PDFName.of('IT'), PDFName.of('LineArrow'))
+    else d.delete(PDFName.of('IT'))
     redraw = true
   }
   if (redraw && info.subtype === 'FreeText') await growToFit(pdf, d, rotation)

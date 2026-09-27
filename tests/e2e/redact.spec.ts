@@ -6,7 +6,7 @@ import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFStream, PDFSt
 import { analyzePage } from '../../src/renderer/src/features/textedit/pdfcontent/analyze'
 import { bytesToLatin1 } from '../../src/renderer/src/features/textedit/pdfcontent/content'
 import { decodeImage } from '../../src/renderer/src/features/redact/logic/imageRedact'
-import { FIX, axeViolations, copyFixture, launch, menuClick, quitDiscarding, clickTool } from './helpers'
+import { FIX, answerDelete, axeViolations, copyFixture, launch, menuClick, quitDiscarding, clickTool } from './helpers'
 import { decoded, residue } from '../support/redactProof'
 import { flattenText, readPdf } from '../support/pdfText'
 import { openWith } from '../unit/helpers/securityHelpers'
@@ -256,7 +256,13 @@ test.describe('redaction: mark, preview, apply, save, prove', () => {
       await panel(page).getByTestId('redact-undo-marks').click()
       await expect(marks(page)).toHaveCount(1)
       await marks(page).first().focus()
+      // Delete asks first; Cancel keeps the mark.
       await page.keyboard.press('Delete')
+      await answerDelete(page, { cancel: true })
+      await expect(marks(page)).toHaveCount(1)
+      await marks(page).first().focus()
+      await page.keyboard.press('Delete')
+      await answerDelete(page)
       await expect(marks(page)).toHaveCount(0)
       await expect(page.getByTestId('redact-no-marks')).toBeVisible()
       // Tools ▸ Redact… opens the panel and activates the text tool from the menu
@@ -317,6 +323,7 @@ test.describe('redaction: mark, preview, apply, save, prove', () => {
       await expect(page.getByTestId('redact-area-editor').locator('[data-handle]')).toHaveCount(8)
       await marks(page).first().focus()
       await page.keyboard.press('Delete')
+      await answerDelete(page)
       await expect(marks(page)).toHaveCount(0)
       await panel(page).getByTestId('redact-undo-marks').click()
       await expect(marks(page)).toHaveCount(1)

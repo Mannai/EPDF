@@ -9,7 +9,7 @@ import { listLocated } from '../../src/renderer/src/features/markup/pdf/annots'
 import { pdfRectToView } from '../../src/renderer/src/features/markup/pdf/geometry'
 import { get, getDict, getName, getNumbers, getString } from '../../src/renderer/src/features/markup/pdf/pdfobj'
 import { readAnnotations } from '../../src/renderer/src/features/markup/pdf/read'
-import { axeViolations, copyFixture, gotoPage, launch, quitDiscarding, clickTool } from './helpers'
+import { answerDelete, axeViolations, copyFixture, gotoPage, launch, quitDiscarding, clickTool } from './helpers'
 
 const PW = 612
 const PH = 792
@@ -400,16 +400,26 @@ test.describe('markup: notes, text boxes, drawings, shapes and stamps', () => {
         await page.mouse.click(at.x, at.y)
       })
       await added('Add stamp')
+      // Once placed, the stamp is selected with the Select tool, so it can be changed straight away.
+      await expect(tool(page, 'Select')).toHaveAttribute('aria-pressed', 'true')
+      await expect(page.getByTestId('markup-frame')).toHaveAttribute('aria-label', /Selected Stamp/)
+      // (The Comments panel shows the same properties for the selected comment.)
+      await expect(page.getByRole('group', { name: 'Select options' }).getByRole('combobox', { name: 'Stamp' })).toHaveValue('Confidential')
+      await expect(page.getByTestId('comment-details').getByRole('combobox', { name: 'Stamp' })).toHaveValue('Confidential')
 
       // Custom image stamp through the native dialog (stubbed here; the renderer never supplies a path).
+      await clickTool(page, 'Stamp')
+      await page.getByLabel('Keep tool selected').check() // this time, stay on the Stamp tool
       await stubOpenDialog(app, { canceled: false, filePaths: [png] })
       await page.getByRole('button', { name: 'Choose image…' }).click()
-      await expect(page.getByRole('combobox', { name: 'Stamp' })).toHaveValue('__custom')
+      await expect(page.getByRole('group', { name: 'Stamp options' }).getByRole('combobox', { name: 'Stamp' })).toHaveValue('__custom')
       await afterEdit(page, async () => {
         const at = await pdfPoint(page, 1, 400, 240)
         await page.mouse.click(at.x, at.y)
       })
       await added('Add stamp')
+      await expect(tool(page, 'Stamp')).toHaveAttribute('aria-pressed', 'true') // kept
+      await page.getByLabel('Keep tool selected').uncheck()
       await expect(rows(page)).toHaveCount(n)
 
       // Every step is one undo step: undo all, then redo all.
@@ -811,7 +821,10 @@ test.describe('markup: select, edit, move, resize and delete existing annotation
       const cloud = await pdfPoint(page, 1, 136, 440)
       await page.mouse.click(cloud.x, cloud.y)
       await expect(frame).toHaveAttribute('aria-label', /Selected Rectangle/)
-      await afterEdit(page, () => page.keyboard.press('Delete'))
+      await afterEdit(page, async () => {
+        await page.keyboard.press('Delete')
+        await answerDelete(page)
+      })
       await expect(undoButton(page, 'Delete rectangle')).toBeEnabled()
       await expect(count(page)).toHaveText('4 comments')
       await undoButton(page, 'Delete rectangle').click()

@@ -1,5 +1,4 @@
 import type { ToolDef } from '../features/api'
-import type { IconName } from './Icons'
 
 /**
  * Ribbon tasks (Windows design v3: "File" plus task tabs above a one-line ribbon). Tools are registered by features
@@ -12,15 +11,20 @@ export interface Task {
   groups: string[]
   /** Tool ids taken from another group into this task. */
   tools?: string[]
+  /** Tool ids shown in this task as well as in their own (listed first). */
+  shared?: string[]
+  /** A right-hand panel that belongs to this task: it closes when the user moves to another task. */
+  panel?: string
 }
 
 export const TASKS: Task[] = [
   { id: 'comment', label: 'Comment', groups: ['Comment'] },
-  { id: 'draw', label: 'Draw', groups: [], tools: ['markup.ink', 'markup.rect', 'markup.ellipse', 'markup.line', 'markup.arrow'] },
+  // Select is here too: a shape is selected once drawn, and the ribbon should stay on Draw while it is.
+  { id: 'draw', label: 'Draw', groups: [], tools: ['markup.ink', 'markup.rect', 'markup.ellipse', 'markup.line', 'markup.arrow'], shared: ['markup.select'] },
   { id: 'edit', label: 'Edit', groups: ['Edit'] },
   { id: 'fill', label: 'Fill & sign', groups: ['Forms', 'Sign'] },
   { id: 'forms', label: 'Links & forms', groups: ['Links', 'Form builder'] },
-  { id: 'redact', label: 'Redact', groups: ['Redact'] },
+  { id: 'redact', label: 'Redact', groups: ['Redact'], panel: 'redact.panel' },
   { id: 'pagemarks', label: 'Page marks', groups: ['Page marks', 'headerfooter', 'bates', 'watermark', 'background'] }
 ]
 
@@ -33,7 +37,10 @@ export function resolveTasks(tools: readonly ToolDef[]): ResolvedTask[] {
   const claimed = new Set(TASKS.flatMap((t) => t.tools ?? []))
   const out: ResolvedTask[] = TASKS.map((t) => ({
     ...t,
-    items: tools.filter((x) => (t.tools?.includes(x.id) ?? false) || (t.groups.includes(x.group) && !claimed.has(x.id)))
+    items: [
+      ...tools.filter((x) => t.shared?.includes(x.id)),
+      ...tools.filter((x) => (t.tools?.includes(x.id) ?? false) || (t.groups.includes(x.group) && !claimed.has(x.id)))
+    ]
   }))
   const known = new Set(TASKS.flatMap((t) => t.groups))
   for (const x of tools) {
@@ -42,37 +49,22 @@ export function resolveTasks(tools: readonly ToolDef[]): ResolvedTask[] {
     if (!t) out.push((t = { id: `group:${x.group}`, label: x.group, groups: [x.group], items: [] }))
     t.items.push(x)
   }
-  return out.filter((t) => t.items.length > 0)
+  // A task made only of shared tools has nothing of its own to show.
+  return out.filter((t) => t.items.some((i) => !t.shared?.includes(i.id)))
 }
 
+/**
+ * What moving from task `from` to task `to` should turn off: the active tool when `to` doesn't have it (its button and
+ * options would be out of sight while it kept working, e.g. marking text for redaction under the Comment tools), and
+ * `from`'s own panel.
+ */
+export function leavingTask(from: ResolvedTask | undefined, to: ResolvedTask, activeTool: string | null, rightPanel: string | null): { endTool: boolean; closePanel: boolean } {
+  return {
+    endTool: !!activeTool && !to.items.some((i) => i.id === activeTool),
+    closePanel: !!from && from.id !== to.id && !!from.panel && rightPanel === from.panel
+  }
+}
+
+/** The task a tool lives in (for a shared tool, its own task, not one that also shows it). */
 export const taskOfTool = (tasks: ResolvedTask[], toolId: string | null): ResolvedTask | undefined =>
-  toolId ? tasks.find((t) => t.items.some((i) => i.id === toolId)) : undefined
-
-/** Design icons for known tools (features keep their own icon as the fallback). */
-export const TOOL_ICONS: Record<string, IconName> = {
-  'markup.select': 'select',
-  'markup.highlight': 'highlight',
-  'markup.underline': 'underline',
-  'markup.strikeout': 'strike',
-  'markup.squiggly': 'squiggly',
-  'markup.note': 'note',
-  'markup.textbox': 'textbox',
-  'markup.stamp': 'stamp',
-  'markup.ink': 'draw',
-  'markup.rect': 'rect',
-  'markup.ellipse': 'ellipse',
-  'markup.line': 'line',
-  'markup.arrow': 'arrow',
-  'forms.addText': 'text',
-  'forms.stampCheck': 'check',
-  'forms.stampCross': 'x',
-  'forms.stampDot': 'dot',
-  'forms.stampDate': 'date',
-  'sign.signature': 'signature',
-  'links.add': 'link',
-  'links.edit': 'rename',
-  'formbuilder.text': 'f-text',
-  'formbuilder.checkbox': 'f-check',
-  'formbuilder.radio': 'f-radio',
-  'formbuilder.dropdown': 'f-list'
-}
+  toolId ? tasks.find((t) => t.items.some((i) => i.id === toolId) && !t.shared?.includes(toolId)) : undefined

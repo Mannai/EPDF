@@ -32,6 +32,11 @@ Edit, Fill & sign (Forms + Sign), Links & forms (Links + Form builder), Redact, 
 becomes its own task, so a new feature's tools always appear. When a tool is activated from anywhere (menu, shortcut,
 command), the ribbon switches to its task.
 
+A task can also show another task's tool (`shared`): Select is on Draw too, so a shape stays selected under Draw after
+it is drawn. When the user picks another task, a tool the new task doesn't have is turned off (its button and options
+would be out of sight while it kept working: "Mark text" kept marking text for redaction under Comment), and the task's
+own panel (`panel`, e.g. the Redaction panel) closes. `leavingTask()` in `ribbonTasks.ts` decides.
+
 Task buttons and the side-panel switcher are toggle buttons (`aria-pressed`), not ARIA tabs: `role="tab"` is reserved for
 the open documents, which is what assistive tech (and the tests) treat as "the tabs".
 
@@ -62,6 +67,22 @@ Menu key open the same menus, placed at the focused element.
 The page menus are built from every feature's `registerContextItems` group, in `order`. E2E tests pick items through
 main's test hook (`contextMenu()` in `tests/e2e/helpers.ts`; spec `tests/e2e/contextmenus.spec.ts`), since Playwright
 cannot click a native menu.
+
+## Placing and deleting things on a page
+
+- **Delete / Backspace asks first** on a selected comment, shape, stamp, link, form field, image or redaction mark
+  (`state/confirmDelete.ts`). The question has "Don't ask again", which sets the `confirmDelete` setting to false;
+  **Edit ▸ Ask Before Deleting** (a menu checkbox, rebuilt whenever the setting changes) turns it back on. Deleting
+  from a right-click menu or a Delete button doesn't ask: that is already a deliberate choice. E2E: `answerDelete(page)`.
+- **Placed shapes, stamps and text boxes are selected** with the Select tool (`selectPlaced` in markup/actions.ts), so
+  their handles and properties show at once: colour, fill, opacity, width, dashed, arrowhead, font size, note icon, and
+  which built-in stamp it is. "Keep tool selected" (in those tools' options) stays on the tool instead. Ink keeps
+  drawing.
+- **Click-to-place tools preview** under the pointer what a click would add, at its real size and position
+  (`data-testid="place-ghost"`): markup stamps (built-in and image), sticky notes, text boxes; Fill & sign check,
+  cross, dot, date and Add text; signatures and initials; a picture being inserted with Edit images.
+- Fill & sign marks and text, and signatures, are still written into the page itself when placed (flattened), so
+  they are not editable as objects afterwards (a signature can be moved or deleted with Edit images).
 
 ## Dialogs
 

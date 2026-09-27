@@ -88,6 +88,13 @@ interface MarkupState {
   draft: Draft | null
   setDraft(d: Draft | null): void
 
+  /**
+   * After placing a shape, stamp or text box, stay on that tool. Off (the default): the new item is selected with the
+   * Select tool, so it can be moved, resized and restyled straight away.
+   */
+  keepTool: boolean
+  setKeepTool(on: boolean): void
+
   filters: Filters
   setFilters(f: Partial<Filters>): void
   /** Bumped to move keyboard focus to the selected comment's text field in the panel. */
@@ -126,6 +133,9 @@ export const useMarkup = create<MarkupState>((set, get) => ({
 
   draft: null,
   setDraft: (draft) => set({ draft }),
+
+  keepTool: false,
+  setKeepTool: (keepTool) => set({ keepTool }),
 
   filters: NO_FILTERS,
   setFilters: (f) => set((s) => ({ filters: { ...s.filters, ...f } })),

@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { confirmDelete } from '../../state/confirmDelete'
 import { useWorkspace } from '../../state/workspace'
 import type { PageOverlayProps } from '../api'
 import { geometryOf } from '../forms/geometry'
@@ -96,7 +97,10 @@ function FieldLayer({ docId, pageIndex, doc, geom, scale, width, height, tool }:
       else void nudgeSelection(docId, ux * k, uy * k)
     } else if (e.key === 'Delete' || e.key === 'Backspace') {
       handled()
-      void deleteSelection(docId)
+      const n = selection.length
+      void confirmDelete(n > 1 ? `${n} form fields` : 'this form field').then((yes) => {
+        if (yes) void deleteSelection(docId)
+      })
     } else if (mod && e.key.toLowerCase() === 'c') {
       handled()
       copySelection(docId)

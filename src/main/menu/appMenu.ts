@@ -112,7 +112,19 @@ export function installMenus(c: Controller): void {
         { type: 'separator' },
         item('&Find…', { type: 'find' }, 'CmdOrCtrl+F'),
         item('Find Next', { type: 'find-next' }, 'CmdOrCtrl+G'),
-        item('Find Previous', { type: 'find-prev' }, 'CmdOrCtrl+Shift+G')
+        item('Find Previous', { type: 'find-prev' }, 'CmdOrCtrl+Shift+G'),
+        { type: 'separator' },
+        {
+          // Delete / Backspace on a comment, shape, link or field asks first; "Don't ask again" in that dialog turns
+          // this off, and this is where it comes back.
+          label: 'Ask Before Deleting',
+          type: 'checkbox',
+          checked: c.settings.confirmDelete,
+          click: (menuItem) => {
+            c.repos.settings.set('confirmDelete', menuItem.checked)
+            for (const w of c.windows.all()) c.windows.send(w, 'menu:action', { type: 'settings-changed' })
+          }
+        }
       ])
     },
     {

@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { hexToRgb, rgbToHex } from './pdf/basics'
 import { capabilities, subtypeLabel, type AnnotInfo } from './pdf/model'
+import { STAMPS, stampByName, stampLabel } from './pdf/stamps'
 import { deleteAnnot, editAnnotation } from './actions'
 import { useMarkup } from './store'
 import { useWorkspace } from '../../state/workspace'
@@ -252,6 +253,39 @@ export function AnnotProperties({ docId, annot, variant }: { docId: string; anno
               onCommit={(v) => Number.isFinite(Number(v)) && apply({ borderWidth: Math.min(40, Math.max(0, Number(v))) }, 'Change line width')}
               className="field w-16"
             />
+          </label>
+        )}
+        {['Square', 'Circle', 'Line', 'FreeText'].includes(annot.subtype) && caps.width && (
+          <label className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-ink">
+            <input type="checkbox" checked={annot.dashed} onChange={(e) => apply({ dashed: e.target.checked }, 'Change line style')} />
+            <span>Dashed</span>
+          </label>
+        )}
+        {annot.subtype === 'Line' && caps.recolor && (
+          <label className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-ink">
+            <input type="checkbox" checked={annot.lineEnds[1] !== 'None'} onChange={(e) => apply({ arrow: e.target.checked }, e.target.checked ? 'Add arrowhead' : 'Remove arrowhead')} />
+            <span>Arrowhead</span>
+          </label>
+        )}
+        {annot.subtype === 'Stamp' && annot.ours && stampByName(annot.iconName) && (
+          <label className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-ink">
+            <span>Stamp</span>
+            <select className="field" value={annot.iconName} onChange={(e) => apply({ stamp: e.target.value }, 'Change stamp')}>
+              {STAMPS.map((s) => (
+                <option key={s.name} value={s.name}>
+                  {stampLabel(s.name)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {annot.subtype === 'Text' && caps.recolor && (annot.iconName === 'Note' || annot.iconName === 'Comment') && (
+          <label className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-ink">
+            <span>Icon</span>
+            <select className="field" value={annot.iconName} onChange={(e) => apply({ icon: e.target.value as 'Note' | 'Comment' }, 'Change icon')}>
+              <option value="Note">Note</option>
+              <option value="Comment">Comment</option>
+            </select>
           </label>
         )}
         {annot.subtype === 'FreeText' && caps.recolor && (

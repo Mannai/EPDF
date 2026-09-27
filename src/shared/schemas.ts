@@ -31,7 +31,9 @@ export const SettingsSchema = z.object({
   defaultViewMode: ViewModeSchema,
   defaultZoomMode: ZoomModeSchema,
   restoreOnLaunch: z.boolean(),
-  sidebarOpen: z.boolean()
+  sidebarOpen: z.boolean(),
+  /** Delete / Backspace on something selected on a page (comment, shape, link, field...) asks first. */
+  confirmDelete: z.boolean()
 })
 export const SettingKeySchema = SettingsSchema.keyof()
 
@@ -79,5 +81,6 @@ export const SetSettingRequestSchema = z.discriminatedUnion('key', [
   z.object({ key: z.literal('defaultViewMode'), value: ViewModeSchema }),
   z.object({ key: z.literal('defaultZoomMode'), value: ZoomModeSchema }),
   z.object({ key: z.literal('restoreOnLaunch'), value: z.boolean() }),
-  z.object({ key: z.literal('sidebarOpen'), value: z.boolean() })
+  z.object({ key: z.literal('sidebarOpen'), value: z.boolean() }),
+  z.object({ key: z.literal('confirmDelete'), value: z.boolean() })
 ])

@@ -1,4 +1,5 @@
-import { useConfirm } from '../state/confirm'
+import { useState } from 'react'
+import { useConfirm, type ConfirmRequest } from '../state/confirm'
 import { cancelJob, useJobs } from '../state/jobs'
 import { useToasts } from '../state/notify'
 import { IconClose } from './Icons'
@@ -88,19 +89,31 @@ export function JobsTray(): JSX.Element | null {
 /** Renders the pending `askConfirm(...)` request, if any. */
 export function ConfirmHost(): JSX.Element | null {
   const req = useConfirm((s) => s.request)
-  if (!req) return null
+  // A new request starts unticked.
+  return req ? <ConfirmDialog key={`${req.title}\n${req.message}`} req={req} /> : null
+}
+
+function ConfirmDialog({ req }: { req: ConfirmRequest }): JSX.Element {
+  const [checked, setChecked] = useState(false)
   const cancel = req.cancelValue ?? req.buttons[req.buttons.length - 1].value
   const initial = req.buttons.find((b) => b.variant === 'primary') ?? req.buttons[0]
   return (
-    <Modal title={req.title} onClose={() => req.resolve(cancel)}>
+    <Modal title={req.title} onClose={() => req.resolve(cancel, false)}>
       <p className="mb-4 whitespace-pre-line text-ink-muted">{req.message}</p>
+      {req.checkbox && (
+        <label className="mb-4 flex items-center gap-2">
+          <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} />
+          {req.checkbox}
+        </label>
+      )}
       <div className="flex flex-wrap justify-end gap-2">
         {req.buttons.map((b) => (
           <button
             key={b.value}
             autoFocus={b === initial}
             className={b.variant === 'primary' ? 'btn-primary' : b.variant === 'danger' ? 'btn border-danger-line/60 text-danger' : 'btn'}
-            onClick={() => req.resolve(b.value)}
+            // Cancelling never applies the checkbox ("don't ask again" only counts with a real answer).
+            onClick={() => req.resolve(b.value, b.value !== cancel && checked)}
           >
             {b.label}
           </button>

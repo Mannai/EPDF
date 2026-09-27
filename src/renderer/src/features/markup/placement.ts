@@ -1,6 +1,6 @@
 import { activeTab } from '../../state/actions'
 import { notify } from '../../state/notify'
-import { createShape, createStamp, type ShapeKind } from './actions'
+import { createShape, createStamp, selectPlaced, type ShapeKind } from './actions'
 import { viewRectToPdf, viewToPdf } from './pdf/geometry'
 import { pageEntry, visibleAnchor } from './pages'
 import { useMarkup } from './store'
@@ -30,10 +30,10 @@ export async function placeDefault(kind: PlaceKind): Promise<void> {
   } else if (kind === 'textbox') {
     useMarkup.getState().setDraft({ kind: 'textbox', docId, pageIndex, rect: viewRectToPdf(entry.geom, [vx, vy, vx + 200, vy + 48]) })
   } else if (kind === 'stamp') {
-    await createStamp(docId, pageIndex, at(80, 30))
+    selectPlaced(docId, await createStamp(docId, pageIndex, at(80, 30)))
   } else if (kind === 'rect' || kind === 'ellipse') {
-    await createShape(docId, pageIndex, kind, at(0, 0), at(140, 90))
+    selectPlaced(docId, await createShape(docId, pageIndex, kind, at(0, 0), at(140, 90)))
   } else {
-    await createShape(docId, pageIndex, kind, at(0, 0), at(140, 60))
+    selectPlaced(docId, await createShape(docId, pageIndex, kind, at(0, 0), at(140, 60)))
   }
 }

@@ -58,6 +58,12 @@ export function NoteOptions(): JSX.Element {
   )
 }
 
+/** Off: a shape, stamp or text box is selected once placed, ready to move and restyle. On: stay on the tool. */
+function KeepToolField(): JSX.Element {
+  const on = useMarkup((s) => s.keepTool)
+  return <CheckField label="Keep tool selected" checked={on} onChange={(v) => useMarkup.getState().setKeepTool(v)} />
+}
+
 export function TextBoxOptions(): JSX.Element {
   const o = useMarkup((s) => s.options.textbox)
   const patch = useMarkup((s) => s.patchOptions)
@@ -69,6 +75,7 @@ export function TextBoxOptions(): JSX.Element {
       <CheckField label="Fill" checked={!!o.fill} onChange={(on) => patch('textbox', { fill: on ? '#fff8b0' : null })} />
       {o.fill && <ColorField label="Fill color" value={o.fill} onChange={(fill) => patch('textbox', { fill })} />}
       <NumberField label="Border" value={o.border} min={0} max={10} onChange={(border) => patch('textbox', { border })} />
+      <KeepToolField />
       <CommentsToggle />
     </>
   )
@@ -105,6 +112,7 @@ export function ShapeOptions({ fillable }: { fillable: boolean }): JSX.Element {
       <NumberField label="Width" value={o.width} min={1} max={30} onChange={(width) => patch('shape', { width })} />
       <RangeField label="Opacity" value={o.opacity} min={0.1} max={1} step={0.1} format={pct} onChange={(opacity) => patch('shape', { opacity })} />
       <CheckField label="Dashed" checked={o.dashed} onChange={(dashed) => patch('shape', { dashed })} />
+      <KeepToolField />
       <CommentsToggle />
     </>
   )
@@ -145,6 +153,7 @@ export function StampOptions(): JSX.Element {
       <button type="button" className="btn shrink-0 whitespace-nowrap text-xs" onClick={() => void choose()}>
         Choose image…
       </button>
+      <KeepToolField />
       <CommentsToggle />
     </>
   )

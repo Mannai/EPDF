@@ -1,5 +1,6 @@
 import type { PageViewport } from 'pdfjs-dist'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { confirmDelete } from '../../state/confirmDelete'
 import { useWorkspace } from '../../state/workspace'
 import type { PageOverlayProps } from '../api'
 import type { Rect } from './logic/geom'
@@ -150,8 +151,11 @@ function MarkBox({ docId, mark, index, box, viewport, clip, selected, first }: {
       onKeyDown={(e) => {
         if (e.key === 'Delete' || e.key === 'Backspace') {
           e.preventDefault()
-          useRedact.getState().removeMark(docId, mark.id)
-          useRedact.getState().announce(`Removed a redaction mark on page ${mark.pageIndex + 1}.`)
+          void confirmDelete('this redaction mark', 'The text under it stays in the document. You can mark it again.').then((yes) => {
+            if (!yes) return
+            useRedact.getState().removeMark(docId, mark.id)
+            useRedact.getState().announce(`Removed a redaction mark on page ${mark.pageIndex + 1}.`)
+          })
         } else if (e.key.startsWith('Arrow') && mark.kind === 'area') {
           e.preventDefault()
           const step = e.shiftKey ? 10 : 1

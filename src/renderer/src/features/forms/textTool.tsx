@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { create } from 'zustand'
 import { editPdf } from '../../edit/session'
 import { errorMessage, notify } from '../../state/notify'
@@ -229,13 +229,42 @@ function DraftBox({ docId, pageIndex, viewport, scale }: PageOverlayProps): JSX.
   )
 }
 
+/**
+ * A see-through copy of the mark a click would stamp, under the pointer: same size, colour and shape as drawStamp
+ * (whose offsets are y-up in the reader's frame; y is flipped here).
+ */
+function StampGhost({ kind, at, scale }: { kind: StampKind; at: [number, number]; scale: number }): JSX.Element {
+  const size = useTextTool((s) => s.size)
+  const color = useTextTool((s) => s.color)
+  const s = size * scale
+  const w = Math.max(0.8, size * 0.13) * scale
+  const pt = (dx: number, dy: number): string => `${at[0] + dx * s} ${at[1] - dy * s}`
+  const common = { stroke: color, strokeWidth: w, strokeLinecap: 'round' as const, fill: 'none' }
+  return (
+    <svg data-testid="place-ghost" data-ghost={kind} className="pointer-events-none absolute inset-0 h-full w-full overflow-visible" style={{ opacity: 0.55 }} aria-hidden="true">
+      {kind === 'check' && <path d={`M${pt(-0.45, 0.02)} L${pt(-0.12, -0.34)} L${pt(0.5, 0.42)}`} {...common} strokeLinejoin="round" />}
+      {kind === 'cross' && <path d={`M${pt(-0.4, -0.4)} L${pt(0.4, 0.4)} M${pt(-0.4, 0.4)} L${pt(0.4, -0.4)}`} {...common} />}
+      {kind === 'dot' && <circle cx={at[0]} cy={at[1]} r={Math.max(1.2, size * 0.28) * scale} fill={color} />}
+      {kind === 'date' && (
+        <text x={at[0]} y={at[1] + 0.3 * s} textAnchor="middle" fontFamily="Helvetica, Arial, sans-serif" fontSize={s} fill={color}>
+          {dateLabel()}
+        </text>
+      )}
+    </svg>
+  )
+}
+
 /** The click-to-place layer for the text and stamp tools, plus the text box being edited. */
 export function TextToolOverlay(props: PageOverlayProps): JSX.Element | null {
   const tool = useWorkspace((s) => s.activeTool)
+  const [hover, setHover] = useState<[number, number] | null>(null)
+  const drafting = useTextTool((s) => s.draft !== null)
+  useEffect(() => setHover(null), [tool]) // a preview never outlives its tool
   const { docId, pageIndex, viewport, scale } = props
   const isText = tool === 'forms.addText'
   const stamp = tool ? STAMP_TOOLS[tool] : undefined
   if (!viewport || (!isText && !stamp)) return null
+  const size = useTextTool.getState().size
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
     if (e.button !== 0) return
@@ -272,7 +301,24 @@ export function TextToolOverlay(props: PageOverlayProps): JSX.Element | null {
         style={{ cursor: isText ? 'text' : 'crosshair' }}
         data-testid={isText ? 'add-text-layer' : 'stamp-layer'}
         onPointerDown={onPointerDown}
+        onPointerMove={(e) => {
+          if (e.pointerType === 'touch') return
+          const b = e.currentTarget.getBoundingClientRect()
+          setHover([e.clientX - b.left, e.clientY - b.top])
+        }}
+        onPointerLeave={() => setHover(null)}
       />
+      {hover && stamp && <StampGhost kind={stamp} at={hover} scale={scale} />}
+      {/* Add text: the box a click would open (its left edge at the pointer, centred on its first line). */}
+      {hover && isText && !drafting && (
+        <div
+          data-testid="place-ghost"
+          data-ghost="text"
+          aria-hidden="true"
+          className="pointer-events-none absolute border border-dashed border-accent"
+          style={{ left: hover[0], top: hover[1] - (size * LINE_HEIGHT * scale) / 2, width: DEFAULT_BOX_WIDTH * scale, height: size * LINE_HEIGHT * 2 * scale, opacity: 0.8 }}
+        />
+      )}
       {isText && <DraftBox {...props} />}
     </>
   )

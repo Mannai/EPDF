@@ -80,6 +80,8 @@ export type MenuAction =
   | { type: 'page-last' }
   | { type: 'goto-page' }
   | { type: 'detach-tab' }
+  /** Settings were changed from the menu: re-read them. */
+  | { type: 'settings-changed' }
   | { type: 'reload' }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -87,5 +89,6 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultViewMode: 'continuous',
   defaultZoomMode: 'fit-width',
   restoreOnLaunch: true,
-  sidebarOpen: true
+  sidebarOpen: true,
+  confirmDelete: true
 }

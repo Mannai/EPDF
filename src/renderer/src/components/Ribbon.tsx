@@ -4,8 +4,37 @@ import { toggleSidebar } from '../state/actions'
 import type { Tab } from '../state/tabs'
 import { useUi } from '../state/ui'
 import { useWorkspace } from '../state/workspace'
-import { Icon } from './Icons'
-import { resolveTasks, taskOfTool, TOOL_ICONS, type ResolvedTask } from './ribbonTasks'
+import { Icon, type IconName } from './Icons'
+import { leavingTask, resolveTasks, taskOfTool, type ResolvedTask } from './ribbonTasks'
+
+/** Design icons for known tools (features keep their own icon as the fallback). */
+const TOOL_ICONS: Record<string, IconName> = {
+  'markup.select': 'select',
+  'markup.highlight': 'highlight',
+  'markup.underline': 'underline',
+  'markup.strikeout': 'strike',
+  'markup.squiggly': 'squiggly',
+  'markup.note': 'note',
+  'markup.textbox': 'textbox',
+  'markup.stamp': 'stamp',
+  'markup.ink': 'draw',
+  'markup.rect': 'rect',
+  'markup.ellipse': 'ellipse',
+  'markup.line': 'line',
+  'markup.arrow': 'arrow',
+  'forms.addText': 'text',
+  'forms.stampCheck': 'check',
+  'forms.stampCross': 'x',
+  'forms.stampDot': 'dot',
+  'forms.stampDate': 'date',
+  'sign.signature': 'signature',
+  'links.add': 'link',
+  'links.edit': 'rename',
+  'formbuilder.text': 'f-text',
+  'formbuilder.checkbox': 'f-check',
+  'formbuilder.radio': 'f-radio',
+  'formbuilder.dropdown': 'f-list'
+}
 
 function useTasks(): ResolvedTask[] {
   // Tools are registered once at startup, so this is stable for the life of the window.
@@ -18,6 +47,8 @@ function useFollowActiveTool(tasks: ResolvedTask[]): string {
   const task = useUi((s) => s.ribbonTask)
   const setTask = useUi((s) => s.setRibbonTask)
   useEffect(() => {
+    // Stay on the showing task if it has the tool (Select is on Draw too); otherwise go to the tool's own task.
+    if (tasks.find((t) => t.id === task)?.items.some((i) => i.id === active)) return
     const owner = taskOfTool(tasks, active)
     if (owner && owner.id !== task) setTask(owner.id)
   }, [active]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -38,9 +69,17 @@ export function RibbonTabs({ tab }: { tab: Tab | null }): JSX.Element {
     const r = fileRef.current?.getBoundingClientRect()
     if (r) void window.epdf.call('chrome:menu', { x: r.left, y: r.bottom + 2 })
   }
+  /** The user picks a task: a tool or panel of the task being left doesn't come along. */
+  const pick = (t: ResolvedTask): void => {
+    const ws = useWorkspace.getState()
+    const { endTool, closePanel } = leavingTask(tasks.find((x) => x.id === current), t, ws.activeTool, ws.rightPanel)
+    if (endTool) ws.setActiveTool(null, tab?.docId)
+    if (closePanel) ws.setRightPanel(null)
+    setTask(t.id)
+  }
   const move = (i: number): void => {
     const t = tasks[(i + tasks.length) % tasks.length]
-    setTask(t.id)
+    pick(t)
     tabRefs.current.get(t.id)?.focus()
   }
 
@@ -85,7 +124,7 @@ export function RibbonTabs({ tab }: { tab: Tab | null }): JSX.Element {
                 data-task={t.id}
                 data-tools={t.items.map((x) => x.id).join(' ')}
                 data-tool-labels={t.items.map((x) => x.label).join('|')}
-                onClick={() => setTask(t.id)}
+                onClick={() => pick(t)}
                 onKeyDown={(e) => {
                   if (e.key === 'ArrowRight') move(i + 1)
                   else if (e.key === 'ArrowLeft') move(i - 1)
@@ -133,7 +172,7 @@ function useCompact(key: string): { on: boolean; ref: (el: HTMLDivElement | null
 function groupsOf(task: ResolvedTask): { label: string; items: ResolvedTask['items'] }[] {
   const out: { label: string; items: ResolvedTask['items'] }[] = []
   for (const t of task.items) {
-    const label = task.tools?.includes(t.id) ? task.label : t.group
+    const label = task.tools?.includes(t.id) || task.shared?.includes(t.id) ? task.label : t.group
     const g = out.find((x) => x.label === label)
     if (g) g.items.push(t)
     else out.push({ label, items: [t] })

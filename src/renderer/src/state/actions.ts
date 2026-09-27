@@ -139,6 +139,8 @@ export function runMenuAction(a: MenuAction): void {
       return void detachActiveTab()
     case 'reload':
       return void reloadActiveTab()
+    case 'settings-changed':
+      return void window.epdf.getSettings().then((settings) => useTabs.getState().setSettings(settings))
   }
 }
 

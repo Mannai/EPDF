@@ -13,7 +13,9 @@ export interface ConfirmRequest {
   buttons: ConfirmButton[]
   /** Value returned for Escape / clicking outside. Default: the last button's value. */
   cancelValue?: string
-  resolve(value: string): void
+  /** An unticked checkbox under the message (e.g. "Don't ask again"); its state comes back with the choice. */
+  checkbox?: string
+  resolve(value: string, checked?: boolean): void
 }
 
 interface ConfirmState {
@@ -29,14 +31,19 @@ export const useConfirm = create<ConfirmState>(() => ({ request: null }))
  *     buttons: [{ label: 'Save', value: 'save', variant: 'primary' }, { label: 'Cancel', value: 'cancel' }] })
  */
 export function askConfirm(req: Omit<ConfirmRequest, 'resolve'>): Promise<string> {
+  return askConfirmChecked(req).then((r) => r.value)
+}
+
+/** askConfirm() that also says whether the request's `checkbox` was ticked. */
+export function askConfirmChecked(req: Omit<ConfirmRequest, 'resolve'>): Promise<{ value: string; checked: boolean }> {
   return new Promise((resolve) => {
     const run = (): void => {
       useConfirm.setState({
         request: {
           ...req,
-          resolve: (v) => {
+          resolve: (v, checked) => {
             useConfirm.setState({ request: null })
-            resolve(v)
+            resolve({ value: v, checked: !!checked })
             // Let the next queued request (if any) show.
             queueMicrotask(() => queue.shift()?.())
           }

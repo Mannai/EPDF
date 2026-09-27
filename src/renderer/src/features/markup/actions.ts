@@ -1,5 +1,6 @@
 import { EditError, editPdf } from '../../edit/session'
 import { askConfirm } from '../../state/confirm'
+import { confirmDelete } from '../../state/confirmDelete'
 import { errorMessage, notify } from '../../state/notify'
 import { useUi } from '../../state/ui'
 import { useAnnots, refreshAnnots } from './data'
@@ -24,7 +25,8 @@ import {
   type Patch
 } from './pdf/ops'
 import type { Quad } from './pdf/quads'
-import { useMarkup, type TextMarkupKind } from './store'
+import { TOOL, useMarkup, type TextMarkupKind } from './store'
+import { useWorkspace } from '../../state/workspace'
 
 /**
  * Glue between the UI and the pure operations: each user action is one `editPdf` call, hence one undo
@@ -141,6 +143,16 @@ export async function createStamp(docId: string, pageIndex: number, center: Pt):
   return id
 }
 
+/**
+ * A shape, stamp or text box was just placed: select it with the Select tool, so its handles and properties show and
+ * it can be moved, resized, restyled or deleted right away (Acrobat does the same). "Keep tool selected" skips this.
+ */
+export function selectPlaced(docId: string, id: string | undefined): void {
+  if (!id || useMarkup.getState().keepTool) return
+  useWorkspace.getState().setActiveTool(TOOL.select, docId)
+  useMarkup.getState().select(docId, id)
+}
+
 // ---------------------------------------------------------------- editing existing annotations
 
 export async function editAnnotation(docId: string, id: string, patch: Patch, label = 'Edit annotation'): Promise<boolean> {
@@ -181,6 +193,14 @@ export async function setStatus(docId: string, id: string, state: ReviewState): 
   })
   if (ok) announce(state === 'Completed' ? 'Comment resolved' : state === 'None' ? 'Comment reopened' : `Comment marked ${state.toLowerCase()}`)
   return !!ok
+}
+
+/** Delete / Backspace on the selected annotation: asks first (unless turned off), then deletes. */
+export async function deleteAnnotByKey(docId: string, a: Pick<AnnotInfo, 'id' | 'subtype'>): Promise<boolean> {
+  const all = useAnnots.getState().byDoc[docId]?.annots ?? []
+  // A thread has its own, more specific question in deleteAnnot.
+  if (countThread(all, a.id) === 0 && !(await confirmDelete(`this ${subtypeLabel(a.subtype).toLowerCase()}`))) return false
+  return deleteAnnot(docId, a)
 }
 
 /** Deletes an annotation; asks first when it has replies (the whole thread goes). */

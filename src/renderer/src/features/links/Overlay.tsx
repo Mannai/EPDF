@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { confirmDelete } from '../../state/confirmDelete'
 import { useWorkspace } from '../../state/workspace'
 import type { PageOverlayProps } from '../api'
 import { geomOfViewport, pdfRectToView, viewRectToPdf, viewToPdf, type PageGeom, type Rect } from '../markup/pdf/geometry'
@@ -300,7 +301,7 @@ function Frame({ docId, scale, geom, link }: { docId: string; scale: number; geo
     } else if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault()
       e.stopPropagation()
-      void deleteLinkAction(docId, link.id)
+      void confirmDelete('this link').then((yes) => yes && deleteLinkAction(docId, link.id))
     } else if (e.key === 'Enter') {
       e.preventDefault()
       e.stopPropagation()
