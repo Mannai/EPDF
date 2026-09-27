@@ -1,6 +1,90 @@
 import { expect, test } from '@playwright/test'
 import { canvasHasInk, currentPage, fixture, gotoPage, launch } from './helpers'
 
+test.describe('viewer: steady selection across paragraphs', () => {
+  // Regression: while a drag moved steadily down through paragraphs, the selection flickered between including the
+  // next paragraph and not (the pointer crossing the gaps between lines made Chromium pick far-away nodes).
+  test('dragging down through three paragraphs only ever grows the selection', async () => {
+    const { PDFDocument, StandardFonts } = await import('pdf-lib')
+    const { mkdtempSync, writeFileSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const pdf = await PDFDocument.create()
+    const font = await pdf.embedFont(StandardFonts.Helvetica)
+    const p = pdf.addPage([612, 792])
+    const words = 'The committee reviewed the proposal carefully and asked for more detail on costs and timing'.split(' ')
+    let y = 720
+    for (let para = 1; para <= 3; para++) {
+      for (let line = 0; line < 4; line++) {
+        const text = `P${para}L${line + 1} ` + words.slice(line * 3, line * 3 + 9).join(' ')
+        p.drawText(text, { x: 72, y, size: 12, font })
+        y -= 18
+      }
+      y -= 36 // paragraph gap
+    }
+    const dir = mkdtempSync(join(tmpdir(), 'epdf-paras-'))
+    const file = join(dir, 'paragraphs.pdf')
+    writeFileSync(file, await pdf.save())
+
+    const { app, page } = await launch({ files: [file] })
+    try {
+      const first = page.locator('[data-page="1"] .textLayer span', { hasText: 'P1L1' }).first()
+      const last = page.locator('[data-page="1"] .textLayer span', { hasText: 'P3L2' }).first()
+      await expect(first).toBeVisible()
+      const a = (await first.boundingBox())!
+      const b = (await last.boundingBox())!
+      await page.mouse.move(a.x + 1, a.y + a.height / 2)
+      await page.mouse.down()
+      const lengths: number[] = []
+      const N = 60
+      for (let i = 1; i <= N; i++) {
+        // steadily down and a little to the right, crossing lines and the gaps between paragraphs
+        await page.mouse.move(a.x + 1 + (200 * i) / N, a.y + a.height / 2 + ((b.y + b.height / 2 - a.y - a.height / 2) * i) / N)
+        lengths.push(await page.evaluate(() => document.getSelection()?.toString().length ?? 0))
+      }
+      await page.mouse.up()
+      const shrinks = lengths.map((l, i) => (i && l < lengths[i - 1]! - 3 ? `${lengths[i - 1]}->${l}` : '')).filter(Boolean)
+      expect(shrinks, `selection lengths while dragging down: ${lengths.join(',')}`).toEqual([])
+      expect(lengths[N - 1]).toBeGreaterThan(200) // it really reached the third paragraph
+    } finally {
+      await app.close()
+    }
+  })
+})
+
+test.describe('viewer: text selection', () => {
+  // Regression: dragging a selection over the empty space between lines made it jump to far-away text (often the end
+  // of the page), because the text layer lacked PDF.js's "end of content" handling (pdf/textSelection.ts).
+  test('a drag from a line into the gap below it never selects text further down the page', async () => {
+    const { app, page } = await launch({ files: [fixture('sample.pdf')] })
+    try {
+      const line = page.locator('[data-page="1"] .textLayer span', { hasText: 'The quick brown fox' }).first()
+      const later = page.locator('[data-page="1"] .textLayer span', { hasText: 'Jump to page four' }).first()
+      await expect(line).toBeVisible()
+      await expect(later).toBeVisible()
+      const a = (await line.boundingBox())!
+      const b = (await later.boundingBox())!
+      await page.mouse.move(a.x + 2, a.y + a.height / 2)
+      await page.mouse.down()
+      const seen: string[] = []
+      // Across the line, then down through the empty band between it and "Jump to page four" (never reaching it).
+      const steps = 24
+      for (let i = 1; i <= steps; i++) {
+        const x = a.x + 2 + ((a.width * 0.8) * Math.min(1, i / 8))
+        const y = i <= 8 ? a.y + a.height / 2 : a.y + a.height + ((b.y - (a.y + a.height)) * 0.8 * (i - 8)) / (steps - 8)
+        await page.mouse.move(x, y)
+        seen.push(await page.evaluate(() => document.getSelection()?.toString() ?? ''))
+      }
+      await page.mouse.up()
+      const jumped = seen.filter((s) => s.includes('Jump to page') || s.includes('sample page 2'))
+      expect(jumped, `selection while dragging: ${JSON.stringify(seen.slice(-4))}`).toEqual([])
+      expect(seen.some((s) => s.includes('The quick brown'))).toBe(true)
+    } finally {
+      await app.close()
+    }
+  })
+})
+
 test.describe('viewer', () => {
   test('opens a PDF passed on the command line and renders canvas + text layer', async () => {
     const { app, page } = await launch({ files: [fixture('sample.pdf')] })

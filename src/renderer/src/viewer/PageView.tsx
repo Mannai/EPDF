@@ -5,6 +5,7 @@ import { rangeBoxes, needsPageModel } from '@shared/pagetext'
 import { getPageOverlays } from '../features/api'
 import type { LoadedDoc } from '../pdf/docCache'
 import { pageText, rememberPdfjs } from '../pdf/pagetext'
+import { enableTextLayerSelection } from '../pdf/textSelection'
 import { disposeModelTextLayer, renderModelTextLayer } from '../pdf/pagetext/textLayer'
 import { itemIndexAt } from '../pdf/search'
 import { consumeFocus, useSearch } from '../state/search'
@@ -58,6 +59,7 @@ function PageViewImpl({ loaded, pageIndex, scale, width, height, onGoToPage }: P
   const canvasHost = useRef<HTMLDivElement>(null)
   const textDiv = useRef<HTMLDivElement>(null)
   const textLayerRef = useRef<TextLayer | null>(null)
+  const selectionOff = useRef<(() => void) | null>(null)
   const firstRender = useRef(true)
   const [links, setLinks] = useState<Link[]>([])
   const [rendered, setRendered] = useState(0)
@@ -128,6 +130,7 @@ function PageViewImpl({ loaded, pageIndex, scale, width, height, onGoToPage }: P
         if (td) {
           content = await page.getTextContent()
           if (cancelled) return
+          selectionOff.current?.()
           disposeModelTextLayer(td)
           td.replaceChildren()
           setLayerDimensions(td, viewport)
@@ -135,6 +138,7 @@ function PageViewImpl({ loaded, pageIndex, scale, width, height, onGoToPage }: P
           textLayerRef.current = textLayer
           await textLayer.render()
           if (cancelled) return
+          selectionOff.current = enableTextLayerSelection(td) // keeps a drag-selection from jumping across gaps
         }
         setViewport(viewport)
         setRendered((v) => v + 1)
@@ -147,9 +151,11 @@ function PageViewImpl({ loaded, pageIndex, scale, width, height, onGoToPage }: P
               if (cancelled || pt.kind !== 'model' || !td.isConnected) return
               textLayer?.cancel()
               textLayerRef.current = null
+              selectionOff.current?.()
               td.replaceChildren()
               setLayerDimensions(td, viewport)
               renderModelTextLayer(td, pt.model)
+              selectionOff.current = enableTextLayerSelection(td)
               setRendered((v) => v + 1)
             })
           }
@@ -194,18 +200,26 @@ function PageViewImpl({ loaded, pageIndex, scale, width, height, onGoToPage }: P
 
   useEffect(() => {
     const td = textDiv.current
-    return () => disposeModelTextLayer(td)
+    return () => {
+      selectionOff.current?.()
+      selectionOff.current = null
+      disposeModelTextLayer(td)
+    }
   }, [])
 
-  // Free the canvas memory when the page scrolls far out of view (component unmounts).
+  // Free the canvas memory only when the page really goes away (scrolled far out of view: the component unmounts).
+  // Not when `loaded` changes: every edit reloads the document, and zeroing the canvas then showed a black page
+  // until the new render swapped in (the "black flash" on adding a link, a field, text...). The render effect swaps
+  // in the new canvas and releases the old one itself.
   useEffect(() => {
     const host = canvasHost.current
     return () => {
       const c = host?.firstElementChild as HTMLCanvasElement | null
       if (c) c.width = c.height = 0
-      void loaded.doc.getPage(pageNo).then((p) => p.cleanup()).catch(() => undefined)
     }
-  }, [loaded, pageNo])
+  }, [])
+  // Release this page's PDF.js resources in the document version that is being left (reload or unmount).
+  useEffect(() => () => void loaded.doc.getPage(pageNo).then((p) => p.cleanup()).catch(() => undefined), [loaded, pageNo])
 
   // Compute search-hit rectangles: from the page text model's glyph geometry on model pages, else from the text
   // layer's DOM.

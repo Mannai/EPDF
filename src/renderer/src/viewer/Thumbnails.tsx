@@ -49,7 +49,11 @@ function ThumbImpl({ loaded, pageIndex, height, current, onSelect }: {
           background: 'rgb(255,255,255)'
         })
         await task.promise
-        if (!cancelled) host.current?.replaceChildren(canvas)
+        if (!cancelled && host.current) {
+          const old = host.current.firstElementChild as HTMLCanvasElement | null
+          host.current.replaceChildren(canvas)
+          if (old) old.width = old.height = 0 // release the previous version's backing store once replaced
+        }
         page.cleanup()
       } catch (err) {
         if (!(err instanceof RenderingCancelledException) && !cancelled) console.error('Thumbnail failed', err)
@@ -59,10 +63,19 @@ function ThumbImpl({ loaded, pageIndex, height, current, onSelect }: {
       cancelled = true
       clearTimeout(timer)
       task?.cancel()
-      const c = host.current?.firstElementChild as HTMLCanvasElement | null
-      if (c) c.width = c.height = 0
+      // (The old thumbnail stays visible until the new one replaces it: blanking it here made every thumbnail go
+      // black on each edit, because each edit reloads the document.)
     }
   }, [loaded, pageIndex])
+
+  // Free the canvas memory when the thumbnail itself goes away.
+  useEffect(() => {
+    const el = host.current
+    return () => {
+      const c = el?.firstElementChild as HTMLCanvasElement | null
+      if (c) c.width = c.height = 0
+    }
+  }, [])
 
   return (
     <button

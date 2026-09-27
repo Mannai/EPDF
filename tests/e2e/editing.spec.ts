@@ -15,6 +15,46 @@ const isLandscape = async (page: Page, n = 1): Promise<boolean> => {
 
 const dot = (page: Page) => page.getByTestId('unsaved-dot')
 
+test.describe('editing pipeline: no blank pages while an edit is applied', () => {
+  // Regression: every edit reloads the document, and the viewer used to zero the size of every visible page and
+  // thumbnail canvas at that moment, so pages flashed black until they were drawn again (on adding a link, a form field,
+  // text, a rotation...). The old image must stay on screen until the new one replaces it.
+  test('page and thumbnail canvases are never blanked during an edit and its undo', async () => {
+    const path = copyFixture('sample.pdf')
+    const { app, page } = await launch({ files: [path] })
+    try {
+      await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Go to page 2' }).locator('canvas')).toBeVisible()
+      await page.evaluate(() => {
+        const w = window as unknown as { __blank: string[]; __watch: boolean }
+        w.__blank = []
+        w.__watch = true
+        const tick = (): void => {
+          for (const c of document.querySelectorAll<HTMLCanvasElement>('.epdf-page canvas, button[aria-label^="Go to page"] canvas')) {
+            if (c.isConnected && (c.width === 0 || c.height === 0)) w.__blank.push(c.closest('[data-page]')?.getAttribute('data-page') ?? 'thumbnail')
+          }
+          if (w.__watch) requestAnimationFrame(tick)
+        }
+        requestAnimationFrame(tick)
+      })
+      await menuClick(app, 'Document', 'Rotate Page Clockwise')
+      await expect(dot(page)).toBeVisible()
+      await page.waitForTimeout(2500) // the new version renders; the old one is retired after 1.5 s
+      await page.getByRole('button', { name: /^Undo/ }).click()
+      await expect(dot(page)).toHaveCount(0)
+      await page.waitForTimeout(2500)
+      const blank = await page.evaluate(() => {
+        const w = window as unknown as { __blank: string[]; __watch: boolean }
+        w.__watch = false
+        return [...new Set(w.__blank)]
+      })
+      expect(blank).toEqual([])
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+})
+
 test.describe('editing pipeline: undo/redo, save, versions', () => {
   test('edit marks the tab unsaved; undo/redo move through history; save clears it and writes the file', async () => {
     const path = copyFixture('sample.pdf')
