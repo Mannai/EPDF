@@ -2,7 +2,8 @@ import { memo, useEffect, useRef, useState } from 'react'
 import { RenderingCancelledException, TextLayer, setLayerDimensions } from 'pdfjs-dist'
 import type { PageViewport, RenderTask } from 'pdfjs-dist'
 import { rangeBoxes, needsPageModel } from '@shared/pagetext'
-import { getPageOverlays } from '../features/api'
+import { openContextMenu } from '../components/contextMenu'
+import { contextItemsFor, getPageOverlays } from '../features/api'
 import type { LoadedDoc } from '../pdf/docCache'
 import { pageText, rememberPdfjs } from '../pdf/pagetext'
 import { enableTextLayerSelection } from '../pdf/textSelection'
@@ -289,6 +290,19 @@ function PageViewImpl({ loaded, pageIndex, scale, width, height, onGoToPage }: P
     }
   }
 
+  // Right-click: the "selected text" menu when the selection touches this page, else the page menu. Overlays with
+  // their own menus (annotations, fields, links...) handle the event first and stop it.
+  const onContextMenu = (e: React.MouseEvent): void => {
+    if (e.defaultPrevented) return
+    // Text boxes on the page (form fields, text being edited) keep the standard Cut / Copy / Paste menu.
+    if ((e.target as HTMLElement).closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return
+    const sel = document.getSelection()
+    const page = pageRef.current
+    const inSelection = !!sel && !sel.isCollapsed && sel.rangeCount > 0 && !!page && sel.getRangeAt(0).intersectsNode(page)
+    const at = { docId: loaded.docId, pageIndex, numPages: loaded.numPages, selectionText: inSelection ? sel!.toString() : '' }
+    void openContextMenu(e, contextItemsFor(inSelection ? 'selection' : 'page', at))
+  }
+
   return (
     <div
       ref={pageRef}
@@ -296,6 +310,7 @@ function PageViewImpl({ loaded, pageIndex, scale, width, height, onGoToPage }: P
       aria-label={`Page ${pageNo}`}
       data-page={pageNo}
       className="epdf-page"
+      onContextMenu={onContextMenu}
       style={
         {
           width,
@@ -327,6 +342,12 @@ function PageViewImpl({ loaded, pageIndex, scale, width, height, onGoToPage }: P
           className="epdf-link"
           style={{ left: l.left, top: l.top, width: l.width, height: l.height }}
           onClick={(e) => void onLink(l, e)}
+          onContextMenu={(e) =>
+            void openContextMenu(e, [
+              { label: l.url ? 'Open link' : 'Go to linked page', run: () => onLink(l, { preventDefault: () => undefined } as React.MouseEvent) },
+              ...(l.url ? [{ label: 'Copy link address', run: () => navigator.clipboard.writeText(l.url!) }] : [])
+            ])
+          }
         />
       ))}
       {/* Feature overlays (annotation editing, form fields, signatures, redaction marks, ...).

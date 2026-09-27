@@ -18,8 +18,9 @@ import {
   styleAction
 } from './actions'
 import { refreshBookmarks, useDocBookmarks } from './data'
+import { openContextMenu, type ContextItem } from '../../components/contextMenu'
 import { Icon } from '../../components/Icons'
-import { IconAddBookmark, IconChevron, IconClearFilter, IconDown, IconGenerate, IconIndent, IconOutdent, IconRename, IconTarget, IconTrash, IconUp } from './icons'
+import { IconAddBookmark, IconChevron, IconClearFilter, IconGenerate, IconTarget } from './icons'
 import type { BmNode } from './pdf/model'
 import { contains, locate } from './pdf/tree'
 import { allNodes, ancestorsOf, currentBookmark, flatten, visibleAncestor, type Row } from './rows'
@@ -129,8 +130,42 @@ export function BookmarksPanel({ tab }: { tab: Tab }): JSX.Element {
   const select = (id: string | null): void => ui().select(docId, id)
   const selectedRow = selectedId !== null ? rows[rowIndex.get(selectedId) ?? -1] : undefined
   const selectedNode = selectedId !== null && roots ? locate(roots, selectedId)?.node : undefined
-  const canReorder = !!selectedNode
   const filtering = filter.trim().length > 0
+
+  /** The bookmark actions, for the right-click menu and the toolbar's "More" button. */
+  const bookmarkMenu = (n: BmNode | undefined): ContextItem[] => {
+    const act = (f: (id: string) => unknown) => (): void => {
+      if (n) void f(n.id)
+    }
+    return [
+      { label: 'Go to bookmark', enabled: !!n, run: () => void (n && goToBookmark(docId, n)) },
+      { label: 'Rename', keys: 'F2', enabled: !!n, run: act((id) => ui().setEditing(id)) },
+      { type: 'separator' },
+      { label: 'Add bookmark here', run: () => void addBookmarkHere(docId) },
+      { label: 'Point to current view', enabled: !!n, run: act((id) => pointToCurrentView(docId, id)) },
+      { type: 'separator' },
+      { label: 'Nest under previous', keys: 'Alt+Right', enabled: !!n, run: act((id) => indentAction(docId, id)) },
+      { label: 'Un-nest', keys: 'Alt+Left', enabled: !!n, run: act((id) => outdentAction(docId, id)) },
+      { label: 'Move up', keys: 'Alt+Up', enabled: !!n, run: act((id) => moveByAction(docId, id, -1)) },
+      { label: 'Move down', keys: 'Alt+Down', enabled: !!n, run: act((id) => moveByAction(docId, id, 1)) },
+      { type: 'separator' },
+      { label: 'Bold', checked: !!n?.bold, enabled: !!n, run: act((id) => styleAction(docId, id, { bold: !n?.bold })) },
+      { label: 'Italic', checked: !!n?.italic, enabled: !!n, run: act((id) => styleAction(docId, id, { italic: !n?.italic })) },
+      { type: 'separator' },
+      { label: 'Delete', keys: 'Delete', enabled: !!n, run: act((id) => deleteAction(docId, id)) }
+    ]
+  }
+
+  /** Right-click on a row selects it first; Shift+F10 on the tree opens the menu for the selected row, at that row. */
+  const onTreeContextMenu = (e: React.MouseEvent): void => {
+    if (editing !== null) return
+    const rowEl = (e.target as HTMLElement).closest<HTMLElement>('[data-bookmark-id]')
+    const id = rowEl?.dataset['bookmarkId'] ?? selectedId
+    if (id && rowEl) select(id)
+    const node = id && roots ? locate(roots, id)?.node : undefined
+    const anchor = node ? (document.getElementById(domId(docId, node.id)) ?? e.currentTarget) : e.currentTarget
+    void openContextMenu({ clientX: e.clientX, clientY: e.clientY, currentTarget: anchor, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation() }, bookmarkMenu(node))
+  }
 
   const toggle = (row: Row, open?: boolean): void => {
     if (filtering) return
@@ -299,24 +334,19 @@ export function BookmarksPanel({ tab }: { tab: Tab }): JSX.Element {
           <IconGenerate />
           <span>From headings</span>
         </button>
-        <span className="mx-0.5 h-5 w-px bg-line" aria-hidden="true" />
-        <button className="btn-icon btn-icon-sm" title="Rename (F2)" aria-label="Rename bookmark" disabled={!canReorder} onClick={() => selectedId && ui().setEditing(selectedId)}>
-          <IconRename />
-        </button>
-        <button className="btn-icon btn-icon-sm" title="Delete (Delete)" aria-label="Delete bookmark" disabled={!canReorder} onClick={() => selectedId && void deleteAction(docId, selectedId)}>
-          <IconTrash />
-        </button>
-        <button className="btn-icon btn-icon-sm" title="Nest under the previous bookmark (Alt+Right)" aria-label="Nest bookmark" disabled={!canReorder} onClick={() => selectedId && void indentAction(docId, selectedId)}>
-          <IconIndent />
-        </button>
-        <button className="btn-icon btn-icon-sm" title="Move out one level (Alt+Left)" aria-label="Un-nest bookmark" disabled={!canReorder} onClick={() => selectedId && void outdentAction(docId, selectedId)}>
-          <IconOutdent />
-        </button>
-        <button className="btn-icon btn-icon-sm" title="Move up (Alt+Up)" aria-label="Move bookmark up" disabled={!canReorder} onClick={() => selectedId && void moveByAction(docId, selectedId, -1)}>
-          <IconUp />
-        </button>
-        <button className="btn-icon btn-icon-sm" title="Move down (Alt+Down)" aria-label="Move bookmark down" disabled={!canReorder} onClick={() => selectedId && void moveByAction(docId, selectedId, 1)}>
-          <IconDown />
+        <span className="flex-1" />
+        {/* Everything else (rename, nest, move, style, delete) is on this menu and on right-click, as the design has it. */}
+        <button
+          className="btn-icon btn-icon-sm"
+          title="More bookmark actions"
+          aria-label="More bookmark actions"
+          aria-haspopup="menu"
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect()
+            void openContextMenu({ clientX: r.left, clientY: r.bottom }, bookmarkMenu(selectedNode))
+          }}
+        >
+          <Icon name="more" size={16} />
         </button>
       </div>
 
@@ -378,6 +408,7 @@ export function BookmarksPanel({ tab }: { tab: Tab }): JSX.Element {
             tabIndex={0}
             aria-activedescendant={selectedId !== null && rowIndex.has(selectedId) ? domId(docId, selectedId) : undefined}
             onKeyDown={onTreeKeyDown}
+            onContextMenu={onTreeContextMenu}
             className="group relative outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
             style={{ height: rows.length * ROW_H }}
           >

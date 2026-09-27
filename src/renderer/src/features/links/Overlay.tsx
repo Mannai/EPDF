@@ -9,6 +9,7 @@ import { hitLink, viewRectToLinkRect } from './pdf/geometry'
 import { describeTarget, type LinkInfo } from './pdf/model'
 import { registerPage } from './pages'
 import { LINK_TOOL, defaultForm, useLinkUi, type LinkForm } from './store'
+import { openContextMenu, type ContextItem } from '../../components/contextMenu'
 
 type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 type DragMode = 'move' | Handle
@@ -159,7 +160,7 @@ function AddCatcher({ docId, pageIndex, scale, geom, width, height }: { docId: s
 function EditCatcher({ docId, pageIndex, scale, geom, links, ready }: { docId: string; pageIndex: number; scale: number; geom: PageGeom; links: LinkInfo[]; ready: boolean }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<LinkInfo | undefined>()
-  const hitAt = (e: React.PointerEvent): LinkInfo | undefined => {
+  const hitAt = (e: { clientX: number; clientY: number }): LinkInfo | undefined => {
     const b = ref.current!.getBoundingClientRect()
     const [x, y] = viewToPdf(geom, (e.clientX - b.left) / scale, (e.clientY - b.top) / scale)
     return hitLink(links, pageIndex, x, y, 3 / scale)
@@ -183,8 +184,14 @@ function EditCatcher({ docId, pageIndex, scale, geom, links, ready }: { docId: s
         if (h) e.preventDefault()
       }}
       onDoubleClick={(e) => {
-        const h = hitAt(e as unknown as React.PointerEvent)
+        const h = hitAt(e)
         if (h) openEdit(docId, h)
+      }}
+      onContextMenu={(e) => {
+        const h = hitAt(e)
+        if (!h) return // empty spot: the page's own menu
+        useLinkUi.getState().select(docId, h.id)
+        void openContextMenu(e, linkMenu(docId, h))
       }}
     >
       {hover && <div aria-hidden="true" className="pointer-events-none absolute outline outline-2 outline-offset-1 outline-accent" style={rectStyle(toPx(geom, hover.rect, scale))} />}
@@ -203,6 +210,17 @@ export function formFromLink(l: LinkInfo): LinkForm {
 
 export function openEdit(docId: string, link: LinkInfo): void {
   useLinkUi.getState().openDialog({ mode: 'edit', docId, link }, formFromLink(link))
+}
+
+/** Right-click on a link in "Edit links" mode: the same actions as its keyboard shortcuts. */
+function linkMenu(docId: string, link: LinkInfo): ContextItem[] {
+  const uri = link.target.kind === 'uri' ? link.target.uri : null
+  return [
+    { label: 'Edit link…', keys: 'Enter', run: () => openEdit(docId, link) },
+    ...(uri ? [{ label: 'Copy link address', run: () => navigator.clipboard.writeText(uri) }] : []),
+    { type: 'separator' },
+    { label: 'Delete link', keys: 'Delete', run: () => void deleteLinkAction(docId, link.id) }
+  ]
 }
 
 // ---------------------------------------------------------------- selection frame
@@ -305,6 +323,7 @@ function Frame({ docId, scale, geom, link }: { docId: string; scale: number; geo
       style={rectStyle(rect)}
       onPointerDown={(e) => beginDrag(e, 'move')}
       onKeyDown={onKeyDown}
+      onContextMenu={(e) => void openContextMenu(e, linkMenu(docId, link))}
     >
       {HANDLES.map((h) => (
         <div

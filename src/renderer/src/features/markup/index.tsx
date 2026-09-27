@@ -2,7 +2,7 @@ import { activeTab } from '../../state/actions'
 import { useTabs } from '../../state/tabs'
 import { useWorkspace } from '../../state/workspace'
 import { isEditableTarget } from '../keys'
-import { registerCommand, registerPageOverlay, registerPanel, registerTool } from '../api'
+import { registerCommand, registerContextItems, registerPageOverlay, registerPanel, registerTool } from '../api'
 import { CommentsPanel } from './CommentsPanel'
 import { createTextMarkup, deleteAnnot } from './actions'
 import { useAnnots } from './data'
@@ -133,10 +133,20 @@ registerCommand({
 })
 registerCommand({ id: 'markup.addNote', label: 'Add Sticky Note to Current Page', enabled: hasDoc, run: () => placeDefault('note') })
 
+// Right-click: mark up the selected text straight away; add a note to the page.
+registerContextItems('selection', 10, () => [
+  { label: 'Highlight', run: () => void markupSelection('highlight') },
+  { label: 'Underline', run: () => void markupSelection('underline') },
+  { label: 'Strikethrough', run: () => void markupSelection('strikeout') },
+  { label: 'Squiggly underline', run: () => void markupSelection('squiggly') }
+])
+registerContextItems('page', 20, () => [{ label: 'Add sticky note', command: 'markup.addNote' }])
+
 // ---------------------------------------------------------------- global behaviour
 
 /** With a text-markup tool active, finishing a text selection on a page marks it up. */
-window.addEventListener('mouseup', () => {
+window.addEventListener('mouseup', (e) => {
+  if (e.button !== 0) return // a right-click on the selection opens the menu instead
   const kind = TEXT_TOOLS[useWorkspace.getState().activeTool ?? '']
   if (!kind) return
   setTimeout(() => void markupSelection(kind), 0) // let the browser finalize the selection

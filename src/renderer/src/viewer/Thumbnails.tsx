@@ -2,6 +2,8 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'rea
 import { RenderingCancelledException } from 'pdfjs-dist'
 import type { RenderTask } from 'pdfjs-dist'
 import { getLoaded, type LoadedDoc } from '../pdf/docCache'
+import { openContextMenu } from '../components/contextMenu'
+import { contextItemsFor } from '../features/api'
 import { useTabs, type Tab } from '../state/tabs'
 import { rowAt, type PageSize } from './layout'
 const THUMB_W = 128
@@ -81,6 +83,10 @@ function ThumbImpl({ loaded, pageIndex, height, current, onSelect }: {
     <button
       type="button"
       onClick={() => onSelect(pageIndex + 1)}
+      // Right-click: the same page menu as on the page itself (rotate, insert, duplicate, extract, delete...).
+      onContextMenu={(e) =>
+        void openContextMenu(e, contextItemsFor('page', { docId: loaded.docId, pageIndex, numPages: loaded.numPages, selectionText: '' }).filter((i) => !('label' in i) || !/^(Undo|Redo|Select all text)/.test(i.label)))
+      }
       aria-label={`Go to page ${pageIndex + 1}`}
       aria-current={current ? 'page' : undefined}
       className={`flex w-full flex-col items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent ${

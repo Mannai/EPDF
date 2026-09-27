@@ -8,6 +8,7 @@ import { handleWindowCloseRequest } from './closeFlow'
 import { initRecovery } from './recovery'
 import { saveDoc, saveDocAs, saveDocCopy } from './save'
 import { VersionHistoryDialog, useVersionHistory } from './VersionHistory'
+import './contextItems'
 
 /**
  * Built-in behaviour that is itself a feature: file commands, undo/redo, the thumbnails panel,

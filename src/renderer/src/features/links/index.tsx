@@ -2,7 +2,7 @@ import { activeTab } from '../../state/actions'
 import { notify } from '../../state/notify'
 import { useTabs } from '../../state/tabs'
 import { useWorkspace } from '../../state/workspace'
-import { registerCommand, registerDialog, registerPageOverlay, registerTool } from '../api'
+import { registerCommand, registerContextItems, registerDialog, registerPageOverlay, registerTool } from '../api'
 import { removeLinksAction } from './actions'
 import { announce, unlock } from './common'
 import { DetectDialogHost, LinkDialogHost } from './Dialogs'
@@ -92,6 +92,20 @@ registerCommand({
     useLinkUi.getState().openDialog({ mode: 'create', docId: t.docId, regions: [region] }, newLinkForm(t.view.page - 1))
   }
 })
+
+// Right-click: link the selected text; add a link on the page that was clicked.
+registerContextItems('selection', 30, () => [{ label: 'Link selected text…', command: 'links.fromSelection', keys: 'Ctrl+Alt+K' }])
+registerContextItems('page', 30, (at) => [
+  {
+    label: 'Add link here…',
+    run: async () => {
+      if (!(await unlock(at.docId))) return
+      const region = defaultRegion(at.docId, at.pageIndex)
+      if (!region) return announce('The page is not ready yet. Try again in a moment.')
+      useLinkUi.getState().openDialog({ mode: 'create', docId: at.docId, regions: [region] }, newLinkForm(at.pageIndex))
+    }
+  }
+])
 
 registerCommand({
   id: 'links.detect',

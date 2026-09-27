@@ -11,6 +11,8 @@ import { capabilities, subtypeLabel, type AnnotInfo } from './pdf/model'
 import { registerPage } from './pages'
 import { NoteDraftEditor, TextBoxDraftEditor } from './DraftEditors'
 import { TOOL, useMarkup } from './store'
+import { openContextMenu, type ContextItem } from '../../components/contextMenu'
+import { COMMENTS_PANEL } from './Options'
 
 type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 type DragMode = 'move' | Handle
@@ -95,7 +97,7 @@ function SelectCatcher({ docId, pageIndex, scale, geom, annots }: { docId: strin
   const [hover, setHover] = useState<AnnotInfo | undefined>()
   const select = useMarkup((s) => s.select)
 
-  const hitAt = (e: React.PointerEvent): AnnotInfo | undefined => {
+  const hitAt = (e: { clientX: number; clientY: number }): AnnotInfo | undefined => {
     const b = ref.current!.getBoundingClientRect()
     const [x, y] = viewToPdf(geom, (e.clientX - b.left) / scale, (e.clientY - b.top) / scale)
     return hitTest(annots ?? [], pageIndex, [x, y], 4 / scale)
@@ -122,6 +124,12 @@ function SelectCatcher({ docId, pageIndex, scale, geom, annots }: { docId: strin
             e.preventDefault()
           } else select(docId, null)
         }}
+        onContextMenu={(e) => {
+          const h = hitAt(e)
+          if (!h) return // empty spot: the page's own menu
+          select(docId, h.id)
+          void openContextMenu(e, annotationMenu(docId, h))
+        }}
       />
       {hover && (
         <div
@@ -132,6 +140,25 @@ function SelectCatcher({ docId, pageIndex, scale, geom, annots }: { docId: strin
       )}
     </>
   )
+}
+
+/** Right-click on an annotation (with the Select tool): the same actions as its keyboard shortcuts. */
+function annotationMenu(docId: string, a: AnnotInfo): ContextItem[] {
+  const caps = capabilities(a)
+  return [
+    {
+      label: 'Edit text',
+      keys: 'Enter',
+      enabled: caps.text,
+      run: () => {
+        useMarkup.getState().select(docId, a.id)
+        useMarkup.getState().requestFocusText()
+      }
+    },
+    { label: 'Show in Comments panel', run: () => useWorkspace.getState().setRightPanel(COMMENTS_PANEL) },
+    { type: 'separator' },
+    { label: 'Delete', keys: 'Delete', run: () => void deleteAnnot(docId, a) }
+  ]
 }
 
 const pdfRectToViewPx = (g: PageGeom, r: Rect, scale: number): Rect => pdfRectToView(g, r).map((v) => v * scale) as Rect
@@ -243,6 +270,7 @@ function SelectionFrame({ docId, scale, geom, annot }: { docId: string; scale: n
       style={rectStyle(rect)}
       onPointerDown={(e) => beginDrag(e, 'move')}
       onKeyDown={onKeyDown}
+      onContextMenu={(e) => void openContextMenu(e, annotationMenu(docId, annot))}
     >
       {caps.resize &&
         HANDLES.map((h) => (

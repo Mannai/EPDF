@@ -35,7 +35,59 @@ export function menuClick(app: ElectronApplication, menu: string, item: string):
   )
 }
 
-export async function launch(opts: { files?: string[]; userData?: string; env?: Record<string, string> } = {}): Promise<Launched> {
+/** One item of a right-click menu as main received it (see src/main/features/chrome/contextMenu.ts). */
+export interface MenuEntry {
+  id?: string
+  label?: string
+  type?: 'normal' | 'separator' | 'checkbox'
+  enabled?: boolean
+  checked?: boolean
+  accelerator?: string
+  submenu?: MenuEntry[]
+}
+
+/**
+ * Right-clicks `target` (or runs `open`, e.g. a keyboard shortcut) and picks `choose` from the menu that appears,
+ * through main's test hook instead of the native menu. Returns that menu. With `choose` null the menu is only recorded
+ * and then dismissed.
+ */
+export async function contextMenu(
+  app: ElectronApplication,
+  target: import('@playwright/test').Locator | (() => Promise<void>),
+  choose: string | null,
+  position?: { x: number; y: number }
+): Promise<MenuEntry[]> {
+  await app.evaluate((_e, want) => {
+    const g = globalThis as { __epdfContextMenuChoose?: string | null; __epdfContextMenus?: unknown[] }
+    g.__epdfContextMenus = []
+    g.__epdfContextMenuChoose = want ?? '\u0000dismiss'
+  }, choose)
+  if (typeof target === 'function') await target()
+  else await target.click({ button: 'right', position })
+  let menu: MenuEntry[] | undefined
+  for (let i = 0; i < 100 && !menu; i++) {
+    menu = await app.evaluate(() => (globalThis as { __epdfContextMenus?: MenuEntry[][] }).__epdfContextMenus?.[0])
+    if (!menu) await new Promise((r) => setTimeout(r, 50))
+  }
+  await app.evaluate(() => {
+    const g = globalThis as { __epdfContextMenuChoose?: string | null; __epdfContextMenus?: unknown[] }
+    g.__epdfContextMenuChoose = null
+    delete g.__epdfContextMenus
+  })
+  if (!menu) throw new Error('No context menu appeared')
+  if (choose !== null && !flatMenu(menu).some((m) => m.label === choose && m.enabled !== false)) {
+    throw new Error(`“${choose}” is not an enabled item of the menu: ${menuLabels(menu).join(' | ')}`)
+  }
+  return menu
+}
+
+const flatMenu = (m: MenuEntry[]): MenuEntry[] => m.flatMap((i) => [i, ...(i.submenu ? flatMenu(i.submenu) : [])])
+
+/** The menu's item labels in order, with "—" for separators and "(off)" after disabled items. */
+export const menuLabels = (m: MenuEntry[]): string[] =>
+  m.map((i) => (i.type === 'separator' ? '—' : `${i.label}${i.enabled === false ? ' (off)' : ''}${i.checked ? ' ✓' : ''}`))
+
+export async function launch(opts:{ files?: string[]; userData?: string; env?: Record<string, string> } = {}): Promise<Launched> {
   const userData = opts.userData ?? mkdtempSync(join(tmpdir(), 'epdf-e2e-'))
   // Relaunching on a profile right after a simulated crash can hit a Chromium child that is still shutting
   // down and holds the profile lock ("Lock file can not be created"). That is the test environment, not the

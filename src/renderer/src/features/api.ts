@@ -1,6 +1,7 @@
 import type { ComponentType, ReactNode } from 'react'
 import type { PageViewport } from 'pdfjs-dist'
 import type { Tab } from '../state/tabs'
+import type { ContextItem } from '../components/contextMenu'
 
 /**
  * Renderer extension points. A feature is a folder `src/renderer/src/features/<name>/` with an
@@ -122,6 +123,45 @@ export const getDialogs = (): readonly ComponentType[] => dialogs
 export const getCommands = (): readonly CommandDef[] => [...commands.values()]
 export const getCommand = (id: string): CommandDef | undefined => commands.get(id)
 
+/**
+ * Right-click menus on pages. Features add their items for "selected text" or "a page" (where nothing is selected):
+ *   registerContextItems('selection', 20, (at) => [{ label: 'Highlight', run: () => ... }])
+ * Groups are shown in `order`, separated by lines. `at` says which document and page was right-clicked, and what text
+ * is selected. The menu itself is shown with openContextMenu() (components/contextMenu.ts).
+ */
+export type ContextArea = 'selection' | 'page'
+export interface ContextAt {
+  docId: string
+  /** 0-based page that was right-clicked. */
+  pageIndex: number
+  numPages: number
+  /** The selected text (empty on a 'page' menu). */
+  selectionText: string
+}
+type ContextProvider = (at: ContextAt) => ContextItem[]
+const contextProviders: { area: ContextArea; order: number; provider: ContextProvider }[] = []
+
+export function registerContextItems(area: ContextArea, order: number, provider: ContextProvider): void {
+  contextProviders.push({ area, order, provider })
+}
+
+/** The items for a right-click: every feature's group for this area, in order, with separators between groups. */
+export function contextItemsFor(area: ContextArea, at: ContextAt): ContextItem[] {
+  const out: ContextItem[] = []
+  for (const p of [...contextProviders].filter((x) => x.area === area).sort((a, b) => a.order - b.order)) {
+    let items: ContextItem[] = []
+    try {
+      items = p.provider(at)
+    } catch (err) {
+      console.error('context menu provider failed', err)
+    }
+    if (items.length === 0) continue
+    if (out.length) out.push({ type: 'separator' })
+    out.push(...items)
+  }
+  return out
+}
+
 /** Runs a command by id; commands that are disabled or unknown are ignored. */
 export async function runCommand(id: string, args?: unknown): Promise<void> {
   const c = commands.get(id)
@@ -132,5 +172,6 @@ export async function runCommand(id: string, args?: unknown): Promise<void> {
 /** Test helper. */
 export function _resetRegistries(): void {
   tools.length = panels.length = views.length = overlays.length = dialogs.length = 0
+  contextProviders.length = 0
   commands.clear()
 }

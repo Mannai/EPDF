@@ -37,6 +37,32 @@ the open documents, which is what assistive tech (and the tests) treat as "the t
 
 E2E tests click tools through `clickTool(page, idOrLabel)` in `tests/e2e/helpers.ts`, which shows the right task first.
 
+## Right-click menus
+
+Menus are native Windows menus. The renderer describes one (`openContextMenu(e, items)` in `components/contextMenu.ts`),
+main shows it (`chrome:contextMenu`, `src/main/features/chrome/contextMenu.ts`) and answers with the chosen item, and the
+renderer runs it: a `command` (the same code as the ribbon and the menu bar) or a local `run`. `keys` is only the hint
+shown at the right; it binds nothing (the shortcut audit in `tests/unit/shortcuts.test.ts` ignores it). Shift+F10 and the
+Menu key open the same menus, placed at the focused element.
+
+| Where | Items |
+|---|---|
+| Selected text on a page | Copy, Search for "…"; Highlight, Underline, Strikethrough, Squiggly; Link selected text…; Add bookmark for this text; Mark for redaction |
+| Empty part of a page | Undo / Redo (named, like the title bar), Select all text on this page, Go to page…; Add sticky note; Add link here…; Add bookmark here; rotate, insert, duplicate, extract, delete this page, Organize pages, Print… |
+| Annotation (Select tool) | Edit text, Show in Comments panel, Delete |
+| Link (Edit links) | Edit link…, Copy link address, Delete link |
+| Form field (Edit fields) | Copy, Paste, Duplicate, Edit tab order, Delete |
+| Link on a page (reading) | Open link / Go to linked page, Copy link address |
+| Page thumbnail | The page items for that page |
+| Document tab | Close, Close other tabs, Close tabs to the right, Move to new window, Show in File Explorer, Copy file path |
+| Bookmark | Go to, Rename, Add bookmark here, Point to current view, Nest / Un-nest / Move up / Move down, Bold, Italic, Delete (also the bookmarks toolbar's **…** button, which replaced the six icon buttons) |
+| Library file | Open, Open in new window, Show in File Explorer, Favorite, Add to folder…, Remove from this folder, Remove from library… (acts on the selection) |
+| Text boxes anywhere | Undo, Redo, Cut, Copy, Paste, Select all (main's fallback for editable fields) |
+
+The page menus are built from every feature's `registerContextItems` group, in `order`. E2E tests pick items through
+main's test hook (`contextMenu()` in `tests/e2e/helpers.ts`; spec `tests/e2e/contextmenus.spec.ts`), since Playwright
+cannot click a native menu.
+
 ## Dialogs
 
 `Modal` follows Windows 11: a 20 px title with an optional one-line description, and the dialog's last row of buttons

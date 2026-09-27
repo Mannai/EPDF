@@ -15,6 +15,7 @@ import {
   moveSelectionBy,
   moveWidgets,
   nudgeSelection,
+  openTabOrder,
   pasteClipboard,
   rejectProposals,
   resizeSelection,
@@ -23,6 +24,7 @@ import {
   visibleProposals
 } from './actions'
 import { KIND_LABEL, type FieldInfo, type URect } from './logic/spec'
+import { openContextMenu } from '../../components/contextMenu'
 import { NO_KEYS, SELECT_TOOL, splitKey, useBuilder, widgetKey } from './store'
 import type { Proposal } from './logic/detect'
 import { DETECT_LABEL } from './labels'
@@ -164,6 +166,19 @@ function FieldLayer({ docId, pageIndex, doc, geom, scale, width, height, tool }:
             onKeyDown={(e) => onKeyDown(e, key)}
             onFocus={() => {
               if (!selection.includes(key)) select([key])
+            }}
+            onContextMenu={(e) => {
+              const sel = selection.includes(key) ? selection : [key]
+              if (sel !== selection) select(sel)
+              void openContextMenu(e, [
+                { label: 'Copy', keys: 'Ctrl+C', run: () => copySelection(docId) },
+                { label: 'Paste', keys: 'Ctrl+V', run: () => pasteClipboard(docId, pageIndex) },
+                { label: 'Duplicate', keys: 'Ctrl+D', run: () => duplicateSelection(docId) },
+                { type: 'separator' },
+                { label: 'Edit tab order', run: () => openTabOrder(docId, pageIndex) },
+                { type: 'separator' },
+                { label: sel.length > 1 ? `Delete ${sel.length} fields` : 'Delete field', keys: 'Delete', run: () => deleteSelection(docId) }
+              ])
             }}
           />
         )

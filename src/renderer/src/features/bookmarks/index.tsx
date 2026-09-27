@@ -1,7 +1,7 @@
 import { activeTab } from '../../state/actions'
 import { useUi } from '../../state/ui'
 import { useWorkspace } from '../../state/workspace'
-import { registerCommand, registerDialog, registerPanel } from '../api'
+import { registerCommand, registerContextItems, registerDialog, registerPanel } from '../api'
 import { addBookmarkHere } from './actions'
 import { GenerateDialog } from './Generate'
 import { IconBookmarks } from './icons'
@@ -58,3 +58,7 @@ registerCommand({
     if (t) useBookmarkUi.getState().openGenerate(t.docId)
   }
 })
+
+// Right-click: bookmark the selected text (as its title) or the current position.
+registerContextItems('selection', 35, () => [{ label: 'Add bookmark for this text', command: 'bookmarks.addHere', keys: 'Ctrl+Alt+D' }])
+registerContextItems('page', 35, () => [{ label: 'Add bookmark here', command: 'bookmarks.addHere', keys: 'Ctrl+Alt+D' }])

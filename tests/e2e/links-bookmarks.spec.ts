@@ -9,7 +9,7 @@ import type { BmNode } from '../../src/renderer/src/features/bookmarks/pdf/model
 import { readLinks } from '../../src/renderer/src/features/links/pdf/read'
 import { writeLbFixtures } from '../fixtures/lbFixtures'
 import { openWith } from '../unit/helpers/securityHelpers'
-import { axeViolations, clickTool, copyFixture, launch, menuClick, quitDiscarding } from './helpers'
+import { axeViolations, clickTool, contextMenu, copyFixture, launch, menuClick, quitDiscarding } from './helpers'
 
 const FIXTURES = resolve('test-results/fixtures')
 
@@ -313,7 +313,7 @@ test.describe('bookmarks panel: editing', () => {
 
       // A leaf is deleted without a prompt.
       await selectRow(page, /^Last/)
-      await page.getByRole('button', { name: 'Delete bookmark', exact: true }).click()
+      await contextMenu(app, item(page, /^Last/), 'Delete')
       await expect.poll(() => visibleTitles(page)).toEqual(ALL_TITLES.slice(0, -1))
       await save(page)
       const disk = await outlineOnDisk(path)
@@ -325,7 +325,7 @@ test.describe('bookmarks panel: editing', () => {
     }
   })
 
-  test('nest, un-nest and reorder with the buttons and with Alt+arrows; every step is undoable', async () => {
+  test('nest, un-nest and reorder with the right-click menu and with Alt+arrows; every step is undoable', async () => {
     const { app, page, path } = await open('lb-outline.pdf')
     try {
       await showBookmarks(app, page)
@@ -337,11 +337,11 @@ test.describe('bookmarks panel: editing', () => {
       await expect.poll(() => tree(page).getByRole('treeitem', { name: /^Last/ }).getAttribute('aria-level')).toBe('2')
       await page.keyboard.press('Alt+ArrowLeft') // and back out
       await expect.poll(() => tree(page).getByRole('treeitem', { name: /^Last/ }).getAttribute('aria-level')).toBe('1')
-      await page.getByRole('button', { name: 'Move bookmark down', exact: true }).click()
+      await contextMenu(app, item(page, /^Last/), 'Move down')
       await expect.poll(() => visibleTitles(page).then((t) => t.slice(-1))).toEqual(['Last'])
-      await page.getByRole('button', { name: 'Nest bookmark', exact: true }).click()
+      await contextMenu(app, item(page, /^Last/), 'Nest under previous')
       await expect.poll(() => tree(page).getByRole('treeitem', { name: /^Last/ }).getAttribute('aria-level')).toBe('2')
-      await page.getByRole('button', { name: 'Un-nest bookmark', exact: true }).click()
+      await contextMenu(app, item(page, /^Last/), 'Un-nest')
       await expect.poll(() => tree(page).getByRole('treeitem', { name: /^Last/ }).getAttribute('aria-level')).toBe('1')
       // The first bookmark of a level cannot be nested or moved up further.
       await selectRow(page, /Introduction/)

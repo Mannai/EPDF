@@ -2,6 +2,7 @@ import { Menu, nativeTheme, type MenuItem } from 'electron'
 import { z } from 'zod'
 import { chromeOverlay, customTitleBar } from '../../windows/WindowManager'
 import { registerFeatureChannel, type MainContext } from '../api'
+import { ContextMenuRequest, installEditableFallback, showContextMenu } from './contextMenu'
 
 /**
  * Window chrome for the Windows title bar drawn by the renderer (see docs/features/chrome.md):
@@ -11,6 +12,13 @@ import { registerFeatureChannel, type MainContext } from '../api'
  *    feature's menu item and every accelerator keep working.
  */
 export function register(ctx: MainContext): void {
+  // Right-click menus (see ./contextMenu.ts).
+  installEditableFallback()
+  registerFeatureChannel('chrome:contextMenu', ContextMenuRequest, (req, call) => {
+    const win = call.window?.win
+    return win ? showContextMenu(win, req) : null
+  })
+
   if (customTitleBar) {
     nativeTheme.on('updated', () => {
       const overlay = chromeOverlay(nativeTheme.shouldUseDarkColors)

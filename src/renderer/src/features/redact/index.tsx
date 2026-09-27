@@ -2,7 +2,7 @@ import { activeTab } from '../../state/actions'
 import { notify } from '../../state/notify'
 import { useTabs } from '../../state/tabs'
 import { useWorkspace } from '../../state/workspace'
-import { registerCommand, registerDialog, registerPageOverlay, registerPanel, registerTool } from '../api'
+import { registerCommand, registerContextItems, registerDialog, registerPageOverlay, registerPanel, registerTool } from '../api'
 import { RedactDialog } from './ApplyDialog'
 import { IconApply, IconFind, IconMarkArea, IconMarkText, IconRedactPanel } from './icons'
 import { RedactOptions } from './Options'
@@ -85,26 +85,40 @@ registerCommand({ id: 'redact.apply', label: 'Apply Redactions…', enabled: rea
 
 // ---------------------------------------------------------------- behaviour
 
+/** Marks the text selected on the active document's pages for redaction. */
+function markSelection(): void {
+  const tab = activeTab()
+  if (!tab) return
+  const groups = selectionGroups().filter((g) => g.docId === tab.docId)
+  if (groups.length === 0) return
+  void marksFromSelection(groups).then((marks) => {
+    if (marks.length === 0) return
+    const s = useRedact.getState()
+    s.addMarks(tab.docId, marks)
+    clearSelection()
+    const text = marks.map((m) => m.text).filter(Boolean).join(' ')
+    const msg = marks.length === 1 && marks[0].kind === 'text' ? `Marked “${text.length > 60 ? text.slice(0, 57) + '…' : text}” for redaction.` : `Marked ${marks.length} ${marks.length === 1 ? 'area' : 'areas'} for redaction.`
+    s.announce(msg)
+    notify('info', msg)
+  })
+}
+
 /** With "Mark text" active, finishing a text selection on a page marks it. */
-window.addEventListener('mouseup', () => {
-  if (useWorkspace.getState().activeTool !== TEXT_TOOL) return
-  setTimeout(() => {
-    const tab = activeTab()
-    if (!tab) return
-    const groups = selectionGroups().filter((g) => g.docId === tab.docId)
-    if (groups.length === 0) return
-    void marksFromSelection(groups).then((marks) => {
-      if (marks.length === 0) return
-      const s = useRedact.getState()
-      s.addMarks(tab.docId, marks)
-      clearSelection()
-      const text = marks.map((m) => m.text).filter(Boolean).join(' ')
-      const msg = marks.length === 1 && marks[0].kind === 'text' ? `Marked “${text.length > 60 ? text.slice(0, 57) + '…' : text}” for redaction.` : `Marked ${marks.length} ${marks.length === 1 ? 'area' : 'areas'} for redaction.`
-      s.announce(msg)
-      notify('info', msg)
-    })
-  }, 0)
+window.addEventListener('mouseup', (e) => {
+  if (e.button !== 0 || useWorkspace.getState().activeTool !== TEXT_TOOL) return
+  setTimeout(markSelection, 0)
 })
+
+// Right-click on selected text: mark it for redaction (it is removed for good when the redactions are applied).
+registerContextItems('selection', 40, () => [
+  {
+    label: 'Mark for redaction',
+    run: () => {
+      markSelection()
+      openPanel()
+    }
+  }
+])
 
 // Escape leaves the mark selection alone but a closed tab drops its marks.
 useTabs.subscribe((state, prev) => {

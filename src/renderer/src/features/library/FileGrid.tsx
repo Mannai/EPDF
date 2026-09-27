@@ -2,9 +2,14 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { LibraryItem, SortKey } from '@shared/features/library'
 import { formatBytes } from '@shared/features/library/text'
 import { CloudIcon, FileIcon, StarIcon, WarnIcon } from './icons'
-import { applySort, ensureRange, openRefs, selectAll, selectOnly, selectRange, setFavorite, toggleSelect, useLibrary, removeRefs, selectedItems } from './store'
+import { applySort, askAddToFolder, ensureRange, openRefs, refreshList, refreshState, revealRef, selectAll, selectOnly, selectRange, setFavorite, toggleSelect, useLibrary, removeRefs, selectedItems } from './store'
 import { unwantThumb, useThumbs, wantThumb } from './thumbs'
+import { libraryApi } from './api'
 import { askConfirm } from '../../state/confirm'
+import { notify } from '../../state/notify'
+import { openContextMenu, type ContextItem } from '../../components/contextMenu'
+import { detachActiveTab } from '../../state/actions'
+import { useTabs } from '../../state/tabs'
 import { formatDate } from './format'
 
 export const DRAG_TYPE = 'application/x-epdf-library-refs'
@@ -232,6 +237,18 @@ export function FileGrid(): JSX.Element {
     scrollRef.current?.focus({ preventScroll: true })
   }
 
+  // Right-click on a file (or Shift+F10 / the Menu key on the grid, for the file with the cursor).
+  const onContextMenu = (e: React.MouseEvent): void => {
+    const cell = (e.target as HTMLElement).closest<HTMLElement>('[id^="lib-item-"]')
+    const index = cell ? Number(cell.id.slice('lib-item-'.length)) : active
+    const item = items[index]
+    if (!item) return
+    if (!useLibrary.getState().selected.includes(item.ref)) selectOnly(index)
+    const anchor = cell ?? document.getElementById(`lib-item-${index}`) ?? e.currentTarget
+    const sel = selectedItems()
+    void openContextMenu({ clientX: e.clientX, clientY: e.clientY, currentTarget: anchor, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation() }, fileMenu(sel.length ? sel : [item]))
+  }
+
   const onDragStart = (e: React.DragEvent, item: LibraryItem, index: number): void => {
     const sel = useLibrary.getState().selected
     if (!sel.includes(item.ref)) selectOnly(index)
@@ -339,6 +356,7 @@ export function FileGrid(): JSX.Element {
       aria-busy={loading}
       tabIndex={0}
       onKeyDown={onKeyDown}
+      onContextMenu={onContextMenu}
       className="group relative min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
     >
       {list && (
@@ -407,6 +425,43 @@ function ListRowCells({ item }: { item: LibraryItem | undefined }): JSX.Element 
       </div>
     </>
   )
+}
+
+/** Opens one file in a window of its own (in this window when nothing else is open here). */
+async function openInNewWindow(ref: string): Promise<void> {
+  await openRefs([ref])
+  if (useTabs.getState().tabs.length > 1) await detachActiveTab()
+}
+
+/** Right-click on a file: acts on the selection (a click on an unselected file selects just that one first). */
+function fileMenu(t: LibraryItem[]): ContextItem[] {
+  const one = t.length === 1 ? t[0] : undefined
+  const allFav = t.every((i) => i.favorite)
+  const lib = t.filter((i) => i.inLibrary)
+  const scope = useLibrary.getState().scope
+  return [
+    { label: one ? 'Open' : `Open ${t.length} files`, keys: 'Enter', run: () => openRefs(t.map((i) => i.ref)) },
+    { label: 'Open in new window', enabled: !!one, run: () => one && openInNewWindow(one.ref) },
+    { label: 'Show in File Explorer', enabled: !!one, run: () => one && revealRef(one.ref) },
+    { type: 'separator' },
+    { label: 'Favorite', keys: 'Ctrl+D', checked: allFav, run: () => setFavorite(t.map((i) => i.ref), !allFav) },
+    { label: 'Add to folder…', enabled: lib.length > 0, run: () => askAddToFolder(lib.map((i) => i.ref)) },
+    ...(scope.kind === 'collection'
+      ? [
+          {
+            label: 'Remove from this folder',
+            run: async () => {
+              const r = await libraryApi.removeFromCollection(scope.id, t.map((i) => i.ref))
+              if (!r.ok) notify('error', r.error)
+              await refreshList(true)
+              void refreshState()
+            }
+          }
+        ]
+      : []),
+    { type: 'separator' },
+    { label: 'Remove from library…', keys: 'Delete', run: () => confirmRemove(t) }
+  ]
 }
 
 export async function confirmRemove(sel: LibraryItem[]): Promise<void> {

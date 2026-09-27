@@ -97,6 +97,7 @@ Import from `../api` (i.e. `src/renderer/src/features/api.ts`):
 | `registerPanel({ id, label, icon, side: 'left' \| 'right', Component })` | Sidebar panel. Open a right panel with `useWorkspace.getState().setRightPanel(id)`. |
 | `registerView({ id, label, Component, hideToolbar? })` | A full-tab mode replacing the page viewer (page organizer, compare). Switch with `useWorkspace.getState().setView(docId, id)` (`null` returns to the viewer). |
 | `registerDialog(Component)` | An always-mounted host for your modal(s); it decides when to show itself (typically from a zustand store). Build on `components/Modal`. |
+| `registerContextItems(area, order, (at) => items)` | Your group in the right-click menu on pages: `area` is `'selection'` (text is selected) or `'page'`; `at` = `{ docId, pageIndex, numPages, selectionText }`. Items are `{ label, command? \| run?, enabled?, checked?, keys? }` or `{ type: 'separator' }`. Menus on your own elements: `openContextMenu(e, items)` from `components/contextMenu` in an `onContextMenu` handler. See `docs/features/chrome.md`. |
 
 State & helpers you can import:
 
@@ -235,7 +236,8 @@ npx playwright test        # the whole suite must still pass before you finish
   it), not on mocks.
 * **E2E tests** (`tests/e2e/<name>.spec.ts`): use `tests/e2e/helpers.ts` — `launch({ files, env })`,
   `copyFixture(name)` (always edit copies, never shared fixtures), `menuClick(app, 'Menu', 'Item')`,
-  `gotoPage`, `canvasHasInk`, `axeViolations(page, label)`, `crash(app)`, `quitDiscarding(app, page)`.
+  `gotoPage`, `canvasHasInk`, `axeViolations(page, label)`, `crash(app)`, `quitDiscarding(app, page)`,
+  `contextMenu(app, target, 'Item label')` (right-click and pick an item; `null` only records the menu).
   Tests that end with unsaved edits must end with `quitDiscarding` (a plain `app.close()` waits on the
   "Save changes?" prompt). Verify the **saved file on disk** with pdf-lib, and that it renders.
 * Fixtures: generate deterministic PDFs with pdf-lib in `tests/fixtures/<name>.mjs` (call it from your spec

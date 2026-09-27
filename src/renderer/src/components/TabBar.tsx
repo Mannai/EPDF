@@ -2,10 +2,41 @@ import { useRef, useState } from 'react'
 import { useEdits } from '../edit/session'
 import { closeTabInteractive } from '../features/core/closeFlow'
 import { useTabs } from '../state/tabs'
-import { openFiles } from '../state/actions'
+import { detachActiveTab, openFiles } from '../state/actions'
+import { openContextMenu, type ContextItem } from './contextMenu'
 import { Icon } from './Icons'
 
 const TAB_MIME = 'application/x-epdf-tab'
+
+/** Closes documents one after another, each asking about unsaved changes; stops if the user cancels one. */
+async function closeAll(ids: string[]): Promise<void> {
+  for (const id of ids) if (!(await closeTabInteractive(id))) return
+}
+
+/** Right-click on a document tab. */
+function tabMenu(docId: string, path: string): ContextItem[] {
+  const { tabs } = useTabs.getState()
+  const i = tabs.findIndex((t) => t.docId === docId)
+  const others = tabs.filter((t) => t.docId !== docId).map((t) => t.docId)
+  const right = tabs.slice(i + 1).map((t) => t.docId)
+  return [
+    { label: 'Close', keys: 'Ctrl+W', run: () => void closeTabInteractive(docId) },
+    { label: 'Close other tabs', enabled: others.length > 0, run: () => closeAll(others) },
+    { label: 'Close tabs to the right', enabled: right.length > 0, run: () => closeAll(right) },
+    { type: 'separator' },
+    {
+      label: 'Move to new window',
+      enabled: tabs.length > 1,
+      run: () => {
+        useTabs.getState().setActive(docId)
+        return detachActiveTab()
+      }
+    },
+    { type: 'separator' },
+    { label: 'Show in File Explorer', run: () => void window.epdf.revealDoc(docId) },
+    { label: 'Copy file path', run: () => navigator.clipboard.writeText(path) }
+  ]
+}
 
 export function TabBar(): JSX.Element {
   const tabs = useTabs((s) => s.tabs)
@@ -60,6 +91,7 @@ export function TabBar(): JSX.Element {
               draggable
               onClick={() => setActive(t.docId)}
               onKeyDown={(e) => onKeyDown(e, i)}
+              onContextMenu={(e) => void openContextMenu(e, tabMenu(t.docId, t.path))}
               onAuxClick={(e) => {
                 if (e.button === 1) closeTab(t.docId)
               }}

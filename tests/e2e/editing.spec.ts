@@ -507,7 +507,8 @@ test.describe('background jobs', () => {
   test('a worker-thread job reports progress and completes', async () => {
     const { app, page } = await launch()
     try {
-      const jobId = await page.evaluate(async () => (await window.epdf.call<{ jobId: string }>('job:start', { kind: 'selftest:count', payload: { steps: 6, delayMs: 60 } })).jobId)
+      // ~1.8 s: long enough that the progress bar is still up when the test looks (6 x 60 ms sometimes finished first).
+      const jobId = await page.evaluate(async () => (await window.epdf.call<{ jobId: string }>('job:start', { kind: 'selftest:count', payload: { steps: 30, delayMs: 60 } })).jobId)
       expect(jobId).toMatch(/^[0-9a-f-]{36}$/)
       const card = page.locator('[data-job="selftest:count"]')
       await expect(card).toContainText('Self-test')

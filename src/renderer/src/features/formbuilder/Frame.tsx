@@ -65,6 +65,8 @@ export interface FrameProps {
   onResizeEnd(box: CssRect): void
   onKeyDown(e: KeyboardEvent): void
   onFocus(): void
+  /** Right-click (or Shift+F10 / the Menu key) on the frame. */
+  onContextMenu?(e: React.MouseEvent): void
 }
 
 /** Focus survives the reload that follows every edit: the key of the frame the keyboard user is working on. */
@@ -136,6 +138,7 @@ export function Frame(p: FrameProps): JSX.Element {
       className={`epdf-fb-frame group absolute ${p.interactive ? 'pointer-events-auto cursor-move' : ''} ${p.selected ? 'epdf-fb-selected' : ''} ${p.dashed ? 'epdf-fb-dashed' : ''} ${p.dim ? 'opacity-60' : ''} ${p.className ?? ''}`}
       style={style}
       onPointerDown={(e) => startDrag(e, 'move')}
+      onContextMenu={p.interactive && p.onContextMenu ? p.onContextMenu : undefined}
       onKeyDown={(e) => {
         if (!p.interactive) return
         rememberKeyboardFocus(p.dataKey)
