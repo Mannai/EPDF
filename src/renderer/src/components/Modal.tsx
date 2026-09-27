@@ -64,13 +64,15 @@ export function Modal({
   const large = size === 'l'
   return (
     <div className="dialog-scrim" onKeyDown={onKeyDown}>
+      {/* Windows: the title bar strip stays draggable but inert while the dialog is open (index.css, "Overlays"). */}
+      <div aria-hidden="true" className="overlay-titlebar-guard" />
       <div
         ref={ref}
         role="dialog"
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={`modal epdf-dialog ${width} ${large ? 'h-[min(700px,85vh)]' : 'overflow-y-auto'} focus-visible:outline-none`}
+        className={`modal epdf-dialog ${width} ${large ? 'h-[min(700px,85vh,calc(100vh-var(--titlebar-h)-24px))]' : 'overflow-y-auto'} focus-visible:outline-none`}
       >
         <div className="flex shrink-0 flex-col gap-0.5 px-6 pb-3 pt-5">
           <h2 className="dialog-title m-0">{title}</h2>

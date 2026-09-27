@@ -147,8 +147,9 @@ function ScanShell(): JSX.Element {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3" onKeyDown={onKeyDown}>
-      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="scan-title" tabIndex={-1} className="flex w-full max-w-[74rem] flex-col rounded-lg border border-line bg-raised shadow-2xl" style={{ height: 'min(94vh, 54rem)' }} data-testid="scan-dialog">
+    <div className="app-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3" onKeyDown={onKeyDown}>
+      <div aria-hidden="true" className="overlay-titlebar-guard" />
+      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="scan-title" tabIndex={-1} className="flex w-full max-w-[74rem] flex-col rounded-lg border border-line bg-raised shadow-2xl" style={{ height: 'min(calc(94vh - var(--titlebar-h)), 54rem)' }} data-testid="scan-dialog">
         <header className="flex flex-wrap items-center gap-x-6 gap-y-1 border-b border-line px-4 py-2">
           <h2 id="scan-title" className="text-base font-semibold">
             Scan to PDF

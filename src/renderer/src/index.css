@@ -463,7 +463,7 @@ body,
   }
   /* (Not ".dialog": pdf.js's viewer CSS styles that class, with padding, globally.) */
   .modal {
-    @apply flex max-h-[85vh] max-w-[92vw] flex-col overflow-hidden rounded-lg border border-black/10 bg-surface shadow-4 dark:border-white/10;
+    @apply flex max-h-[min(85vh,calc(100vh-var(--titlebar-h)-24px))] max-w-[92vw] flex-col overflow-hidden rounded-lg border border-black/10 bg-surface shadow-4 dark:border-white/10;
   }
   .dialog-title {
     @apply text-display text-ink;
@@ -516,6 +516,26 @@ body,
 .theme-switching,
 .theme-switching * {
   transition: none !important;
+}
+
+/* ---------- Overlays and the Windows title bar ----------
+   On Windows the top 40 px of the window is the title bar: a window-drag area, with Windows' own caption buttons at
+   its right end. Anything drawn over it can't be clicked there (the click drags the window) and anything under the
+   caption buttons is hidden. So full-window overlays (dialog backdrops, the library, the scanner) keep their content
+   below it: `--titlebar-h` is 40px on Windows (set in App.tsx), 0 elsewhere. The strip above stays a drag area, so
+   the window can still be moved while an overlay is open, and nothing behind the overlay can be clicked. */
+:root {
+  --titlebar-h: 0px;
+}
+.dialog-scrim,
+.app-overlay {
+  top: var(--titlebar-h) !important;
+}
+.overlay-titlebar-guard {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: var(--titlebar-h);
+  -webkit-app-region: drag;
 }
 
 /* ---------- Window chrome ---------- */

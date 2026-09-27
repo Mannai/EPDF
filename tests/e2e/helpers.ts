@@ -147,6 +147,83 @@ export async function clickTool(page: Page, tool: string): Promise<void> {
   await target.click()
 }
 
+/**
+ * The system clipboard is shared by every test worker. Anything that copies and then reads it back runs inside this
+ * cross-process lock (a directory in the temp folder), so parallel tests can't overwrite each other's clipboard.
+ */
+export async function withSystemClipboard<T>(fn: () => Promise<T>): Promise<T> {
+  const { mkdirSync, rmSync, statSync } = await import('node:fs')
+  const lock = join(tmpdir(), 'epdf-e2e-clipboard.lock')
+  const started = Date.now()
+  for (;;) {
+    try {
+      mkdirSync(lock)
+      break
+    } catch {
+      // A lock older than a minute belongs to a crashed worker.
+      try {
+        if (Date.now() - statSync(lock).mtimeMs > 60_000) rmSync(lock, { recursive: true, force: true })
+      } catch {
+        /* gone already */
+      }
+      if (Date.now() - started > 120_000) throw new Error('timed out waiting for the clipboard lock')
+      await new Promise((r) => setTimeout(r, 100))
+    }
+  }
+  try {
+    return await fn()
+  } finally {
+    rmSync(lock, { recursive: true, force: true })
+  }
+}
+
+/**
+ * Windows only: asks Windows itself what a real click at the centre of each element would do (WM_NCHITTEST), without
+ * moving the cursor. Playwright's clicks go straight into the page and skip this, so a control hidden under the
+ * title bar's drag area or caption buttons still "works" in a normal test while real users can't click it.
+ * Returns 'client' (the click reaches the app), 'drag' (it would drag the window), or 'caption' (a window button).
+ */
+export async function windowsHitTest(app: ElectronApplication, page: Page, selector: string): Promise<{ name: string; hit: 'client' | 'drag' | 'caption' | string }[]> {
+  const info = await app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0]!
+    return { hwnd: w.getNativeWindowHandle().readBigInt64LE().toString(), content: w.getContentBounds() }
+  })
+  const targets = await page.evaluate((sel) => {
+    return [...document.querySelectorAll<HTMLElement>(sel)]
+      .filter((el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden')
+      .filter((el) => {
+        // only controls whose centre is on screen (and not scrolled out of their own container)
+        const r = el.getBoundingClientRect()
+        const cx = r.x + r.width / 2
+        const cy = r.y + r.height / 2
+        if (cx < 0 || cy < 0 || cx >= innerWidth || cy >= innerHeight) return false
+        if (el.hasAttribute('data-hit-probe')) return true // a marker placed on purpose over an empty area
+        const top = document.elementFromPoint(cx, cy)
+        return !!top && (el === top || el.contains(top) || top.contains(el))
+      })
+      .map((el) => {
+        const r = el.getBoundingClientRect()
+        const name = el.getAttribute('aria-label') || el.getAttribute('title') || el.textContent?.trim().slice(0, 30) || el.tagName
+        return { name, x: r.x + r.width / 2, y: r.y + r.height / 2 }
+      })
+  }, selector)
+  if (targets.length === 0) return []
+  const dpr = await page.evaluate(() => devicePixelRatio)
+  const pts = targets.map((t) => `${Math.round((info.content.x + t.x) * dpr)},${Math.round((info.content.y + t.y) * dpr)}`).join(';')
+  const script = [
+    'Add-Type @"',
+    'using System; using System.Runtime.InteropServices;',
+    'public static class EpdfHit { [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l); }',
+    '"@',
+    `$h = [IntPtr]::new([Int64]'${info.hwnd}')`,
+    `foreach ($p in '${pts}'.Split(';')) { $xy = $p.Split(','); $l = ([int]$xy[1] -shl 16) -bor ([int]$xy[0] -band 0xFFFF); [EpdfHit]::SendMessage($h, 0x84, [IntPtr]::Zero, [IntPtr]$l).ToInt64() }`
+  ].join('\n')
+  const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8' })
+  const codes = out.trim().split(/\s+/)
+  const label = (c: string): string => (c === '1' ? 'client' : c === '2' ? 'drag' : ['8', '9', '20'].includes(c) ? 'caption' : `code ${c}`)
+  return targets.map((t, i) => ({ name: t.name, hit: label(codes[i] ?? '') }))
+}
+
 /** True if the canvas inside `selector` has any visibly dark pixel (i.e. something was actually drawn). */
 export function canvasHasInk(page: Page, selector: string): Promise<boolean> {
   return page.evaluate((sel) => {

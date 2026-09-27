@@ -2,8 +2,9 @@
 
 A desktop PDF application (Electron + TypeScript + React). Works fully offline for all local features.
 
-**Status: 1.0.2-beta.1 (Windows beta).** 1.0.2 fixes pages flashing black on every edit and text selection jumping
-between paragraphs. New in 1.0.1: the Windows design (title bar with document tabs and
+**Status: 1.0.3-beta.1 (Windows beta).** 1.0.3 fixes the Library (and tall dialogs) sitting under the Windows title
+bar, where their buttons could not be clicked. 1.0.2 fixed pages flashing black on every edit and text selection
+jumping between paragraphs. New in 1.0.1: the Windows design (title bar with document tabs and
 search, task tabs over a one-line ribbon, status bar, Windows 11 dialogs; see `docs/features/chrome.md`) and
 View ▸ Use Hardware Acceleration, which is off by default in a Remote Desktop session because GPU-composited windows
 flash black through the RDP client. Phases 1–3 are complete: the secure Electron shell and PDF viewer; form

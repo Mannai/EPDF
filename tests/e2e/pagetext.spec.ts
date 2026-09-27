@@ -4,7 +4,7 @@ import { copyFileSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PDFDocument } from 'pdf-lib'
-import { canvasHasInk, fixture, launch, menuClick, quitDiscarding } from './helpers'
+import { canvasHasInk, fixture, launch, menuClick, quitDiscarding, withSystemClipboard } from './helpers'
 
 /**
  * The page text model in the real app (Electron + the sandboxed renderer + its Web Worker): right-to-left pages from
@@ -89,9 +89,11 @@ test.describe('page text model in the app', () => {
       // Copy: the clipboard receives the same logical string
       const date = byId('ar-date')
       await dragAcross(page, lines.findIndex((t) => norm(t) === norm(date.text)), true)
-      await page.keyboard.press('Control+C')
-      await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain('2026-09-26 (Epdf)')
-      expect(norm(await app.evaluate(({ clipboard }) => clipboard.readText()))).toBe(norm(date.text))
+      await withSystemClipboard(async () => {
+        await page.keyboard.press('Control+C')
+        await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain('2026-09-26 (Epdf)')
+        expect(norm(await app.evaluate(({ clipboard }) => clipboard.readText()))).toBe(norm(date.text))
+      })
     } finally {
       await quitDiscarding(app, page)
     }

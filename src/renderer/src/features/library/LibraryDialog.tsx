@@ -404,6 +404,9 @@ export function LibraryDialog(): JSX.Element | null {
     query.trim() ? `No files match “${query.trim()}”.` : scope.kind === 'recent' ? 'Files you open show up here.' : scope.kind === 'favorites' ? 'Star a file to keep it here.' : scope.kind === 'collection' ? 'This folder is empty. Drag files onto it, or select files and choose “Add to folder…”.' : 'No files here.'
 
   return (
+    <>
+    {/* Windows: keep the title bar strip draggable but inert while the library covers the window (index.css). */}
+    <div aria-hidden="true" className="overlay-titlebar-guard z-50" />
     <div
       ref={root}
       role="dialog"
@@ -411,7 +414,7 @@ export function LibraryDialog(): JSX.Element | null {
       aria-label="Library"
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      className="fixed inset-0 z-50 flex flex-col bg-surface text-ink"
+      className="app-overlay fixed inset-0 z-50 flex flex-col bg-surface text-ink"
       data-testid="library"
     >
       <header className="flex items-center gap-3 border-b border-line px-4 py-2">
@@ -493,5 +496,6 @@ export function LibraryDialog(): JSX.Element | null {
       <FolderNameDialog />
       <SettingsDialog />
     </div>
+    </>
   )
 }

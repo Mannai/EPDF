@@ -64,6 +64,8 @@ function useAppBootstrap(): void {
       useUi.getState().setSidebarOpen(settings.sidebarOpen)
       useUi.getState().setDarkMode(info.darkMode)
       useUi.getState().setCustomTitleBar(info.platform === 'win32')
+      // Full-window overlays keep their content below the Windows title bar (see index.css, "Overlays").
+      if (info.platform === 'win32') document.documentElement.style.setProperty('--titlebar-h', '40px')
       // Only now can main safely deliver queued documents.
       await api.ready()
       performance.mark('epdf:interactive') // read by scripts/perf.mjs (launch-time measurement)
