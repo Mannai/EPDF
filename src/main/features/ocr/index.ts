@@ -99,16 +99,16 @@ export function register(ctx: MainContext): void {
   })
 
   // ---- recognition ------------------------------------------------------------------------------------
-  registerFeatureChannel(OCR_CHANNELS.begin, BeginRequestSchema, async ({ languages, total }): Promise<BeginResponse> => {
+  registerFeatureChannel(OCR_CHANNELS.begin, BeginRequestSchema, async ({ languages, total, mayRetry }): Promise<BeginResponse> => {
     for (const code of languages) await store.verify(code) // fail early, with a clear message, before any page is drawn
-    const s = sessions.create(languages, total)
+    const s = sessions.create(languages, total, mayRetry === true)
     return { sessionId: s.id, parallel: workerCount(total) }
   })
 
-  registerFeatureChannel(OCR_CHANNELS.addPage, AddPageRequestSchema, async ({ sessionId, index, image }): Promise<OcrPageResult> => {
+  registerFeatureChannel(OCR_CHANNELS.addPage, AddPageRequestSchema, async ({ sessionId, index, image, retry }): Promise<OcrPageResult> => {
     const s = sessions.get(sessionId)
     if (!s) throw new Error('This recognition run is no longer active.')
-    return s.add(index, image)
+    return s.add(index, image, retry === true)
   })
 
   registerFeatureChannel(OCR_CHANNELS.end, EndRequestSchema, ({ sessionId }) => {

@@ -52,10 +52,10 @@ export async function runOcrJob(o: RunJobOptions): Promise<{ recognized: number 
         const item = await session.next()
         if (!item) return
         const r = await eng.recognize(item.image)
-        done++
+        if (!item.retry) done++
         session.settle(item, r)
         o.progress(Math.min(1, done / session.total), `Recognized page ${done} of ${session.total}`)
-        if (done >= session.total) session.end()
+        if (done >= session.total && !session.mayRetry) session.end()
       }
     }
     await Promise.race([Promise.all(Array.from({ length: eng.size }, lane)), aborted])

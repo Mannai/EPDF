@@ -79,6 +79,58 @@ export function otsuThreshold(gray: Uint8Array): number {
   return bestT
 }
 
+/**
+ * Local (Sauvola) binarisation, in place: every pixel becomes black (0) or white (255) against a threshold from the
+ * mean and deviation of its neighbourhood, `t = mean * (1 + k * (sd / 128 - 1))`. Unlike one threshold for the whole
+ * page it copes with uneven lighting (a photo, a shadow at the spine), and it removes the grain of a noisy scan, which
+ * the recognizer otherwise reads grey pixel by grey pixel (measured on noisy Arabic and Persian scans: word recall up
+ * from 43-75 % to 81-91 %; on clean scans the result is unchanged within a percent, see docs/features/ocr.md).
+ * `radius` defaults to about 1/40 of the page's shorter side (half a line or so of body text).
+ * Pages that are not a picture of text on paper (almost no dark pixels, or no contrast) are left alone.
+ */
+export function binarize(gray: Uint8Array, width: number, height: number, radius = Math.max(8, Math.round(Math.min(width, height) / 40)), k = 0.2): boolean {
+  const n = width * height
+  if (n === 0) return false
+  // integral images of the values and their squares (Float64: sums of squares overflow 32 bits)
+  const W = width + 1
+  const sum = new Float64Array(W * (height + 1))
+  const sq = new Float64Array(W * (height + 1))
+  for (let y = 0; y < height; y++) {
+    let rs = 0
+    let rq = 0
+    for (let x = 0; x < width; x++) {
+      const v = gray[y * width + x]
+      rs += v
+      rq += v * v
+      sum[(y + 1) * W + x + 1] = sum[y * W + x + 1] + rs
+      sq[(y + 1) * W + x + 1] = sq[y * W + x + 1] + rq
+    }
+  }
+  const out = new Uint8Array(n)
+  let dark = 0
+  for (let y = 0; y < height; y++) {
+    const y0 = Math.max(0, y - radius)
+    const y1 = Math.min(height, y + radius + 1)
+    for (let x = 0; x < width; x++) {
+      const x0 = Math.max(0, x - radius)
+      const x1 = Math.min(width, x + radius + 1)
+      const cnt = (y1 - y0) * (x1 - x0)
+      const s = sum[y1 * W + x1] - sum[y0 * W + x1] - sum[y1 * W + x0] + sum[y0 * W + x0]
+      const q = sq[y1 * W + x1] - sq[y0 * W + x1] - sq[y1 * W + x0] + sq[y0 * W + x0]
+      const mean = s / cnt
+      const sd = Math.sqrt(Math.max(0, q / cnt - mean * mean))
+      const t = mean * (1 + k * (sd / 128 - 1))
+      const black = gray[y * width + x] <= t
+      out[y * width + x] = black ? 0 : 255
+      if (black) dark++
+    }
+  }
+  // a blank page, or a photo rather than text: keep the grey picture
+  if (dark < n * 0.001 || dark > n * 0.5) return false
+  gray.set(out)
+  return true
+}
+
 export interface SkewEstimate {
   /** Radians. Positive = text lines run downhill to the right (clockwise tilt on screen). */
   angle: number

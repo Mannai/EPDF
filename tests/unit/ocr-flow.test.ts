@@ -22,7 +22,11 @@ const h = vi.hoisted(() => {
     edits: [] as { label: string; result: unknown }[],
     toasts: [] as { kind: string; message: string }[],
     renderThrows: new Set<number>(),
-    onAddPage: undefined as undefined | (() => void)
+    onAddPage: undefined as undefined | (() => void),
+    /** confidence of the first picture of a page, and of the binarised second one */
+    confidence: 85,
+    retryConfidence: 90,
+    released: 0
   }
   class JobCancelledError extends Error {
     constructor() {
@@ -70,7 +74,11 @@ vi.mock('../../src/renderer/src/features/ocr/render', () => ({
   pageHasText: async (p: { n: number }) => h.state.textPages.has(p.n - 1),
   renderPage: async (p: { n: number }) => {
     if (h.state.renderThrows.has(p.n - 1)) throw new Error('bad picture')
-    return { png: new Uint8Array([1, 2, 3]), geometry: { view: [0, 0, 612, 792], rotate: 0, width: 1700, height: 2200 } }
+    return {
+      png: new Uint8Array([1, 2, 3]),
+      geometry: { view: [0, 0, 612, 792], rotate: 0, width: 1700, height: 2200 },
+      alternative: { png: async () => new Uint8Array([9, 9, 9]), release: () => void h.state.released++ }
+    }
   }
 }))
 
@@ -100,7 +108,10 @@ beforeEach(() => {
     edits: [],
     toasts: [],
     renderThrows: new Set(),
-    onAddPage: undefined
+    onAddPage: undefined,
+    confidence: 85,
+    retryConfidence: 90,
+    released: 0
   })
   ;(globalThis as unknown as { window: unknown }).window = {
     epdf: {
@@ -113,7 +124,10 @@ beforeEach(() => {
         if (channel === 'ocr:addPage') {
           h.state.onAddPage?.()
           if (h.state.jobOutcome !== 'ok') throw new Error("Error invoking remote method 'feature:call': Error: Cancelled")
-          return h.state.failing.has(payload.index!) ? ({ ok: false, error: 'This page picture could not be read.' } satisfies OcrPageResult) : { ok: true, lines: h.state.lines, confidence: 85, width: 1700, height: 2200 }
+          const retry = (payload as { retry?: boolean }).retry === true
+          return h.state.failing.has(payload.index!)
+            ? ({ ok: false, error: 'This page picture could not be read.' } satisfies OcrPageResult)
+            : { ok: true, lines: h.state.lines, confidence: retry ? h.state.retryConfidence : h.state.confidence, width: 1700, height: 2200 }
         }
         return undefined
       }
@@ -146,14 +160,50 @@ describe('runOcr', () => {
     h.state.bytes = await createScan3()
     const out = await runOcr({ docId: 'doc1', pages: 'all', languages: ['eng'], prefs: { dpi: 300, contrast: true, deskew: true, force: false } })
     expect(out).toMatchObject({ status: 'done', pages: 3 })
-    expect(h.state.calls.find((c) => c.channel === 'ocr:begin')!.payload).toEqual({ languages: ['eng'], total: 3 })
+    expect(h.state.calls.find((c) => c.channel === 'ocr:begin')!.payload).toEqual({ languages: ['eng'], total: 3, mayRetry: true })
+  })
+
+  it('a confident page is recognized once; its binarised picture is never made', async () => {
+    h.state.bytes = await createScan1()
+    await run([0])
+    expect(h.state.calls.filter((c) => c.channel === 'ocr:addPage')).toHaveLength(1)
+    expect(h.state.released).toBe(1) // the grey picture kept for a second attempt is let go
+  })
+
+  it('an unsure page is recognized again from the binarised picture, and the more confident result is kept', async () => {
+    h.state.bytes = await createScan1()
+    h.state.confidence = 50
+    h.state.retryConfidence = 70
+    const out = await run([0])
+    const adds = h.state.calls.filter((c) => c.channel === 'ocr:addPage').map((c) => c.payload as { index: number; retry?: boolean; image: Uint8Array })
+    expect(adds.map((a) => [a.index, a.retry === true, [...a.image]])).toEqual([
+      [0, false, [1, 2, 3]],
+      [0, true, [9, 9, 9]]
+    ])
+    expect(out.confidence).toBeCloseTo(85, 5) // the words' own confidences (the fake's words: 90 and 80)
+    expect(h.state.released).toBe(1)
+    // the second attempt was worse: the first result stays
+    h.state.calls = []
+    h.state.retryConfidence = 40
+    h.state.lines = [{ ...(goodLines()[0] as object), words: [{ text: 'first', x0: 200, y0: 270, x1: 340, y1: 307, conf: 50 }] }]
+    await run([0])
+    expect(h.state.calls.filter((c) => c.channel === 'ocr:addPage')).toHaveLength(2)
+  })
+
+  it('without "Improve contrast" nothing is recognized twice, and main is told no second pictures will come', async () => {
+    h.state.bytes = await createScan1()
+    h.state.confidence = 30
+    await run([0], { prefs: { dpi: 300, contrast: false, deskew: true, force: false } })
+    expect(h.state.calls.find((c) => c.channel === 'ocr:begin')!.payload).toMatchObject({ mayRetry: false })
+    // the fake renderer offers a second picture regardless; the flow only uses it when main expects retries
+    expect(h.state.calls.filter((c) => c.channel === 'ocr:addPage')).toHaveLength(1)
   })
 
   it('asks main for the selected languages and pages only', async () => {
     h.state.bytes = await createScan3()
     await run([2], { languages: ['eng', 'fra'] })
     const begin = h.state.calls.find((c) => c.channel === 'ocr:begin')!
-    expect(begin.payload).toEqual({ languages: ['eng', 'fra'], total: 1 })
+    expect(begin.payload).toEqual({ languages: ['eng', 'fra'], total: 1, mayRetry: true })
     expect((h.state.calls.find((c) => c.channel === 'ocr:addPage')!.payload as { index: number }).index).toBe(2)
   })
 

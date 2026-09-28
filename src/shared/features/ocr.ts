@@ -40,6 +40,9 @@ export const OCR_LANGUAGES: readonly OcrLanguage[] = [
   { code: 'nld', name: 'Dutch', nativeName: 'Nederlands', size: 6050296, sha256: 'ced0e5e046a84c908a6aa7accbef9a232c4a5d9a8276691b81c6ee64d02963f6', bundled: false },
   { code: 'rus', name: 'Russian', nativeName: 'Русский', size: 3861738, sha256: 'e16e5e036cce1d9ec2b00063cf8b54472625b9e14d893a169e2b0dedeb4df225', bundled: false },
   { code: 'ara', name: 'Arabic', nativeName: 'العربية', size: 1432056, sha256: 'e3206d3dc87fd50c24a0fb9f01838615911d25168f4e64415244b67d2bb3e729', bundled: false, rtl: true },
+  { code: 'fas', name: 'Persian', nativeName: 'فارسی', size: 431500, sha256: 'db1c0a91208aff00d3cf1ed2c1d23f76419afd5f024688b4f71adc3f2ce4a505', bundled: false, rtl: true },
+  { code: 'urd', name: 'Urdu', nativeName: 'اردو', size: 1398718, sha256: '62e8250ce2a994106e313a82e26a516a39e2cf159d0ce3c5b5008387fd0d555f', bundled: false, rtl: true },
+  { code: 'heb', name: 'Hebrew', nativeName: 'עברית', size: 961404, sha256: '11f9e43ab227f786352a50f75c94c2e9906f1baba86d93276da19da7ce0904db', bundled: false, rtl: true },
   { code: 'chi_sim', name: 'Chinese (Simplified)', nativeName: '简体中文', size: 2469156, sha256: 'a5fcb6f0db1e1d6d8522f39db4e848f05984669172e584e8d76b6b3141e1f730', bundled: false },
   { code: 'jpn', name: 'Japanese', nativeName: '日本語', size: 2471260, sha256: '1f5de9236d2e85f5fdf4b3c500f2d4926f8d9449f28f5394472d9e8d83b91b4d', bundled: false },
   { code: 'kor', name: 'Korean', nativeName: '한국어', size: 1677415, sha256: '6b85e11d9bbf07863b97b3523b1b112844c43e713df8b66418a081fd1060b3b2', bundled: false },
@@ -77,6 +80,12 @@ export const MIN_WORD_CONFIDENCE = 15
 export const REAL_TEXT_MIN_CHARS = 10
 /** Below this mean confidence (percent) the result comes with a warning. */
 export const LOW_CONFIDENCE = 60
+/**
+ * With "Improve contrast" on, a page recognized with less than this mean confidence (percent) is recognized a second
+ * time from a binarised picture, and the more confident result is kept. Clean scans stay far above it (measured
+ * 84-92 %), noisy or unevenly lit ones fall below (30-68 %), where binarising helps most (docs/features/ocr.md).
+ */
+export const RETRY_CONFIDENCE = 75
 
 export const OcrPrefsSchema = z.object({
   languages: z.array(z.string()).max(20),
@@ -120,12 +129,19 @@ export const MAX_IMAGE_BYTES = 256 * 1024 * 1024
 const BytesSchema = z.custom<Uint8Array>((v) => v instanceof Uint8Array && v.byteLength <= MAX_IMAGE_BYTES, 'Expected bytes (at most 256 MB)')
 const SessionIdSchema = z.string().min(8).max(64)
 
-export const BeginRequestSchema = z.object({ languages: LanguageListSchema, total: z.number().int().min(1).max(100000) })
+export const BeginRequestSchema = z.object({
+  languages: LanguageListSchema,
+  total: z.number().int().min(1).max(100000),
+  /** The renderer may send second pictures (`retry`): the run then ends only when the renderer says so. */
+  mayRetry: z.boolean().optional()
+})
 export const AddPageRequestSchema = z.object({
   sessionId: SessionIdSchema,
   index: z.number().int().min(0).max(100000),
   /** PNG (or JPEG/BMP) bytes of the page picture. */
-  image: BytesSchema
+  image: BytesSchema,
+  /** A second picture of a page already sent (cleaned up, see RETRY_CONFIDENCE): not counted as a page of the run. */
+  retry: z.boolean().optional()
 })
 export const EndRequestSchema = z.object({ sessionId: SessionIdSchema })
 export const RunJobSchema = z.object({ sessionId: SessionIdSchema })

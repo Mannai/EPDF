@@ -3,6 +3,7 @@ import {
   LOW_CONFIDENCE,
   OCR_CHANNELS,
   OCR_JOBS,
+  RETRY_CONFIDENCE,
   type BeginResponse,
   type OcrLine,
   type OcrPageResult,
@@ -103,7 +104,7 @@ export async function runOcr(opts: OcrRunOptions): Promise<OcrOutcome> {
 
     let begin: BeginResponse
     try {
-      begin = await window.epdf.call<BeginResponse>(OCR_CHANNELS.begin, { languages: opts.languages, total: todo.length })
+      begin = await window.epdf.call<BeginResponse>(OCR_CHANNELS.begin, { languages: opts.languages, total: todo.length, mayRetry: opts.prefs.contrast })
     } catch (err) {
       const m = clean(err)
       notify('error', m)
@@ -133,7 +134,18 @@ export async function runOcr(opts: OcrRunOptions): Promise<OcrOutcome> {
         return
       }
       const sid = sessionId!
-      const r = await window.epdf.call<OcrPageResult>(OCR_CHANNELS.addPage, { sessionId: sid, index: pageIndex, image: rendered.png })
+      let r: OcrPageResult
+      try {
+        r = await window.epdf.call<OcrPageResult>(OCR_CHANNELS.addPage, { sessionId: sid, index: pageIndex, image: rendered.png })
+        // Unsure about the page (noise, uneven lighting): try once more on the binarised picture, keep the better one.
+        if (opts.prefs.contrast && r.ok && rendered.alternative && r.confidence < RETRY_CONFIDENCE && !state.error) {
+          const image = await rendered.alternative.png()
+          const again = await window.epdf.call<OcrPageResult>(OCR_CHANNELS.addPage, { sessionId: sid, index: pageIndex, image, retry: true })
+          if (again.ok && again.confidence > r.confidence) r = again
+        }
+      } finally {
+        rendered.alternative?.release()
+      }
       results.set(pageIndex, r)
       geometry.set(pageIndex, { pageIndex, geometry: rendered.geometry, lines: r.ok ? r.lines : [], deskew: rendered.deskew })
     }

@@ -2,7 +2,7 @@ import * as pdfjs from 'pdfjs-dist'
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist'
 import { REAL_TEXT_MIN_CHARS } from '@shared/features/ocr'
 import { normalizeRotation, type PageGeometry } from './pdf/layout'
-import { autoContrast, estimateSkew, grayToRgba, scaleFor, shouldDeskew, toGrayscale } from './pixels'
+import { autoContrast, binarize, estimateSkew, grayToRgba, scaleFor, shouldDeskew, toGrayscale } from './pixels'
 
 /**
  * Turns one PDF page into the picture Tesseract reads. Pages are drawn by PDF.js one at a time (never all at
@@ -28,6 +28,11 @@ export interface RenderedPage {
   png: Uint8Array
   geometry: PageGeometry
   deskew?: { angle: number; cx: number; cy: number }
+  /**
+   * With "Improve contrast": the same picture binarised (`binarize` in pixels.ts), same size and deskew, for a second
+   * attempt when the first one is unsure (RETRY_CONFIDENCE). Holds the grey picture until `release()`.
+   */
+  alternative?: { png(): Promise<Uint8Array>; release(): void }
 }
 
 export const openForOcr = (bytes: Uint8Array): Promise<PDFDocumentProxy> =>
@@ -69,40 +74,70 @@ export async function renderPage(page: PDFPageProxy, opts: RenderOptions): Promi
 
   const view = page.view as [number, number, number, number]
   const geometry: PageGeometry = { view, rotate: normalizeRotation(page.rotate), width, height }
-  let deskew: RenderedPage['deskew']
+  let deskew: RenderedPage['deskew'] = undefined
 
   if (opts.contrast || opts.deskew) {
     const img = ctx.getImageData(0, 0, width, height)
-    const gray = toGrayscale(img.data, width, height)
+    let gray: Uint8Array | null = toGrayscale(img.data, width, height)
     if (opts.contrast) autoContrast(gray)
     let angle = 0
     if (opts.deskew) {
       const e = estimateSkew(gray, width, height)
       if (shouldDeskew(e)) angle = e.angle
     }
-    img.data.set(grayToRgba(gray))
-    ctx.putImageData(img, 0, 0)
-    if (angle !== 0) {
-      // Rotate the picture against the tilt; the layout maps recognized boxes back through `deskew`.
-      const straight = document.createElement('canvas')
-      straight.width = width
-      straight.height = height
-      const c2 = straight.getContext('2d', { alpha: false })!
-      c2.fillStyle = '#fff'
-      c2.fillRect(0, 0, width, height)
-      c2.translate(width / 2, height / 2)
-      c2.rotate(-angle)
-      c2.translate(-width / 2, -height / 2)
-      c2.drawImage(canvas, 0, 0)
-      const png = await toPng(straight)
-      straight.width = straight.height = 0
-      canvas.width = canvas.height = 0
-      page.cleanup()
-      return { png, geometry, deskew: { angle, cx: width / 2, cy: height / 2 } }
-    }
+    canvas.width = canvas.height = 0
+    page.cleanup()
+    const png = await grayPng(gray, width, height, angle)
+    if (angle !== 0) deskew = { angle, cx: width / 2, cy: height / 2 }
+    let alternative: RenderedPage['alternative']
+    if (opts.contrast) {
+      alternative = {
+        png: async () => {
+          if (!gray) throw new Error('The page picture was already released.')
+          const bw = gray.slice()
+          binarize(bw, width, height)
+          return grayPng(bw, width, height, angle)
+        },
+        release: () => {
+          gray = null
+        }
+      }
+    } else gray = null
+    return { png, geometry, deskew, alternative }
   }
   const png = await toPng(canvas)
   canvas.width = canvas.height = 0
   page.cleanup()
   return { png, geometry, deskew }
+}
+
+/** PNG of a grey picture, rotated by -angle around its centre (the deskew; the layout maps boxes back). */
+async function grayPng(gray: Uint8Array, width: number, height: number, angle: number): Promise<Uint8Array> {
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d', { alpha: false })!
+  const img = ctx.createImageData(width, height)
+  img.data.set(grayToRgba(gray))
+  ctx.putImageData(img, 0, 0)
+  if (angle === 0) {
+    const png = await toPng(canvas)
+    canvas.width = canvas.height = 0
+    return png
+  }
+  // Rotate the picture against the tilt.
+  const straight = document.createElement('canvas')
+  straight.width = width
+  straight.height = height
+  const c2 = straight.getContext('2d', { alpha: false })!
+  c2.fillStyle = '#fff'
+  c2.fillRect(0, 0, width, height)
+  c2.translate(width / 2, height / 2)
+  c2.rotate(-angle)
+  c2.translate(-width / 2, -height / 2)
+  c2.drawImage(canvas, 0, 0)
+  const png = await toPng(straight)
+  straight.width = straight.height = 0
+  canvas.width = canvas.height = 0
+  return png
 }

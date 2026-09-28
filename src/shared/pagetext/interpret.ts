@@ -258,7 +258,13 @@ class Walker {
             // the up vector (text +y) projected on the frame normal n = (-ey, ex); negative for normal text
             const k = -((trm[2] * -ey + trm[3] * ex) * size)
             const kk = Math.abs(k)
-            this.push(gl, font, ox, oy, ex, ey, Math.abs(w) * sx, font.ascent * kk, -font.descent * kk, em, span, hidden, reversed)
+            const len = Math.abs(w) * sx
+            if (k < 0) {
+              // A mirrored text matrix (e.g. [-1 0 0 1]): upright glyphs that advance backwards. OCR layers of other
+              // tools (Internet Archive, via mupdf) write right-to-left lines this way, in logical order. The glyph is
+              // the same box seen from its other end: origin at the far side, advancing the ordinary way.
+              this.push(gl, font, ox + ex * len, oy + ey * len, -ex, -ey, len, font.ascent * kk, -font.descent * kk, em, span, hidden, reversed, true)
+            } else this.push(gl, font, ox, oy, ex, ey, len, font.ascent * kk, -font.descent * kk, em, span, hidden, reversed)
             u += w + (tc + (gl.space ? tw : 0)) * th
           }
         }
@@ -410,7 +416,9 @@ class Walker {
     em: number,
     span: number,
     hidden: boolean,
-    reversed: boolean
+    reversed: boolean,
+    /** Pushed from its far end (a mirrored text matrix): the font's ink extent is measured from the other side. */
+    mirrored = false
   ): void {
     if (!(em > 0) || !Number.isFinite(ox + oy + ex + ey + len + top + bottom)) return
     if (!this.fonts.has(font.key)) this.fonts.set(font.key, { name: font.name, bold: font.bold, italic: font.italic })
@@ -436,7 +444,7 @@ class Walker {
     }
     if (len < 1e-3 * em || g.mark) {
       const ink = font.ink(gl.gid)
-      if (ink) g.ink = [ink[0] * em, ink[1] * em]
+      if (ink) g.ink = mirrored ? [len - ink[1] * em, len - ink[0] * em] : [ink[0] * em, ink[1] * em]
     }
     if (span >= 0) this.spans[span].glyphs.push(this.glyphs.length)
     this.glyphs.push(g)

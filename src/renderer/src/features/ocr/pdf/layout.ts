@@ -78,12 +78,46 @@ export interface PlacedLine {
   fontSize: number
   /** The writing direction is not one of the four axes (a crooked scan). */
   tilted: boolean
+  /** Right-to-left paragraph direction (set once the words are in visual order, see `collectChars`). */
+  rtl?: boolean
+  /** In reading order as recognized; `collectChars` puts them in visual order (left to right). */
   words: PlacedWord[]
 }
 
 export interface LayoutOptions {
   /** The picture was rotated clockwise by `angle` radians (around cx, cy) before recognition; undo that. */
   deskew?: { angle: number; cx: number; cy: number }
+  /** Baseline slope to use instead of the line's own (see `pageSlopes`). */
+  slope?: number
+}
+
+/** Lines whose baseline slope differs from the page's by less than this (about 0.5 degrees) share the page's slope. */
+export const SAME_SLOPE = 0.009
+
+const rawSlope = (line: OcrLine): number | null => {
+  const b = line.baseline
+  if (!b || b.x1 === b.x0) return null
+  const s = (b.y1 - b.y0) / (b.x1 - b.x0)
+  return Number.isFinite(s) && Math.abs(s) <= 1 ? s : null
+}
+
+/**
+ * One slope for the lines of a page. The lines of a scanned page are parallel, but Tesseract measures each baseline on
+ * its own, so on a slightly tilted page some come out just above the noise threshold (written tilted) and some just
+ * below (written straight). Readers keep lines of different directions apart, so such a page would read in a scrambled
+ * order. Every line within SAME_SLOPE of the median slope of the page's longer lines gets that median; the others keep
+ * their own. `words[i]` are the words kept for `lines[i]`.
+ */
+export function pageSlopes(lines: OcrLine[], words: OcrWord[][]): number[] {
+  const raws = lines.map(rawSlope)
+  const sample = raws.filter((s, i): s is number => s !== null && words[i].length >= 2).sort((a, b) => a - b)
+  if (!sample.length) return lines.map(baselineSlope)
+  const median = sample[sample.length >> 1]
+  const page = Math.abs(median) >= MIN_SLOPE ? median : 0
+  return lines.map((l, i) => {
+    const r = raws[i]
+    return r === null || Math.abs(r - median) <= SAME_SLOPE ? page : baselineSlope(l)
+  })
 }
 
 /** Baseline slopes below this (about 0.4 degrees) are recognition noise, not skew: the line is written straight. */
@@ -130,7 +164,7 @@ export function undoDeskew(d: NonNullable<LayoutOptions['deskew']>, x: number, y
 export function placeLine(g: PageGeometry, line: OcrLine, words: OcrWord[], opts: LayoutOptions = {}): PlacedLine | null {
   if (words.length === 0) return null
   const d = opts.deskew
-  const slope = baselineSlope(line)
+  const slope = opts.slope ?? baselineSlope(line)
   const phiLine = Math.atan(slope) // picture space, y down: positive = text runs down to the right
   const phi = phiLine + (d ? d.angle : 0)
   const ux = Math.cos(phi)

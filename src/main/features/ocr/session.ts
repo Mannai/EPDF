@@ -11,6 +11,8 @@ import type { OcrPageResult } from '../../../shared/features/ocr'
 interface Waiting {
   index: number
   image: Uint8Array
+  /** A second picture of a page already recognized (does not count towards `total`). */
+  retry: boolean
   resolve(r: OcrPageResult): void
   reject(e: Error): void
 }
@@ -27,7 +29,9 @@ export class OcrSession {
 
   constructor(
     readonly languages: string[],
-    readonly total: number
+    readonly total: number,
+    /** Second pictures of pages may follow the last page: only `end()` finishes the run. */
+    readonly mayRetry = false
   ) {}
 
   get hasQueued(): boolean {
@@ -39,11 +43,11 @@ export class OcrSession {
   }
 
   /** Queues a page picture. Resolves with its recognition result. */
-  add(index: number, image: Uint8Array): Promise<OcrPageResult> {
+  add(index: number, image: Uint8Array, retry = false): Promise<OcrPageResult> {
     if (this.closed) return Promise.reject(this.closed)
     if (this.ended) return Promise.reject(new Error('This recognition run has ended.'))
     return new Promise((resolve, reject) => {
-      const w: Waiting = { index, image, resolve, reject }
+      const w: Waiting = { index, image, retry, resolve, reject }
       this.pending.add(w)
       const taker = this.takers.shift()
       if (taker) taker(w)
@@ -89,7 +93,7 @@ export class OcrSession {
 export class SessionRegistry {
   private sessions = new Map<string, { session: OcrSession; created: number }>()
 
-  create(languages: string[], total: number): OcrSession {
+  create(languages: string[], total: number, mayRetry = false): OcrSession {
     const now = Date.now()
     for (const [id, s] of this.sessions) {
       if (now - s.created > 3600_000) {
@@ -97,7 +101,7 @@ export class SessionRegistry {
         this.sessions.delete(id)
       }
     }
-    const session = new OcrSession(languages, total)
+    const session = new OcrSession(languages, total, mayRetry)
     this.sessions.set(session.id, { session, created: now })
     return session
   }
