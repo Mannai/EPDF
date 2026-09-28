@@ -19,6 +19,11 @@
 .epdf-fb-dashed {
   outline-style: dashed;
 }
+/* A field being moved: it stands in for the (hidden) field underneath until the move is saved. */
+.epdf-fb-moving {
+  background: rgb(232 239 253 / 0.95);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.18);
+}
 .epdf-fb-proposal {
   background: rgb(214 130 20 / 0.14);
   outline-color: #9a4a00;

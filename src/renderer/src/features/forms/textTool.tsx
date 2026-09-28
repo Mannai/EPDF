@@ -1,18 +1,21 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { create } from 'zustand'
-import { editPdf } from '../../edit/session'
 import { errorMessage, notify } from '../../state/notify'
-import { useUi } from '../../state/ui'
 import { useWorkspace } from '../../state/workspace'
 import type { PageOverlayProps } from '../api'
-import { DEFAULT_TEXT_SIZE, LINE_HEIGHT, dateLabel, drawStamp, drawTextBlock, type StampKind } from './draw'
-import { loadUnicodeFont } from './fontClient'
+import { createFillMark, createFillText, selectPlaced } from '../markup/actions'
+import type { FillMarkKind } from '../markup/pdf/ops'
+import { useMarkup } from '../markup/store'
+import { KeepToolField } from '../markup/Options'
+import { assertDrawable } from './appearance'
+import { DEFAULT_TEXT_SIZE, LINE_HEIGHT, dateLabel, type StampKind } from './draw'
 import { PageGeometry, geometryOf, normalizeRotation, type Matrix } from './geometry'
 import { isolateViewerKeys } from './keys'
 
 /**
- * "Add text" and the stamp tools (check, cross, dot, date) for flat PDFs. Everything is drawn into the page
- * content through `editPdf` (one undo step each) and is permanent once saved.
+ * "Add text" and the stamp tools (check, cross, dot, date) for flat PDFs. Each item is a Fill & sign annotation (one
+ * undo step each, see markup/pdf/ops.ts): selectable, movable and changeable until it is locked into the page, which
+ * saving offers (fillSignSave.ts).
  */
 
 export interface TextDraft {
@@ -51,35 +54,71 @@ export const useTextTool = create<TextToolState>((set) => ({
 
 const DEFAULT_BOX_WIDTH = 180
 
-/** Writes the current text box into the page and closes it. Empty text just closes the box. */
-export async function commitTextDraft(): Promise<void> {
+/** A box on the displayed page (CSS px) as a PDF user-space rect, for any page rotation. */
+function cssBoxToPdf(geom: PageGeometry, left: number, top: number, width: number, height: number): [number, number, number, number] {
+  const a = geom.toPdf(left, top)
+  const b = geom.toPdf(left + width, top + height)
+  return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])]
+}
+
+let measureCtx: CanvasRenderingContext2D | null | undefined
+/** Width of `text` in Helvetica at `size` pt (Arial has the same metrics); a rough estimate for other scripts. */
+function textWidthPt(text: string, size: number): number {
+  if (measureCtx === undefined) measureCtx = document.createElement('canvas').getContext('2d')
+  if (!measureCtx) return text.length * size * 0.6
+  measureCtx.font = `${size}px Helvetica, Arial, sans-serif`
+  return measureCtx.measureText(text).width
+}
+
+/**
+ * Adds the current text box to the page as a Fill & sign text item (it stays movable and editable until it is locked
+ * into the page, which saving offers) and closes the box. Empty text just closes it. The new text is then selected with
+ * the Select tool, unless "Keep tool selected" is on. Resolves true when something was added.
+ */
+export async function commitTextDraft(opts: { select?: boolean } = {}): Promise<boolean> {
   const { draft, size, color } = useTextTool.getState()
   useTextTool.getState().setDraft(null)
-  if (!draft || draft.text.trim() === '') return
+  if (!draft || draft.text.trim() === '') return false
   const geom = new PageGeometry(draft.matrix, normalizeRotation(draft.rotation))
   const s = geom.scaleX()
-  const frame = geom.frameOfBox({ left: draft.left * s, top: draft.top * s, width: draft.width * s, height: draft.height * s })
+  const rect = cssBoxToPdf(geom, draft.left * s, draft.top * s, draft.width * s, draft.height * s)
   try {
-    await editPdf(draft.docId, 'Add text', (pdf) => drawTextBlock(pdf, draft.pageIndex, frame, draft.text, { size, color }, loadUnicodeFont).then(() => undefined))
-    useUi.getState().announce('Text added to the page')
+    await assertDrawable(draft.text)
   } catch (err) {
     notify('error', errorMessage(err))
+    return false
   }
+  const id = await createFillText(draft.docId, draft.pageIndex, rect, draft.text, size, color)
+  if (id && opts.select !== false) selectPlaced(draft.docId, id)
+  return !!id
 }
 
 export const cancelTextDraft = (): void => useTextTool.getState().setDraft(null)
 
-const STAMP_LABEL: Record<StampKind, string> = { check: 'Add check mark', cross: 'Add cross', dot: 'Add dot', date: 'Add date' }
+const MARKS: Partial<Record<StampKind, FillMarkKind>> = { check: 'check', cross: 'cross', dot: 'dot' }
 
+/** Check / cross / dot / today's date at a click (CSS px), as a Fill & sign item; then selected for adjusting. */
 export async function placeStamp(docId: string, pageIndex: number, geom: PageGeometry, kind: StampKind, cssX: number, cssY: number): Promise<void> {
   const { size, color } = useTextTool.getState()
-  const center = geom.toPdf(cssX, cssY)
-  try {
-    await editPdf(docId, STAMP_LABEL[kind], (pdf) => drawStamp(pdf, pageIndex, kind, center, geom.rotation, { size, color }, loadUnicodeFont, dateLabel()))
-    useUi.getState().announce(`${STAMP_LABEL[kind].replace('Add ', '')} added to the page`)
-  } catch (err) {
-    notify('error', errorMessage(err))
+  const mark = MARKS[kind]
+  let id: string | undefined
+  if (mark) {
+    id = await createFillMark(docId, pageIndex, mark, geom.toPdf(cssX, cssY), size, color)
+  } else {
+    const label = dateLabel()
+    try {
+      await assertDrawable(label)
+    } catch (err) {
+      notify('error', errorMessage(err))
+      return
+    }
+    // A box just big enough for the date, centred on the click (the text box adds a little padding).
+    const s = geom.scaleX()
+    const w = (textWidthPt(label, size) + size * 0.8 + 6) * s
+    const h = size * LINE_HEIGHT * 1.25 * s
+    id = await createFillText(docId, pageIndex, cssBoxToPdf(geom, cssX - w / 2, cssY - h / 2, w, h), label, size, color, 'Add date')
   }
+  selectPlaced(docId, id)
 }
 
 const SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 24, 32, 48, 72]
@@ -105,6 +144,7 @@ export function TextOptions(): JSX.Element {
         Color
         <input type="color" className="h-7 w-9 cursor-pointer rounded border border-line bg-surface p-0.5" value={color} onChange={(e) => useTextTool.getState().setColor(e.target.value)} />
       </label>
+      <KeepToolField />
     </>
   )
 }
@@ -278,8 +318,13 @@ export function TextToolOverlay(props: PageOverlayProps): JSX.Element | null {
     }
     e.preventDefault()
     const st = useTextTool.getState()
-    // Starting a new box commits the one being edited (nothing typed is ever silently dropped).
-    void commitTextDraft()
+    // A click outside the box being typed confirms it (nothing typed is ever silently dropped). Only with "Keep tool
+    // selected" does the same click also start the next box.
+    if (st.draft) {
+      const keep = useMarkup.getState().keepTool
+      void commitTextDraft({ select: !keep })
+      if (!keep) return
+    }
     const size = st.size
     st.setDraft({
       docId,

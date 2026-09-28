@@ -397,6 +397,32 @@ export async function buildBuiltInStamp(pdf: PDFDocument, a: AnnotInfo, def: Sta
   }
 }
 
+/** Fill & sign marks (Stamp /Name /EpdfCheck, /EpdfCross, /EpdfDot): vector strokes in /C, scaled to the box. */
+export const FILL_MARK_NAMES = ['EpdfCheck', 'EpdfCross', 'EpdfDot']
+
+export function buildFillMark(a: AnnotInfo, rotation: number): Built {
+  const [w, h] = uprightSize(a.rect, rotation)
+  const u = Math.min(w, h)
+  const cx = w / 2
+  const cy = h / 2
+  const color = sanitizeColor(a.color, [0, 0, 0])
+  const p = (dx: number, dy: number): string => `${fmt(cx + dx * u)} ${fmt(cy + dy * u)}`
+  let ops = `/GS0 gs\n${colorOp(color, true)} ${colorOp(color, false)} ${fmt(Math.max(0.8, u * 0.13))} w 1 J 1 j\n`
+  if (a.iconName === 'EpdfCheck') ops += `${p(-0.45, 0.02)} m ${p(-0.12, -0.34)} l ${p(0.5, 0.42)} l S\n`
+  else if (a.iconName === 'EpdfCross') ops += `${p(-0.4, -0.4)} m ${p(0.4, 0.4)} l S ${p(-0.4, 0.4)} m ${p(0.4, -0.4)} l S\n`
+  else {
+    const r = Math.max(1.2, u * 0.28)
+    const k = r * KAPPA
+    ops +=
+      `${fmt(cx + r)} ${fmt(cy)} m ` +
+      `${fmt(cx + r)} ${fmt(cy + k)} ${fmt(cx + k)} ${fmt(cy + r)} ${fmt(cx)} ${fmt(cy + r)} c ` +
+      `${fmt(cx - k)} ${fmt(cy + r)} ${fmt(cx - r)} ${fmt(cy + k)} ${fmt(cx - r)} ${fmt(cy)} c ` +
+      `${fmt(cx - r)} ${fmt(cy - k)} ${fmt(cx - k)} ${fmt(cy - r)} ${fmt(cx)} ${fmt(cy - r)} c ` +
+      `${fmt(cx + k)} ${fmt(cy - r)} ${fmt(cx + r)} ${fmt(cy - k)} ${fmt(cx + r)} ${fmt(cy)} c f\n`
+  }
+  return { ops, bbox: [0, 0, w, h], matrix: uprightMatrix(rotation, w, h), resources: gsResource(a.opacity) }
+}
+
 /** Appearance for an image stamp: the image XObject scaled to the (upright) box. */
 export function buildImageStamp(a: AnnotInfo, imageRef: PDFRef, rotation: number): Built {
   const [w, h] = uprightSize(a.rect, rotation)
@@ -490,6 +516,7 @@ export async function regenerateAppearance(pdf: PDFDocument, dict: PDFDict, rota
       if (!a.ours) return false
       const def = stampByName(a.iconName)
       if (def) built = await buildBuiltInStamp(pdf, a, def, rot)
+      else if (FILL_MARK_NAMES.includes(a.iconName)) built = buildFillMark(a, rot)
       else {
         const img = existingImageRef(dict)
         if (img) built = buildImageStamp(a, img, rot)

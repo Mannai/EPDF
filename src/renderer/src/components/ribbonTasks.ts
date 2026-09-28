@@ -22,7 +22,8 @@ export const TASKS: Task[] = [
   // Select is here too: a shape is selected once drawn, and the ribbon should stay on Draw while it is.
   { id: 'draw', label: 'Draw', groups: [], tools: ['markup.ink', 'markup.rect', 'markup.ellipse', 'markup.line', 'markup.arrow'], shared: ['markup.select'] },
   { id: 'edit', label: 'Edit', groups: ['Edit'] },
-  { id: 'fill', label: 'Fill & sign', groups: ['Forms', 'Sign'] },
+  // Select here too: a placed mark, text or signature is selected for adjusting.
+  { id: 'fill', label: 'Fill & sign', groups: ['Forms', 'Sign'], shared: ['markup.select'] },
   { id: 'forms', label: 'Links & forms', groups: ['Links', 'Form builder'] },
   { id: 'redact', label: 'Redact', groups: ['Redact'], panel: 'redact.panel' },
   { id: 'pagemarks', label: 'Page marks', groups: ['Page marks', 'headerfooter', 'bates', 'watermark', 'background'] }

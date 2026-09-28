@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { deflateSync } from 'node:zlib'
 import Database from 'better-sqlite3'
-import { PDFCheckBox, PDFDict, PDFDocument, PDFName, PDFRadioGroup, PDFRawStream, PDFStream, decodePDFRawStream } from 'pdf-lib'
+import { PDFArray, PDFCheckBox, PDFDict, PDFDocument, PDFName, PDFRadioGroup, PDFRawStream, PDFStream, decodePDFRawStream } from 'pdf-lib'
 import { pageModel } from '../support/retrofit'
 import { FIX, axeViolations, copyFixture, launch, menuClick, quitDiscarding, clickTool } from './helpers'
 
@@ -50,6 +50,38 @@ async function pageContent(pdf: PDFDocument, pageIndex: number): Promise<string>
 }
 
 const hexOf = (s: string): string => Buffer.from(s, 'latin1').toString('hex').toUpperCase()
+
+/** Save, answering the "Lock filled-in items into the page?" question that Fill & sign items raise. */
+async function saveFilled(page: Page, choice: 'Lock into page' | 'Keep editable'): Promise<void> {
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  const q = page.getByRole('dialog', { name: 'Lock filled-in items into the page?' })
+  await q.getByRole('button', { name: choice, exact: true }).click()
+  await expect(dot(page)).toHaveCount(0)
+}
+
+/** The Fill & sign annotations (/EpdfFill) of a saved page, with their kind, /Name, /Contents and /Rect. */
+function fillItems(pdf: PDFDocument, pageIndex: number): { kind: string; name?: string; contents?: string; rect: { x1: number; y1: number; x2: number; y2: number }; dict: PDFDict }[] {
+  const annots = pdf.getPage(pageIndex).node.lookupMaybe(PDFName.of('Annots'), PDFArray)
+  const out: ReturnType<typeof fillItems> = []
+  for (let i = 0; i < (annots?.size() ?? 0); i++) {
+    const d = annots!.lookup(i, PDFDict)
+    const kind = (d.get(PDFName.of('EpdfFill')) as PDFName | undefined)?.decodeText()
+    if (!kind) continue
+    const r = d.lookup(PDFName.of('Rect'), PDFArray).asArray().map((n) => Number(n.toString()))
+    const contents = d.lookup(PDFName.of('Contents'))
+    out.push({
+      kind,
+      name: (d.get(PDFName.of('Name')) as PDFName | undefined)?.decodeText(),
+      contents: contents && 'decodeText' in contents ? (contents as { decodeText(): string }).decodeText() : undefined,
+      rect: { x1: Math.min(r[0], r[2]), y1: Math.min(r[1], r[3]), x2: Math.max(r[0], r[2]), y2: Math.max(r[1], r[3]) },
+      dict: d
+    })
+  }
+  return out
+}
+
+/** The frame of the item that was just placed (it is selected with the Select tool). */
+const placedFrame = (page: Page) => page.getByTestId('markup-frame')
 
 /** A minimal graphics-state interpreter: the transform in effect at every `/Name Do` (image placements). */
 function imagePlacements(content: string): { name: string; box: { x1: number; y1: number; x2: number; y2: number } }[] {
@@ -502,7 +534,7 @@ test.describe('form filling', () => {
       await expect(page.getByRole('alert').filter({ hasText: /password protected/ })).toHaveCount(0)
 
       // Saving writes the document encrypted again (no plaintext), and the same (empty) password still opens it.
-      await save(page)
+      await saveFilled(page, 'Lock into page')
       expect(readFileSync(path).toString('latin1')).toContain('/Encrypt')
       await expect(PDFDocument.load(readFileSync(path), { updateMetadata: false })).rejects.toThrow(/encrypt/i)
     } finally {
@@ -561,7 +593,7 @@ test.describe('form filling', () => {
 // ---------------------------------------------------------------------------------------------------------
 
 test.describe('add text and stamps', () => {
-  test('Add text: click, type, choose size/color, apply; the text is in the saved page and searchable after reopening', async () => {
+  test('Add text: click, type, choose size/color, apply; it is selected for adjusting; locked into the page on save and searchable after reopening', async () => {
     const path = copyFixture('flat.pdf')
     const { app, page } = await launch({ files: [path] })
     try {
@@ -579,22 +611,27 @@ test.describe('add text and stamps', () => {
       await page.getByRole('button', { name: 'Add to page' }).click()
       await expect(undoBtn(page, 'Undo Add text')).toBeEnabled()
       await expect(page.getByTestId('text-draft')).toHaveCount(0)
+      // It is selected with the Select tool (the ribbon stays on Fill & sign), ready to move or restyle.
+      await expect(placedFrame(page)).toHaveAttribute('aria-label', /Selected Text/)
+      await expect(page.locator('button[data-tool="markup.select"]')).toHaveAttribute('aria-pressed', 'true')
+      await expect(page.locator('button[data-task="fill"]')).toHaveAttribute('aria-pressed', 'true')
 
-      await save(page)
-      await expect(dot(page)).toHaveCount(0)
+      // Saving asks; locking draws it into the page.
+      await saveFilled(page, 'Lock into page')
       const saved = await loadSaved(path)
-      const content = await pageContent(saved, 0)
-      expect(content).toContain(hexOf('Hello stamp'))
-      expect(content).toMatch(/\/\S+ 18 Tf/)
-      expect(content).toMatch(/1 0 0 rg/)
+      expect(fillItems(saved, 0)).toHaveLength(0)
+      const model = await pageModel(new Uint8Array(readFileSync(path)))
+      const line = model.lines.find((l) => model.text.slice(l.start, l.end).includes('Hello stamp'))!
+      expect(line).toBeDefined()
+      expect(line.size).toBeCloseTo(18, 0)
       // Placed where it was clicked: the text starts at the click x, and its baseline is just below the click.
-      const tm = /1 0 0 1 ([\d.]+) ([\d.]+) Tm/.exec(content.slice(content.lastIndexOf('BT')))!
-      expect(Number(tm[1])).toBeCloseTo(200 / s, 0)
-      const clickY = 792 - 300 / s
-      expect(Number(tm[2])).toBeGreaterThan(clickY - 22)
-      expect(Number(tm[2])).toBeLessThan(clickY + 4)
+      expect(line.x0).toBeGreaterThan(200 / s - 1)
+      expect(line.x0).toBeLessThan(200 / s + 6)
+      // (The model measures the baseline from the top of the page as displayed.)
+      expect(line.baseline).toBeGreaterThan(300 / s - 4)
+      expect(line.baseline).toBeLessThan(300 / s + 22)
       // Other pages are untouched.
-      expect(await pageContent(saved, 1)).not.toContain(hexOf('Hello stamp'))
+      expect((await pageModel(new Uint8Array(readFileSync(path)), 1)).text).not.toContain('Hello stamp')
 
       // Reopen the saved file: the stamped text is real page text (found by PDF.js' text layer).
       await menuClick(app, 'File', 'Reload from Disk')
@@ -625,7 +662,7 @@ test.describe('add text and stamps', () => {
       await page.getByRole('button', { name: 'Add to page' }).click()
       await expect(undoBtn(page)).toBeDisabled()
 
-      // Drag by the Move handle, resize by the corner handle, then apply.
+      // Drag by the Move handle, resize by the corner handle, then apply. (The empty box above closed; click again.)
       await page.mouse.click(pb.x + 150, pb.y + 200)
       const draft = page.getByTestId('text-draft')
       await page.getByLabel('Text to add to the page').fill('Привет мир, this is a long line that must wrap inside the box')
@@ -648,7 +685,7 @@ test.describe('add text and stamps', () => {
       await page.getByLabel('Text to add to the page').press('Control+Enter')
       await expect(undoBtn(page, 'Undo Add text')).toBeEnabled()
 
-      await save(page)
+      await saveFilled(page, 'Lock into page')
       const saved = await loadSaved(path)
       // Text outside WinAnsi is drawn by the text engine (inside a `cm`, so its Tm operators are relative): the
       // position is checked on the page as a reader sees it (page text model) instead of in the Tm operands.
@@ -656,7 +693,10 @@ test.describe('add text and stamps', () => {
       const typed = 'Привет мир, this is a long line that must wrap inside the box'
       const drawn = model.lines.filter((l) => typed.includes(model.text.slice(l.start, l.end).trim()))
       expect(drawn.length).toBeGreaterThan(2) // the sentence wrapped into several lines
-      expect(Math.min(...drawn.map((l) => l.x0))).toBeCloseTo((150 + 60) / s, 0)
+      // (The text box keeps a 2 pt inner margin.)
+      const left = Math.min(...drawn.map((l) => l.x0))
+      expect(left).toBeGreaterThan((150 + 60) / s - 1)
+      expect(left).toBeLessThan((150 + 60) / s + 4)
       const type0 = [...saved.context.enumerateIndirectObjects()].filter(([, o]) => (o as unknown as { get?(n: PDFName): unknown }).get?.(PDFName.of('Subtype'))?.toString() === '/Type0')
       expect(type0.length).toBe(1)
       await menuClick(app, 'File', 'Reload from Disk')
@@ -684,7 +724,7 @@ test.describe('add text and stamps', () => {
     }
   })
 
-  test('check mark, cross, dot and today’s date stamps are permanent page content and undoable', async () => {
+  test('check mark, cross, dot and today’s date are editable Fill & sign items, undoable, and can be kept editable on save', async () => {
     const path = copyFixture('flat.pdf')
     const { app, page } = await launch({ files: [path] })
     try {
@@ -694,30 +734,46 @@ test.describe('add text and stamps', () => {
       await clickTool(page, 'Check')
       await page.mouse.click(pb.x + 100, pb.y + 400)
       await expect(undoBtn(page, 'Undo Add check mark')).toBeEnabled()
+      // Placed and selected: back to the Select tool, with the new mark's frame on the click.
+      await expect(placedFrame(page)).toBeVisible()
+      const f = await box(placedFrame(page))
+      expect(Math.abs(f.x + f.width / 2 - (pb.x + 100))).toBeLessThan(3)
       await clickTool(page, 'Cross')
       await page.mouse.click(pb.x + 200, pb.y + 400)
       await clickTool(page, 'Dot')
       await page.mouse.click(pb.x + 300, pb.y + 400)
       await clickTool(page, 'Date')
       await page.mouse.click(pb.x + 400, pb.y + 400)
+      await expect(undoBtn(page, 'Undo Add date')).toBeEnabled()
       const today = await page.evaluate(() => new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }))
 
       await undoBtn(page, 'Undo Add date').click()
       await redoBtn(page).click()
-      await save(page)
-      await expect(dot(page)).toHaveCount(0)
+      await saveFilled(page, 'Keep editable')
       const saved = await loadSaved(path)
-      const content = await pageContent(saved, 0)
-      expect((content.match(/ l$/gm) ?? []).length).toBe(4) // 2 segments per check / cross
-      expect(content).toContain(' c') // the dot's circle
-      expect(content).toContain(hexOf(today))
-      // The check mark is centered on the click.
-      const firstMove = /([\d.]+) ([\d.]+) m\n/.exec(content)!
-      expect(Number(firstMove[1])).toBeGreaterThan(100 / s - 8)
-      expect(Number(firstMove[1])).toBeLessThan(100 / s + 8)
-
-      await menuClick(app, 'File', 'Reload from Disk')
-      await expect(page.locator('[data-page="1"] .textLayer')).toContainText(today)
+      const items = fillItems(saved, 0)
+      expect(items.map((i) => [i.kind, i.name ?? ''])).toEqual([
+        ['Mark', 'EpdfCheck'],
+        ['Mark', 'EpdfCross'],
+        ['Mark', 'EpdfDot'],
+        ['Text', '']
+      ])
+      expect(items[3].contents).toBe(today)
+      // Each is centred on its click.
+      const centre = (i: number) => (items[i].rect.x1 + items[i].rect.x2) / 2
+      expect(centre(0)).toBeCloseTo(100 / s, 0)
+      expect(centre(2)).toBeCloseTo(300 / s, 0)
+      expect(centre(3)).toBeGreaterThan(400 / s - 3)
+      expect(centre(3)).toBeLessThan(400 / s + 3)
+      expect((items[0].rect.y1 + items[0].rect.y2) / 2).toBeCloseTo(792 - 400 / s, 0)
+      // Their drawings: two strokes per check / cross, a filled circle for the dot.
+      const ap = (i: number): string => {
+        const n = items[i].dict.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N')) as PDFRawStream
+        return Buffer.from(decodePDFRawStream(n).decode()).toString('latin1')
+      }
+      expect((ap(0).match(/ l/g) ?? []).length).toBe(2)
+      expect((ap(1).match(/ S/g) ?? []).length).toBe(2)
+      expect(ap(2)).toMatch(/ c f/)
     } finally {
       await app.close()
     }
@@ -735,17 +791,18 @@ test.describe('add text and stamps', () => {
       await page.getByLabel('Text to add to the page').fill('Upright')
       await page.getByLabel('Text to add to the page').press('Control+Enter')
       await expect(undoBtn(page, 'Undo Add text')).toBeEnabled()
-      await save(page)
-      const saved = await loadSaved(path)
-      const content = await pageContent(saved, 0)
-      const tm = [...content.matchAll(/([-\d.e]+) ([-\d.e]+) ([-\d.e]+) ([-\d.e]+) ([-\d.e]+) ([-\d.e]+) Tm/g)].pop()!
-      const angle = (Math.round((Math.atan2(Number(tm[2]), Number(tm[1])) * 180) / Math.PI) + 360) % 360
-      expect(angle).toBe(90) // text runs up the unrotated page = left to right on the rotated one
-      // Click (300,350 css) on a 90-degree page = user (350/s, 300/s); the baseline start is near it.
-      expect(Number(tm[5])).toBeGreaterThan(350 / s - 25)
-      expect(Number(tm[5])).toBeLessThan(350 / s + 5)
-      expect(Number(tm[6])).toBeGreaterThan(300 / s - 4)
-      expect(Number(tm[6])).toBeLessThan(300 / s + 4)
+      await saveFilled(page, 'Lock into page')
+      // Read as the reader sees the rotated page: an upright, left-to-right line starting at the click.
+      const model = await pageModel(new Uint8Array(readFileSync(path)))
+      const line = model.lines.find((l) => model.text.slice(l.start, l.end).includes('Upright'))!
+      expect(line).toBeDefined()
+      expect(line.angle).toBe(0)
+      // The model reports positions on the page as displayed (792 x 612, from the top left): the click (300, 350 css)
+      // is at (300/s, 350/s); the line starts there (2 pt margin) with its baseline just below the click.
+      expect(line.x0).toBeGreaterThan(300 / s - 1)
+      expect(line.x0).toBeLessThan(300 / s + 5)
+      expect(line.baseline).toBeGreaterThan(350 / s - 4)
+      expect(line.baseline).toBeLessThan(350 / s + 22)
       await menuClick(app, 'File', 'Reload from Disk')
       await expect(page.locator('[data-page="1"] .textLayer')).toContainText('Upright')
     } finally {
@@ -759,7 +816,7 @@ test.describe('add text and stamps', () => {
 // ---------------------------------------------------------------------------------------------------------
 
 test.describe('visual signatures', () => {
-  test('create by drawing, list, place on a page, and save: an image XObject lands where it was clicked', async () => {
+  test('create by drawing, list, place on a page (one click), and save: the signature lands where it was clicked', async () => {
     const path = copyFixture('flat.pdf')
     const { app, page } = await launch({ files: [path] })
     try {
@@ -777,21 +834,17 @@ test.describe('visual signatures', () => {
       const pb = await box(page.locator('[data-page="2"]'))
       const s = pb.width / 612
       await page.mouse.click(pb.x + 300, pb.y + 500)
-      const draft = page.getByTestId('signature-draft')
-      await expect(draft).toBeVisible()
-      await expect(draft).toBeFocused()
-      await page.getByRole('button', { name: 'Place signature' }).click()
       await expect(undoBtn(page, 'Undo Sign')).toBeEnabled()
-      await expect(draft).toHaveCount(0)
+      // Placed at once and selected with the Select tool, ready to move or resize.
+      await expect(placedFrame(page)).toHaveAttribute('aria-label', /Selected Signature/)
+      await expect(page.locator('button[data-tool="markup.select"]')).toHaveAttribute('aria-pressed', 'true')
 
-      await save(page)
-      await expect(dot(page)).toHaveCount(0)
+      await saveFilled(page, 'Keep editable')
       const saved = await loadSaved(path)
-      expect(pageImages(saved, 0)).toEqual([]) // page 1 untouched
-      expect(pageImages(saved, 1)).toHaveLength(1)
-      const placed = imagePlacements(await pageContent(saved, 1))
-      expect(placed).toHaveLength(1)
-      const b = placed[0].box
+      expect(fillItems(saved, 0)).toEqual([]) // page 1 untouched
+      const [sig] = fillItems(saved, 1)
+      expect(sig.kind).toBe('Signature')
+      const b = sig.rect
       // Centered on the click (300, 500 css → pt), 150 pt wide, aspect ratio of the stored PNG.
       expect((b.x1 + b.x2) / 2).toBeCloseTo(300 / s, 0)
       expect((b.y1 + b.y2) / 2).toBeCloseTo(792 - 500 / s, 0)
@@ -799,15 +852,15 @@ test.describe('visual signatures', () => {
       expect((b.x2 - b.x1) / (b.y2 - b.y1)).toBeCloseTo(list[0].width / list[0].height, 1)
 
       // The image has an alpha channel (a soft mask), so the page shows through the signature.
-      const xo = saved.getPage(1).node.Resources()!.lookup(PDFName.of('XObject'), PDFDict)
-      const img = xo.lookup(xo.keys()[0]) as PDFStream
+      const ap = sig.dict.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N')) as PDFStream
+      const img = ap.dict.lookup(PDFName.of('Resources'), PDFDict).lookup(PDFName.of('XObject'), PDFDict).lookup(PDFName.of('Im0')) as PDFStream
       expect(img.dict.get(PDFName.of('SMask'))).toBeDefined()
     } finally {
       await app.close()
     }
   })
 
-  test('drag, resize (aspect ratio kept) and arrow-key nudge the placement before committing; the date goes next to it', async () => {
+  test('after placing: arrow-key nudge, drag and resize (aspect ratio kept) the signature; the date goes under it', async () => {
     const path = copyFixture('flat.pdf')
     const { app, page } = await launch({ files: [path] })
     try {
@@ -820,45 +873,51 @@ test.describe('visual signatures', () => {
       const pb = await box(page.locator('[data-page="1"]'))
       const s = pb.width / 612
       await page.mouse.click(pb.x + 300, pb.y + 400)
-      const draft = page.getByTestId('signature-draft')
-      await expect(draft).toBeFocused()
+      await expect(undoBtn(page, 'Undo Sign')).toBeEnabled()
+      const frame = placedFrame(page)
+      await expect(frame).toBeVisible()
+      await frame.focus()
 
-      // Keyboard: 10 x ArrowRight = +10 pt, Shift+ArrowDown = +10 pt, "+" grows by 8 %.
-      for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowRight')
+      // Keyboard: 10 x ArrowRight = +10 pt, Shift+ArrowDown = 10 pt down (each is one saved step).
+      for (let i = 0; i < 10; i++) {
+        await page.keyboard.press('ArrowRight')
+        await expect(undoBtn(page, 'Undo Move annotation')).toBeEnabled()
+      }
       await page.keyboard.press('Shift+ArrowDown')
-      await page.keyboard.press('+')
-      // Pointer: drag the box 30 px left, then its corner 40 px right (aspect kept).
-      const d0 = await box(draft)
+      await page.waitForTimeout(400)
+      // Pointer: drag it 30 px left, then its bottom-right corner 40 px right (aspect kept).
+      const d0 = await box(frame)
       await page.mouse.move(d0.x + d0.width / 2, d0.y + d0.height / 2)
       await page.mouse.down()
       await page.mouse.move(d0.x + d0.width / 2 - 30, d0.y + d0.height / 2, { steps: 4 })
       await page.mouse.up()
-      const handle = await box(page.getByTestId('signature-resize'))
-      await page.mouse.move(handle.x + 6, handle.y + 6)
+      await expect.poll(async () => Math.round((await box(frame)).x)).toBe(Math.round(d0.x - 30))
+      await page.waitForTimeout(400)
+      const handle = await box(frame.locator('[data-handle="se"]'))
+      await page.mouse.move(handle.x + 5, handle.y + 5)
       await page.mouse.down()
-      await page.mouse.move(handle.x + 6 + 40, handle.y + 6, { steps: 4 })
+      await page.mouse.move(handle.x + 5 + 40, handle.y + 5, { steps: 4 })
       await page.mouse.up()
-      const d1 = await box(draft)
+      await expect(undoBtn(page, 'Undo Resize annotation')).toBeEnabled()
+      await page.waitForTimeout(400)
+      const d1 = await box(frame)
       expect(d1.width / d1.height).toBeCloseTo(aspect, 1)
-      await page.keyboard.press('Enter')
-      await expect(undoBtn(page, 'Undo Sign')).toBeEnabled()
 
-      await save(page)
+      await saveFilled(page, 'Keep editable')
       const saved = await loadSaved(path)
-      const content = await pageContent(saved, 0)
-      const [placed] = imagePlacements(content)
-      const w = placed.box.x2 - placed.box.x1
-      expect(w).toBeCloseTo(150 * 1.08 + 40 / s, 0)
-      expect(w / (placed.box.y2 - placed.box.y1)).toBeCloseTo(aspect, 1)
+      const [sig, date] = fillItems(saved, 0)
+      expect(sig.kind).toBe('Signature')
+      const w = sig.rect.x2 - sig.rect.x1
+      expect(w).toBeCloseTo(150 + 40 / s, 0)
+      expect(w / (sig.rect.y2 - sig.rect.y1)).toBeCloseTo(aspect, 1)
       // Left edge: click - half of the default width, +10 pt (arrows), -30 px (drag). The box grew to the right only.
-      expect(placed.box.x1).toBeCloseTo(300 / s - 75 + 10 - 30 / s, 0)
-      // The date text sits just under the image, left-aligned with it.
+      expect(sig.rect.x1).toBeCloseTo(300 / s - 75 + 10 - 30 / s, 0)
+      // The date is a text item just under where the signature was placed, left-aligned with it.
       const today = await page.evaluate(() => new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }))
-      expect(content).toContain(hexOf(today))
-      const tm = [...content.matchAll(/1 0 0 1 ([\d.]+) ([\d.]+) Tm/g)].pop()!
-      expect(Number(tm[1])).toBeCloseTo(placed.box.x1, 0)
-      expect(Number(tm[2])).toBeLessThan(placed.box.y1)
-      expect(Number(tm[2])).toBeGreaterThan(placed.box.y1 - 14)
+      expect(date.kind).toBe('Text')
+      expect(date.contents).toBe(today)
+      expect(date.rect.x1).toBeCloseTo(300 / s - 75, 0)
+      expect(date.rect.y2).toBeLessThan(792 - 400 / s)
     } finally {
       await app.close()
     }
@@ -875,12 +934,15 @@ test.describe('visual signatures', () => {
       const pb = await box(page.locator('[data-page="1"]'))
       const s = pb.width / 792
       await page.mouse.click(pb.x + 400, pb.y + 300)
-      await page.getByRole('button', { name: 'Place signature' }).click()
       await expect(undoBtn(page, 'Undo Sign')).toBeEnabled()
-      await save(page)
+      await saveFilled(page, 'Keep editable')
       const saved = await loadSaved(path)
-      const [placed] = imagePlacements(await pageContent(saved, 0))
-      const b = placed.box
+      const [item] = fillItems(saved, 0)
+      const b = item.rect
+      // Drawn upright for the reader: its appearance is turned by the page's 90 degrees.
+      const n = item.dict.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N')) as PDFStream
+      const m = n.dict.lookup(PDFName.of('Matrix'), PDFArray).asArray().map((v) => Number(v.toString()))
+      expect(Math.round((Math.atan2(m[1], m[0]) * 180) / Math.PI)).toBe(90)
       // 90-degree page: css (x, y) = s * (user y, user x). The image is 150 pt wide on screen = along user y.
       expect((b.x1 + b.x2) / 2).toBeCloseTo(300 / s, 0)
       expect((b.y1 + b.y2) / 2).toBeCloseTo(400 / s, 0)
@@ -907,12 +969,11 @@ test.describe('visual signatures', () => {
       const pb = await box(page.locator('[data-page="1"]'))
       const s = pb.width / 612
       await page.mouse.click(pb.x + 250, pb.y + 250)
-      await page.getByTestId('signature-draft').press('Enter')
       await expect(undoBtn(page, 'Undo Add initials')).toBeEnabled()
-      await save(page)
-      const [placed] = imagePlacements(await pageContent(await loadSaved(path), 0))
-      expect(placed.box.x2 - placed.box.x1).toBeCloseTo(60, 0)
-      expect((placed.box.x1 + placed.box.x2) / 2).toBeCloseTo(250 / s, 0)
+      await saveFilled(page, 'Keep editable')
+      const [placed] = fillItems(await loadSaved(path), 0)
+      expect(placed.rect.x2 - placed.rect.x1).toBeCloseTo(60, 0)
+      expect((placed.rect.x1 + placed.rect.x2) / 2).toBeCloseTo(250 / s, 0)
     } finally {
       await app.close()
     }
@@ -1139,18 +1200,21 @@ test.describe('visual signatures', () => {
       await expect(dialog).toHaveCount(0)
       expect(await signatureList(page)).toHaveLength(0)
 
-      // With a signature saved: cancel a placement.
+      // With a signature saved: a placement is taken back with Undo, or deleted (asking first).
       await createDrawnSignature(page, app)
       await clickTool(page, 'Sign')
       const pb = await box(page.locator('[data-page="1"]'))
       await page.mouse.click(pb.x + 300, pb.y + 300)
-      await expect(page.getByTestId('signature-draft')).toBeVisible()
-      await page.keyboard.press('Escape')
-      await expect(page.getByTestId('signature-draft')).toHaveCount(0)
+      await expect(placedFrame(page)).toBeVisible()
+      await undoBtn(page, 'Undo Sign').click()
+      await expect(placedFrame(page)).toHaveCount(0)
+      await clickTool(page, 'Sign')
       await page.mouse.click(pb.x + 300, pb.y + 300)
-      await page.getByRole('button', { name: 'Cancel', exact: true }).click()
-      await expect(undoBtn(page)).toBeDisabled()
-      await expect(dot(page)).toHaveCount(0)
+      await placedFrame(page).focus()
+      await page.keyboard.press('Delete')
+      await page.getByRole('dialog', { name: 'Delete this signature?' }).getByRole('button', { name: 'Delete', exact: true }).click()
+      await expect(placedFrame(page)).toHaveCount(0)
+      await clickTool(page, 'Sign')
 
       // Delete: cancelling keeps it, confirming removes it.
       await menuClick(app, 'Tools', 'Signatures…')
@@ -1231,7 +1295,7 @@ test.describe('accessibility (WCAG 2.1 A/AA)', () => {
     }
   })
 
-  test('the Signatures dialog (draw, type, import) and the placement box: light and dark', async () => {
+  test('the Signatures dialog (draw, type, import) and a placed signature: light and dark', async () => {
     const { app, page } = await launch({ files: [copyFixture('flat.pdf')] })
     try {
       await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
@@ -1260,7 +1324,7 @@ test.describe('accessibility (WCAG 2.1 A/AA)', () => {
       await clickTool(page, 'Sign')
       const pb = await box(page.locator('[data-page="1"]'))
       await page.mouse.click(pb.x + 300, pb.y + 300)
-      await expect(page.getByTestId('signature-draft')).toBeVisible()
+      await expect(placedFrame(page)).toBeVisible()
       for (const theme of [false, true]) {
         await dark(app, theme)
         expect(await axeWithOverlays(page, `placement ${theme ? 'dark' : 'light'}`)).toEqual([])

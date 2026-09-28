@@ -45,6 +45,16 @@ export const SUBTYPE_LABEL: Record<string, string> = {
 
 export const subtypeLabel = (s: string): string => SUBTYPE_LABEL[s] ?? s
 
+const FILL_MARK_LABEL: Record<string, string> = { EpdfCheck: 'Check mark', EpdfCross: 'Cross', EpdfDot: 'Dot' }
+
+/** What the user calls it: "Signature", "Text", "Check mark" for Fill & sign items, else the annotation type. */
+export function describeAnnot(a: Pick<AnnotInfo, 'subtype' | 'iconName'> & Partial<Pick<AnnotInfo, 'fillSign'>>): string {
+  if (a.fillSign === 'Signature') return 'Signature'
+  if (a.fillSign === 'Text') return 'Text'
+  if (a.fillSign === 'Mark') return FILL_MARK_LABEL[a.iconName] ?? 'Mark'
+  return subtypeLabel(a.subtype)
+}
+
 export interface AnnotInfo {
   /** Stable within one document version: "<obj> <gen>" for indirect annotations, "p<page>.<index>" for direct ones. */
   id: string
@@ -88,6 +98,8 @@ export interface AnnotInfo {
   complex: boolean
   /** Created by Epdf (its /NM starts with "epdf-"): we may safely regenerate/replace its appearance. */
   ours: boolean
+  /** A Fill & sign item (/EpdfFill): a mark, typed text or a signature, not a comment. */
+  fillSign: 'Mark' | 'Text' | 'Signature' | null
 }
 
 export interface Capabilities {
@@ -101,13 +113,15 @@ export interface Capabilities {
 }
 
 /** What can be changed on an annotation without destroying it (see ops.ts for how each edit is applied). */
-export function capabilities(a: Pick<AnnotInfo, 'subtype' | 'complex' | 'ours'>): Capabilities {
+export function capabilities(a: Pick<AnnotInfo, 'subtype' | 'complex' | 'ours'> & Partial<Pick<AnnotInfo, 'fillSign'>>): Capabilities {
   const regen = ['Highlight', 'Underline', 'StrikeOut', 'Squiggly', 'Ink', 'Square', 'Circle', 'Line', 'FreeText', 'Text'].includes(a.subtype) && !a.complex
   const stamp = a.subtype === 'Stamp' && a.ours
+  // A Fill & sign check / cross / dot is drawn from /C, so it can be recoloured.
+  const mark = stamp && a.fillSign === 'Mark'
   return {
     move: true,
     resize: ['FreeText', 'Square', 'Circle', 'Ink'].includes(a.subtype) || a.subtype === 'Stamp',
-    recolor: regen,
+    recolor: regen || mark,
     fill: ['Square', 'Circle', 'FreeText'].includes(a.subtype) && regen,
     opacity: regen || stamp,
     width: ['Ink', 'Square', 'Circle', 'Line', 'FreeText'].includes(a.subtype) && regen,

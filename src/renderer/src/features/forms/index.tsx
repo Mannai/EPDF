@@ -5,11 +5,12 @@ import { FormFieldsOverlay } from './FieldsOverlay'
 import { FormsHost } from './FormsHost'
 import { useForms } from './store'
 import { TextOptions, TextToolOverlay, commitTextDraft } from './textTool'
+import './fillSignSave'
 
 /**
  * Feature: form filling + flat-PDF text and stamps.
  *  - AcroForm fields become real HTML inputs over the page (FieldsOverlay); edits go through `editPdf`.
- *  - "Add text" and check / cross / dot / date stamps draw permanent content into the page.
+ *  - "Add text" and check / cross / dot / date stamps are Fill & sign items: editable until locked into the page.
  */
 
 const Svg = ({ children }: { children: React.ReactNode }): JSX.Element => (
@@ -107,5 +108,6 @@ registerDialog(FormsHost)
 
 // Switching tools (or leaving the page viewer) must not throw away a half-typed box: it is written to the page.
 useWorkspace.subscribe((s, prev) => {
-  if (prev.activeTool === 'forms.addText' && s.activeTool !== 'forms.addText') void commitTextDraft()
+  // (Not selected afterwards: the user just picked the tool they want.)
+  if (prev.activeTool === 'forms.addText' && s.activeTool !== 'forms.addText') void commitTextDraft({ select: false })
 })

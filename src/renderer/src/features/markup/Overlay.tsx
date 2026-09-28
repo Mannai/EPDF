@@ -7,10 +7,12 @@ import { hexToRgb } from './pdf/basics'
 import { geomOfViewport, pdfRectToView, viewRectToPdf, viewToPdf, type PageGeom, type Pt, type Rect } from './pdf/geometry'
 import { hitTest } from './pdf/hit'
 import { smoothStroke } from './pdf/ink'
-import { capabilities, subtypeLabel, type AnnotInfo } from './pdf/model'
+import { capabilities, describeAnnot, type AnnotInfo } from './pdf/model'
 import { registerPage } from './pages'
 import { NoteDraftEditor, TextBoxDraftEditor } from './DraftEditors'
 import { NoteGhost, StampGhost, TextBoxGhost } from './Ghost'
+import { liftRegion, liftedBoxAt, type Lifted } from '../../viewer/lift'
+import { CanvasAt } from '../../viewer/LiftedView'
 import { TOOL, useMarkup } from './store'
 import { openContextMenu, type ContextItem } from '../../components/contextMenu'
 import { COMMENTS_PANEL } from './Options'
@@ -31,8 +33,18 @@ const HANDLES: { h: Handle; cursor: string; x: number; y: number }[] = [
 
 const MIN_SIZE_PX = 12
 
-function applyDrag(mode: DragMode, r: Rect, dx: number, dy: number): Rect {
+function applyDrag(mode: DragMode, r: Rect, dx: number, dy: number, keepAspect = false): Rect {
   if (mode === 'move') return [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy]
+  if (keepAspect && mode.length === 2) {
+    // A corner: the width follows the pointer, the height follows the width; the opposite corner stays put.
+    const w0 = Math.max(1, r[2] - r[0])
+    const h0 = Math.max(1, r[3] - r[1])
+    const w = Math.max(MIN_SIZE_PX, mode.includes('e') ? w0 + dx : w0 - dx)
+    const h = (w * h0) / w0
+    const left = mode.includes('w') ? r[2] - w : r[0]
+    const top = mode.includes('n') ? r[3] - h : r[1]
+    return [left, top, left + w, top + h]
+  }
   let [l, t, rr, b] = r
   if (mode.includes('w')) l = Math.min(l + dx, rr - MIN_SIZE_PX)
   if (mode.includes('e')) rr = Math.max(rr + dx, l + MIN_SIZE_PX)
@@ -84,7 +96,9 @@ export function MarkupOverlay({ docId, pageIndex, scale, width, height, viewport
       {geom && tool && (tool === TOOL.ink || tool === TOOL.textbox || tool === TOOL.note || tool === TOOL.stamp || tool in SHAPE_TOOLS) && (
         <DrawCatcher docId={docId} pageIndex={pageIndex} scale={scale} geom={geom} width={width} height={height} tool={tool} />
       )}
-      {geom && showFrame && selected && <SelectionFrame docId={docId} scale={scale} geom={geom} annot={selected} />}
+      {geom && showFrame && selected && (
+        <SelectionFrame docId={docId} pageIndex={pageIndex} scale={scale} geom={geom} annot={selected} viewport={viewport} renderVersion={renderVersion} rootRef={rootRef} />
+      )}
       {geom && draftHere?.kind === 'note' && <NoteDraftEditor draft={draftHere} scale={scale} geom={geom} width={width} height={height} />}
       {geom && draftHere?.kind === 'textbox' && <TextBoxDraftEditor draft={draftHere} scale={scale} geom={geom} />}
     </div>
@@ -167,10 +181,36 @@ const rectStyle = (r: Rect): React.CSSProperties => ({ left: r[0], top: r[1], wi
 
 // ---------------------------------------------------------------- selection frame
 
-function SelectionFrame({ docId, scale, geom, annot }: { docId: string; scale: number; geom: PageGeom; annot: AnnotInfo }): JSX.Element {
+function SelectionFrame({
+  docId,
+  pageIndex,
+  scale,
+  geom,
+  annot,
+  viewport,
+  renderVersion,
+  rootRef
+}: {
+  docId: string
+  pageIndex: number
+  scale: number
+  geom: PageGeom
+  annot: AnnotInfo
+  viewport: PageOverlayProps['viewport']
+  renderVersion: number
+  rootRef: React.RefObject<HTMLDivElement | null>
+}): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const caps = capabilities(annot)
+  // Stamps and signatures keep their proportions: only the corner handles, and they scale both ways.
+  const keepAspect = annot.subtype === 'Stamp'
   const [drag, setDrag] = useState<{ cur: Rect; done: boolean } | null>(null)
+  // The annotation itself, lifted off the page so it follows the pointer (not just an outline), and kept where it was
+  // dropped until the redrawn page arrives: `landed` is the render version at the drop.
+  const [lift, setLift] = useState<{ lifted: Lifted; from: Rect; at: Rect; landed: number | null } | null>(null)
+  const dragging = useRef(false)
+  const renderRef = useRef(renderVersion)
+  renderRef.current = renderVersion
   const reveal = useMarkup((s) => s.reveal)
   const base = pdfRectToViewPx(geom, annot.rect, scale)
   const rect = drag?.cur ?? base
@@ -179,6 +219,11 @@ function SelectionFrame({ docId, scale, geom, annot }: { docId: string; scale: n
   useEffect(() => {
     setDrag((d) => (d?.done ? null : d))
   }, [annot])
+
+  // The page has been redrawn since the drop: the real annotation is in its new place now.
+  useEffect(() => {
+    setLift((l) => (l && l.landed !== null && renderVersion !== l.landed ? null : l))
+  }, [renderVersion])
 
   useEffect(() => {
     if (!reveal || reveal.id !== annot.id) return
@@ -204,20 +249,43 @@ function SelectionFrame({ docId, scale, geom, annot }: { docId: string; scale: n
     const sy = e.clientY
     const from = base
     let latest = from
+    let clicked = false // released without moving
+    let landedAt: number | null = null // render version when it was dropped
+    dragging.current = true
     setDrag({ cur: from, done: false })
+    const pageEl = rootRef.current?.closest('.epdf-page') as HTMLElement | null
+    if (pageEl && viewport) {
+      void liftRegion({ pageEl, docId, pageIndex, viewport, rect: from, mode: 'annotation' }).then((lifted) => {
+        // Too late to help: a click without a move, or the page was already redrawn after the drop.
+        if (!lifted || clicked || (landedAt !== null && renderRef.current !== landedAt)) return
+        setLift((l) => l ?? { lifted, from, at: latest, landed: landedAt })
+      })
+    }
     const onMove = (ev: PointerEvent): void => {
-      latest = applyDrag(mode, from, ev.clientX - sx, ev.clientY - sy)
+      latest = applyDrag(mode, from, ev.clientX - sx, ev.clientY - sy, keepAspect)
       setDrag({ cur: latest, done: false })
+      setLift((l) => (l ? { ...l, at: latest } : l))
     }
     const onUp = (): void => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
       window.removeEventListener('pointercancel', onUp)
       const moved = Math.abs(latest[0] - from[0]) + Math.abs(latest[1] - from[1]) + Math.abs(latest[2] - from[2]) + Math.abs(latest[3] - from[3])
-      if (moved < 3) return setDrag(null)
+      if (moved < 3) {
+        clicked = true
+        dragging.current = false
+        setLift(null)
+        return setDrag(null)
+      }
+      landedAt = renderRef.current
       setDrag({ cur: latest, done: true })
+      setLift((l) => (l ? { ...l, at: latest, landed: landedAt } : l))
       void commit(mode, from, latest).then((ok) => {
-        if (!ok) setDrag(null)
+        dragging.current = false
+        if (!ok) {
+          setDrag(null)
+          setLift(null)
+        }
       })
     }
     window.addEventListener('pointermove', onMove)
@@ -257,9 +325,12 @@ function SelectionFrame({ docId, scale, geom, annot }: { docId: string; scale: n
     }
   }
 
-  const label = `${subtypeLabel(annot.subtype)} by ${annot.author || 'unknown author'}${annot.contents ? `: ${annot.contents.slice(0, 60)}` : ''}`
+  const label = `${describeAnnot(annot)} by ${annot.author || 'unknown author'}${annot.contents ? `: ${annot.contents.slice(0, 60)}` : ''}`
 
   return (
+    <>
+      {lift?.lifted.eraser && <CanvasAt canvas={lift.lifted.eraser} box={lift.lifted.box} testId="lift-eraser" />}
+      {lift && <CanvasAt canvas={lift.lifted.image} box={liftedBoxAt(lift.lifted, lift.from, lift.at)} testId="lift-image" />}
     <div
       ref={ref}
       role="group"
@@ -274,7 +345,7 @@ function SelectionFrame({ docId, scale, geom, annot }: { docId: string; scale: n
       onContextMenu={(e) => void openContextMenu(e, annotationMenu(docId, annot))}
     >
       {caps.resize &&
-        HANDLES.map((h) => (
+        HANDLES.filter((h) => !keepAspect || h.h.length === 2).map((h) => (
           <div
             key={h.h}
             aria-hidden="true"
@@ -285,6 +356,7 @@ function SelectionFrame({ docId, scale, geom, annot }: { docId: string; scale: n
           />
         ))}
     </div>
+    </>
   )
 }
 

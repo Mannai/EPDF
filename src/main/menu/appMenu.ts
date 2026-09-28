@@ -124,6 +124,25 @@ export function installMenus(c: Controller): void {
             c.repos.settings.set('confirmDelete', menuItem.checked)
             for (const w of c.windows.all()) c.windows.send(w, 'menu:action', { type: 'settings-changed' })
           }
+        },
+        {
+          // What saving does with Fill & sign text, marks and signatures that are still editable.
+          label: 'When Saving Fill && Sign Items',
+          submenu: (
+            [
+              ['ask', 'Ask Each Time'],
+              ['lock', 'Lock Them Into the Page'],
+              ['keep', 'Keep Them Editable']
+            ] as const
+          ).map(([value, label]) => ({
+            label,
+            type: 'radio' as const,
+            checked: c.settings.fillSignOnSave === value,
+            click: () => {
+              c.repos.settings.set('fillSignOnSave', value)
+              for (const w of c.windows.all()) c.windows.send(w, 'menu:action', { type: 'settings-changed' })
+            }
+          }))
         }
       ])
     },

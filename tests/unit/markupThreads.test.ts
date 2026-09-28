@@ -46,6 +46,7 @@ function annot(o: Partial<AnnotInfo>): AnnotInfo {
     hasAppearance: true,
     complex: false,
     ours: false,
+    fillSign: null,
     ...o
   }
 }

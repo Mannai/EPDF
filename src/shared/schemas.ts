@@ -33,7 +33,9 @@ export const SettingsSchema = z.object({
   restoreOnLaunch: z.boolean(),
   sidebarOpen: z.boolean(),
   /** Delete / Backspace on something selected on a page (comment, shape, link, field...) asks first. */
-  confirmDelete: z.boolean()
+  confirmDelete: z.boolean(),
+  /** Saving a document with editable Fill & sign items: ask, lock them into the page, or keep them editable. */
+  fillSignOnSave: z.enum(['ask', 'lock', 'keep'])
 })
 export const SettingKeySchema = SettingsSchema.keyof()
 
@@ -82,5 +84,6 @@ export const SetSettingRequestSchema = z.discriminatedUnion('key', [
   z.object({ key: z.literal('defaultZoomMode'), value: ZoomModeSchema }),
   z.object({ key: z.literal('restoreOnLaunch'), value: z.boolean() }),
   z.object({ key: z.literal('sidebarOpen'), value: z.boolean() }),
-  z.object({ key: z.literal('confirmDelete'), value: z.boolean() })
+  z.object({ key: z.literal('confirmDelete'), value: z.boolean() }),
+  z.object({ key: z.literal('fillSignOnSave'), value: z.enum(['ask', 'lock', 'keep']) })
 ])

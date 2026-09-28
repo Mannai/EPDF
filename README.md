@@ -74,7 +74,8 @@ npm run dist:win     # NSIS installer (.exe) + MSI, x64
 | `latest.yml` + `.blockmap` | Auto-update | Upload next to the installer (see "Updates"). |
 
 **Explorer right-click entries.** The NSIS installer adds **Convert to PDF with Epdf** (pictures, Word/Excel/
-PowerPoint/OpenDocument, RTF, text, CSV) and **Combine files in Epdf** (the same, plus PDFs) to the context menu.
+PowerPoint/OpenDocument, RTF, text, CSV) and **Combine files in Epdf** (the same types) to the context menu. PDFs
+get no extra entries: Epdf appears for them only under **Open with**.
 They run the app with `--convert-to-pdf` / `--combine`; several selected files open one Combine screen. The menu text
 follows the installer's language. They live in `build/installer.nsh` and are removed by the uninstaller (as are the
 `.pdf` association leftovers and the update cache). User data (settings, library, signatures) is kept on uninstall.

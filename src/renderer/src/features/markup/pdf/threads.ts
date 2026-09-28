@@ -46,7 +46,8 @@ export function reviewStates(annots: readonly AnnotInfo[]): Map<string, { state:
 export function buildThreads(annots: readonly AnnotInfo[]): Thread[] {
   const byId = new Map(annots.map((a) => [a.id, a]))
   const states = reviewStates(annots)
-  const visible = annots.filter((a) => !isStateRecord(a))
+  // Fill & sign items (typed text, marks, signatures) are not comments.
+  const visible = annots.filter((a) => !isStateRecord(a) && !a.fillSign)
   const parentOf = (a: AnnotInfo): AnnotInfo | undefined => {
     const p = a.irt ? byId.get(a.irt) : undefined
     return p && !isStateRecord(p) ? p : undefined

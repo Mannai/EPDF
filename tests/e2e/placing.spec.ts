@@ -75,6 +75,23 @@ const menuChecked = (app: ElectronApplication, label: string): Promise<boolean |
     return find(Menu.getApplicationMenu()!.items)?.checked
   }, label)
 
+const menuRadio = (app: ElectronApplication, label: string): Promise<boolean | undefined> => menuChecked(app, label)
+
+/** Clicks an item of a submenu of the application menu (labels compared without `&` mnemonics). */
+function menuClickSub(app: ElectronApplication, menu: string, sub: string, item: string): Promise<void> {
+  return app.evaluate(
+    ({ Menu }, [m, s, i]) => {
+      const strip = (x: string): string => x.replace(/&(?!&)/g, '').replace(/&&/g, '&')
+      const top = Menu.getApplicationMenu()!.items.find((x) => strip(x.label) === m)
+      const submenu = top?.submenu?.items.find((x) => strip(x.label) === s)
+      const it = submenu?.submenu?.items.find((x) => strip(x.label) === i)
+      if (!it) throw new Error(`Menu item not found: ${m} > ${s} > ${i}`)
+      it.click()
+    },
+    [menu, sub, item]
+  )
+}
+
 test.describe('placing and changing things on a page', () => {
   test('leaving the Redact task ends its tool and closes its panel, so selecting text no longer marks it', async () => {
     const { app, page } = await open()
@@ -181,6 +198,134 @@ test.describe('placing and changing things on a page', () => {
       expect(stamp.get(PDFName.of('Name'))?.toString()).toBe('/Confidential')
       const [line] = await annotsOnDisk(path, 'Line')
       expect(line.lookup(PDFName.of('LE'), PDFArray).asArray().map(String)).toEqual(['/None', '/OpenArrow'])
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('dragging a shape moves the shape itself, and it stays where it was dropped while the page catches up', async () => {
+    const { app, page } = await open()
+    try {
+      await clickTool(page, 'markup.rect')
+      await page.getByRole('group', { name: /Rectangle options/ }).getByLabel('Fill').check()
+      await drag(page, await pdfPoint(page, 300, 300), await pdfPoint(page, 420, 220))
+      await expect(frame(page)).toBeVisible()
+      await page.waitForTimeout(800) // the page shows the new rectangle
+      const f = (await frame(page)).boundingBox ? (await frame(page).boundingBox())! : null
+      const c = { x: f!.x + f!.width / 2, y: f!.y + f!.height / 2 }
+      await page.mouse.move(c.x, c.y)
+      await page.mouse.down()
+      await page.mouse.move(c.x - 60, c.y + 40, { steps: 6 })
+      // Mid-drag: a copy of the real rectangle is under the pointer, and the old spot is covered.
+      await expect(page.getByTestId('lift-image')).toBeVisible()
+      await expect(page.getByTestId('lift-eraser')).toBeVisible()
+      const li = (await page.getByTestId('lift-image').boundingBox())!
+      expect(Math.abs(li.x + li.width / 2 - (c.x - 60))).toBeLessThan(3)
+      expect(Math.abs(li.y + li.height / 2 - (c.y + 40))).toBeLessThan(3)
+      // The copy holds the rectangle's fill colour (not just an outline).
+      const filled = await page.getByTestId('lift-image').locator('canvas').evaluate((cv: HTMLCanvasElement) => {
+        const d = cv.getContext('2d')!.getImageData(Math.floor(cv.width / 2), Math.floor(cv.height / 2), 1, 1).data
+        return d[3] > 200
+      })
+      expect(filled).toBe(true)
+      await page.screenshot({ path: test.info().outputPath('mid-drag.png') })
+      await page.mouse.up()
+      // Dropped: the copy stays until the redrawn page arrives, then goes; the frame ends where it was dropped.
+      await expect(page.getByTestId('lift-image')).toHaveCount(0, { timeout: 5000 })
+      const g = (await frame(page).boundingBox())!
+      expect(Math.abs(g.x + g.width / 2 - (c.x - 60))).toBeLessThan(3)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('dragging a picture (Edit images) moves the picture itself, and it does not snap back after the drop', async () => {
+    execFileSync(process.execPath, ['tests/fixtures/edit-content.mjs', FIX], { stdio: 'ignore' })
+    const { app, page } = await open('ec-images.pdf')
+    try {
+      await clickTool(page, 'edit-images')
+      const img = page.locator('[data-page="1"] [data-image]').first()
+      await expect(img).toBeVisible()
+      const b = (await img.boundingBox())!
+      const c = { x: b.x + b.width / 2, y: b.y + b.height / 2 }
+      await page.mouse.move(c.x, c.y)
+      await page.mouse.down()
+      await page.mouse.move(c.x + 50, c.y + 30, { steps: 6 })
+      await expect(page.getByTestId('lift-image')).toBeVisible()
+      const li = (await page.getByTestId('lift-image').boundingBox())!
+      expect(Math.abs(li.x + li.width / 2 - (c.x + 50))).toBeLessThan(4)
+      await page.mouse.up()
+      // Right after the drop the outline is at the drop point, never back at the start.
+      for (let i = 0; i < 10; i++) {
+        const boxes = await page.locator('[data-page="1"] [data-image], [data-page="1"] .outline-accent').evaluateAll((els) =>
+          els.map((e) => {
+            const r = e.getBoundingClientRect()
+            return r.x + r.width / 2
+          })
+        )
+        expect(boxes.some((x) => Math.abs(x - c.x) < 3)).toBe(false)
+        await page.waitForTimeout(60)
+      }
+      await expect(page.getByTestId('lift-image')).toHaveCount(0, { timeout: 5000 })
+      await expect.poll(async () => {
+        const nb = (await page.locator('[data-page="1"] [data-image]').first().boundingBox())!
+        return Math.round(nb.x + nb.width / 2 - (c.x + 50))
+      }).toBeLessThan(4)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
+
+  test('Fill & sign: clicking outside the typed text confirms it; saving asks to lock or keep; "Don\'t ask again" sticks; the Edit menu changes it', async () => {
+    const { app, page, path } = await open('flat.pdf')
+    try {
+      const pb = (await page.locator('[data-page="1"]').boundingBox())!
+      await clickTool(page, 'forms.addText')
+      await page.mouse.click(pb.x + 120, pb.y + 150)
+      await page.getByLabel('Text to add to the page').fill('Confirmed by clicking elsewhere')
+      // Clicking outside the box confirms it: added, selected, and no second box opened.
+      await page.mouse.click(pb.x + 400, pb.y + 600)
+      await expect(page.getByRole('button', { name: 'Undo Add text' })).toBeEnabled()
+      await expect(page.getByTestId('text-draft')).toHaveCount(0)
+      await expect(frame(page)).toHaveAttribute('aria-label', /Selected Text/)
+      // A check mark too.
+      await clickTool(page, 'forms.stampCheck')
+      await page.mouse.click(pb.x + 120, pb.y + 250)
+      await expect(frame(page)).toHaveAttribute('aria-label', /Selected Check mark/)
+
+      // Cancel keeps everything as it was (nothing saved).
+      await page.getByRole('button', { name: 'Save', exact: true }).click()
+      const q = page.getByRole('dialog', { name: 'Lock filled-in items into the page?' })
+      await q.getByRole('button', { name: 'Cancel', exact: true }).click()
+      await expect(dot(page)).toHaveCount(1)
+      // Keep editable, and don't ask again.
+      await page.getByRole('button', { name: 'Save', exact: true }).click()
+      await q.getByLabel('Don’t ask again').check()
+      await q.getByRole('button', { name: 'Keep editable', exact: true }).click()
+      await expect(dot(page)).toHaveCount(0)
+      let saved = await PDFDocument.load(readFileSync(path))
+      expect(saved.getPage(0).node.lookupMaybe(PDFName.of('Annots'), PDFArray)?.size()).toBe(2)
+      await expect.poll(() => menuRadio(app, 'Keep Them Editable')).toBe(true)
+
+      // The next save doesn't ask.
+      await clickTool(page, 'forms.stampCross')
+      await page.mouse.click(pb.x + 200, pb.y + 250)
+      await expect(dot(page)).toHaveCount(1)
+      await page.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dot(page)).toHaveCount(0)
+      await expect(q).toHaveCount(0)
+
+      // Edit ▸ When Saving Fill & Sign Items ▸ Lock Them Into the Page: the next save locks without asking.
+      await menuClickSub(app, 'Edit', 'When Saving Fill & Sign Items', 'Lock Them Into the Page')
+      await clickTool(page, 'forms.stampDot')
+      await page.mouse.click(pb.x + 280, pb.y + 250)
+      await page.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dot(page)).toHaveCount(0)
+      saved = await PDFDocument.load(readFileSync(path))
+      expect(saved.getPage(0).node.lookupMaybe(PDFName.of('Annots'), PDFArray)?.size() ?? 0).toBe(0)
+      // What was locked is part of the page now: the typed text reads as page text.
+      await menuClick(app, 'File', 'Reload from Disk')
+      await expect(page.locator('[data-page="1"] .textLayer')).toContainText('Confirmed by clicking elsewhere')
     } finally {
       await quitDiscarding(app, page)
     }

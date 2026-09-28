@@ -2,7 +2,7 @@ import { activeTab } from '../../state/actions'
 import { useWorkspace } from '../../state/workspace'
 import { registerCommand, registerDialog, registerPageOverlay, registerTool } from '../api'
 import { SignatureDialog } from './SignatureDialog'
-import { SIGN_TOOL_IDS, SignOptions, SignOverlay, cancelPlacement } from './SignTool'
+import { SIGN_TOOL_IDS, SignOptions, SignOverlay } from './SignTool'
 import { useSignatures } from './store'
 
 /**
@@ -31,8 +31,7 @@ registerTool({
     </Svg>
   ),
   Options: () => <SignOptions kind="signature" />,
-  onActivate: refresh,
-  onDeactivate: cancelPlacement
+  onActivate: refresh
 })
 registerTool({
   id: SIGN_TOOL_IDS.initials,
@@ -47,8 +46,7 @@ registerTool({
     </Svg>
   ),
   Options: () => <SignOptions kind="initials" />,
-  onActivate: refresh,
-  onDeactivate: cancelPlacement
+  onActivate: refresh
 })
 
 registerCommand({ id: 'sign.manage', label: 'Signatures…', run: () => useSignatures.getState().openDialog() })
@@ -71,8 +69,3 @@ registerCommand({
 
 registerPageOverlay(SignOverlay)
 registerDialog(SignatureDialog)
-
-// A half-placed signature never survives switching tools or documents.
-useWorkspace.subscribe((s, prev) => {
-  if (s.activeTool !== prev.activeTool) cancelPlacement()
-})

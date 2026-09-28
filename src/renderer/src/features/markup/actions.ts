@@ -6,8 +6,14 @@ import { useUi } from '../../state/ui'
 import { useAnnots, refreshAnnots } from './data'
 import { hexToRgb } from './pdf/basics'
 import type { Pt, Rect } from './pdf/geometry'
-import { subtypeLabel, type AnnotInfo, type ReviewState } from './pdf/model'
+import { describeAnnot, subtypeLabel, type AnnotInfo, type ReviewState } from './pdf/model'
+import { listLocated } from './pdf/annots'
+import { normalizeRect } from './pdf/geometry'
+import { getNumbers } from './pdf/pdfobj'
 import {
+  addFillMark,
+  addFillSignature,
+  addFillText,
   addFreeText,
   addImageStamp,
   addInk,
@@ -22,6 +28,7 @@ import {
   resizeAnnotation,
   setReviewState,
   updateAnnotation,
+  type FillMarkKind,
   type Patch
 } from './pdf/ops'
 import type { Quad } from './pdf/quads'
@@ -143,6 +150,46 @@ export async function createStamp(docId: string, pageIndex: number, center: Pt):
   return id
 }
 
+// ---------------------------------------------------------------- Fill & sign items
+
+const MARK_LABEL: Record<FillMarkKind, string> = { check: 'check mark', cross: 'cross', dot: 'dot' }
+
+/** Check / cross / dot centred on `center` (PDF user space), `size` points. */
+export async function createFillMark(docId: string, pageIndex: number, kind: FillMarkKind, center: Pt, size: number, colorHex: string): Promise<string | undefined> {
+  const id = await run(docId, `Add ${MARK_LABEL[kind]}`, (pdf) => addFillMark(pdf, pageIndex, { ...who(), kind, center, size, color: hexToRgb(colorHex) }))
+  if (id) announce(`${MARK_LABEL[kind].charAt(0).toUpperCase()}${MARK_LABEL[kind].slice(1)} added on page ${pageIndex + 1}`)
+  return id
+}
+
+/** Typed text (or a date) in `rect` (PDF user space). */
+export async function createFillText(docId: string, pageIndex: number, rect: Rect, text: string, size: number, colorHex: string, label = 'Add text'): Promise<string | undefined> {
+  const id = await run(docId, label, (pdf) => addFillText(pdf, pageIndex, { ...who(), rect, text, size, color: hexToRgb(colorHex) }))
+  if (id) announce(`${label === 'Add date' ? 'Date' : 'Text'} added on page ${pageIndex + 1}`)
+  return id
+}
+
+/** A signature (and, optionally, a date under it) as one undo step; returns the signature's id. */
+export async function createFillSignature(
+  docId: string,
+  pageIndex: number,
+  o: { png: Uint8Array; center: Pt; width: number; initials: boolean; date?: { text: string; size: number } }
+): Promise<string | undefined> {
+  const label = o.initials ? 'Add initials' : 'Sign'
+  const id = await run(docId, label, async (pdf) => {
+    const sig = await addFillSignature(pdf, pageIndex, { ...who(), png: o.png, center: o.center, width: o.width, label: o.initials ? 'Initials' : 'Signature' })
+    if (o.date) {
+      // Under the signature's left edge (as the reader sees the page).
+      const r = listLocated(pdf).find((l) => l.id === sig)!
+      const [x0, y0, x1] = normalizeRect(getNumbers(r.dict, 'Rect') as Rect)
+      const h = o.date.size * 1.5
+      await addFillText(pdf, pageIndex, { ...who(), rect: [x0, y0 - h - 2, Math.max(x1, x0 + o.date.size * 9), y0 - 2], text: o.date.text, size: o.date.size, color: [0, 0, 0] })
+    }
+    return sig
+  })
+  if (id) announce(`${o.initials ? 'Initials' : 'Signature'} placed on page ${pageIndex + 1}`)
+  return id
+}
+
 /**
  * A shape, stamp or text box was just placed: select it with the Select tool, so its handles and properties show and
  * it can be moved, resized, restyled or deleted right away (Acrobat does the same). "Keep tool selected" skips this.
@@ -196,10 +243,11 @@ export async function setStatus(docId: string, id: string, state: ReviewState): 
 }
 
 /** Delete / Backspace on the selected annotation: asks first (unless turned off), then deletes. */
-export async function deleteAnnotByKey(docId: string, a: Pick<AnnotInfo, 'id' | 'subtype'>): Promise<boolean> {
+export async function deleteAnnotByKey(docId: string, a: Pick<AnnotInfo, 'id' | 'subtype'> & Partial<Pick<AnnotInfo, 'fillSign' | 'iconName'>>): Promise<boolean> {
   const all = useAnnots.getState().byDoc[docId]?.annots ?? []
+  const what = describeAnnot({ iconName: '', ...a }).toLowerCase()
   // A thread has its own, more specific question in deleteAnnot.
-  if (countThread(all, a.id) === 0 && !(await confirmDelete(`this ${subtypeLabel(a.subtype).toLowerCase()}`))) return false
+  if (countThread(all, a.id) === 0 && !(await confirmDelete(`this ${what}`))) return false
   return deleteAnnot(docId, a)
 }
 

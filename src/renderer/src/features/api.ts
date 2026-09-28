@@ -170,8 +170,30 @@ export async function runCommand(id: string, args?: unknown): Promise<void> {
 }
 
 /** Test helper. */
+/**
+ * A step that runs before a document is written to disk (Save, Save As, Save a Copy), e.g. Fill & sign asking whether
+ * to lock its items into the page. It may edit the document through `editPdf` (Save / Save As) or transform only the
+ * bytes being written (`copy`: the open document must not change). Resolve false to cancel the save.
+ */
+export type BeforeSave = (docId: string, mode: 'save' | 'copy') => Promise<boolean | { transform(bytes: Uint8Array): Promise<Uint8Array> }>
+const beforeSave: BeforeSave[] = []
+export function registerBeforeSave(step: BeforeSave): void {
+  beforeSave.push(step)
+}
+/** Runs every before-save step in order; returns false if one cancelled, else the byte transforms to apply. */
+export async function runBeforeSave(docId: string, mode: 'save' | 'copy'): Promise<false | ((bytes: Uint8Array) => Promise<Uint8Array>)[]> {
+  const transforms: ((bytes: Uint8Array) => Promise<Uint8Array>)[] = []
+  for (const step of beforeSave) {
+    const r = await step(docId, mode)
+    if (r === false) return false
+    if (typeof r === 'object') transforms.push(r.transform)
+  }
+  return transforms
+}
+
 export function _resetRegistries(): void {
   tools.length = panels.length = views.length = overlays.length = dialogs.length = 0
   contextProviders.length = 0
+  beforeSave.length = 0
   commands.clear()
 }

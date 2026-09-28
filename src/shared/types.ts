@@ -90,5 +90,6 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultZoomMode: 'fit-width',
   restoreOnLaunch: true,
   sidebarOpen: true,
-  confirmDelete: true
+  confirmDelete: true,
+  fillSignOnSave: 'ask'
 }

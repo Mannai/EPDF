@@ -59,7 +59,7 @@ export function NoteOptions(): JSX.Element {
 }
 
 /** Off: a shape, stamp or text box is selected once placed, ready to move and restyle. On: stay on the tool. */
-function KeepToolField(): JSX.Element {
+export function KeepToolField(): JSX.Element {
   const on = useMarkup((s) => s.keepTool)
   return <CheckField label="Keep tool selected" checked={on} onChange={(v) => useMarkup.getState().setKeepTool(v)} />
 }

@@ -328,6 +328,60 @@ export async function addImageStamp(pdf: PDFDocument, pageIndex: number, o: Imag
   return refId(ref)
 }
 
+// ---------------------------------------------------------------- Fill & sign
+
+/**
+ * Fill & sign items (check / cross / dot marks, typed text and dates, signatures) are annotations marked with
+ * `/EpdfFill /Mark|/Text|/Signature`, so they can be selected, moved, resized and restyled like any annotation until
+ * they are locked into the page (flatten.ts), which saving offers. They are not comments: the Comments panel skips them.
+ */
+export const FILL_KEY = 'EpdfFill'
+export type FillMarkKind = 'check' | 'cross' | 'dot'
+export const FILL_MARKS: Record<FillMarkKind, string> = { check: 'EpdfCheck', cross: 'EpdfCross', dot: 'EpdfDot' }
+const FILL_MARK_LABEL: Record<FillMarkKind, string> = { check: 'Check mark', cross: 'Cross', dot: 'Dot' }
+
+export async function addFillMark(pdf: PDFDocument, pageIndex: number, o: Who & { kind: FillMarkKind; center: Pt; size: number; color: Color }): Promise<string> {
+  const g = geomOfPage(page(pdf, pageIndex))
+  const s = Math.max(4, o.size)
+  const { dict, ref } = createAnnot(pdf, pageIndex, {
+    ...o,
+    subtype: 'Stamp',
+    rect: placeRect(g, o.center, s, s),
+    subject: FILL_MARK_LABEL[o.kind],
+    color: o.color,
+    extra: { Name: FILL_MARKS[o.kind], [FILL_KEY]: 'Mark' }
+  })
+  await regenerateAppearance(pdf, dict, g.rotation)
+  return refId(ref)
+}
+
+/** Typed text or a date: a borderless FreeText with the typewriter intent (what Acrobat's Fill & Sign writes). */
+export async function addFillText(pdf: PDFDocument, pageIndex: number, o: Who & { rect: Rect; text: string; size: number; color: Color }): Promise<string> {
+  const id = await addFreeText(pdf, pageIndex, { ...o, fontSize: o.size, fill: null, borderWidth: 0 })
+  const loc = locate(pdf, id)!
+  loc.dict.set(PDFName.of('IT'), PDFName.of('FreeTextTypeWriter'))
+  loc.dict.set(PDFName.of(FILL_KEY), PDFName.of('Text'))
+  return id
+}
+
+/** A signature or initials: the PNG as an image stamp `width` points wide (height from its aspect ratio), centred. */
+export async function addFillSignature(pdf: PDFDocument, pageIndex: number, o: Who & { png: Uint8Array; center: Pt; width: number; label: string }): Promise<string> {
+  const image = await pdf.embedPng(o.png)
+  const g = geomOfPage(page(pdf, pageIndex))
+  const w = Math.max(8, o.width)
+  const h = Math.max(4, (w * image.height) / Math.max(1, image.width))
+  const { dict, ref } = createAnnot(pdf, pageIndex, {
+    ...o,
+    subtype: 'Stamp',
+    rect: placeRect(g, o.center, w, h),
+    contents: o.label,
+    subject: o.label,
+    extra: { Name: 'Image', [FILL_KEY]: 'Signature' }
+  })
+  installAppearance(pdf, dict, buildImageStamp(infoOfDict(dict)!, image.ref, g.rotation))
+  return refId(ref)
+}
+
 // ---------------------------------------------------------------- replies and review state
 
 function pageOf(loc: Located): number {

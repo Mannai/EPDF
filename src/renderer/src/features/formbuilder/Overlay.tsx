@@ -128,8 +128,20 @@ function FieldLayer({ docId, pageIndex, doc, geom, scale, width, height, tool }:
     }
   }
 
+  // Fields being moved: their form inputs (drawn by the forms feature, underneath) are hidden and the frame is tinted,
+  // so the field visibly travels with the pointer and doesn't leave its old box behind until the move is saved.
+  const moving = new Set<string>([
+    ...(live ? selection : []),
+    ...(liveBox ? [liveBox.key] : []),
+    ...items.filter((i) => optimistic?.[i.key]).map((i) => i.key)
+  ])
+  const movingNames = [...new Set(items.filter((i) => moving.has(i.key)).map((i) => i.field.name))]
+
   return (
     <>
+      {movingNames.length > 0 && (
+        <style>{movingNames.map((n) => `.epdf-page[data-page="${pageIndex + 1}"] [data-field="${CSS.escape(n)}"]{visibility:hidden}`).join('\n')}</style>
+      )}
       {kind && <CreateLayer docId={docId} pageIndex={pageIndex} geom={geom} scale={scale} width={width} height={height} kind={kind} />}
       {selecting && <BackgroundCatcher docId={docId} items={items.map((i) => ({ key: i.key, css: cssOf(optimistic?.[i.key] ?? i.widget.rect) }))} />}
       {items.map(({ field, widget, key }) => {
@@ -153,6 +165,7 @@ function FieldLayer({ docId, pageIndex, doc, geom, scale, width, height, tool }:
             resizable={selecting && selection.length === 1 && selected}
             dashed={widget.hidden}
             dim={widget.hidden}
+            className={moving.has(key) ? 'epdf-fb-moving' : undefined}
             onPress={(e) => {
               if (e.shiftKey || e.ctrlKey || e.metaKey) {
                 useBuilder.getState().toggleKey(docId, key)

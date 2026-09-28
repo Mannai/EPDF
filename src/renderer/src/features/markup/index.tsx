@@ -180,6 +180,17 @@ window.addEventListener('keydown', (e) => {
   }
 })
 
+// Clicking outside the selected item confirms it: on the page that is the Select layer's job; on the grey area around
+// the pages it happens here.
+window.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || !useMarkup.getState().selection) return
+  const t = e.target instanceof Element ? e.target : null
+  if (t?.closest('[data-testid="viewer-scroll"]') && !t.closest('.epdf-page')) {
+    const sel = useMarkup.getState().selection!
+    useMarkup.getState().select(sel.docId, null)
+  }
+})
+
 // A selection that no longer exists (undo of its creation, deleted elsewhere) is dropped.
 useAnnots.subscribe((s) => {
   const sel = useMarkup.getState().selection

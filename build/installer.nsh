@@ -2,7 +2,8 @@
 ;
 ; Adds Explorer right-click entries:
 ;   "Convert to PDF with Epdf"   for pictures, Office/OpenDocument, RTF, text and CSV files
-;   "Combine files in Epdf"      for the same types plus PDFs
+;   "Combine files in Epdf"      for the same types
+; PDFs get no extra entries: right-clicking a PDF shows Epdf only under "Open with".
 ; They run:  Epdf.exe --convert-to-pdf "%1"   /   Epdf.exe --combine "%1"
 ; With several files selected, Explorer either passes them all in one command line (MultiSelectModel=Player) or
 ; starts one process per file; the app copes with both (see src/main/features/create/argv.ts and index.ts).
@@ -43,14 +44,6 @@
   WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\Epdf.Combine\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" --combine "%1"'
 !macroend
 
-; PDFs can be combined but are already PDFs: only the Combine verb.
-!macro EpdfCombineOnly EXT
-  WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\Epdf.Combine" "" "$R9"
-  WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\Epdf.Combine" "Icon" "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
-  WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\Epdf.Combine" "MultiSelectModel" "Player"
-  WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\Epdf.Combine\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" --combine "%1"'
-!macroend
-
 !macro EpdfRemoveVerbs EXT
   DeleteRegKey SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\Epdf.Convert"
   DeleteRegKey SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\Epdf.Combine"
@@ -77,7 +70,8 @@
   !insertmacro EpdfVerbs "rtf"
   !insertmacro EpdfVerbs "txt"
   !insertmacro EpdfVerbs "csv"
-  !insertmacro EpdfCombineOnly "pdf"
+  ; Versions before 1.0.6 added "Combine files in Epdf" to PDFs: installing over one removes it.
+  !insertmacro EpdfRemoveVerbs "pdf"
   System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)' ; tell Explorer the associations changed
 !macroend
 

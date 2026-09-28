@@ -107,9 +107,12 @@ export function readAnnotation(loc: Located): AnnotInfo | null {
     stateModel: getString(d, 'StateModel') ?? getName(d, 'StateModel') ?? null,
     hasAppearance: normal instanceof PDFStream || normal instanceof PDFDict,
     complex: (!!be && getName(be, 'S') === 'C') || (subtype === 'Line' && le.some((s) => !['None', 'OpenArrow', 'ClosedArrow'].includes(s))),
-    ours: isOurName(nm)
+    ours: isOurName(nm),
+    fillSign: fillKindOf(getName(d, 'EpdfFill'))
   }
 }
+
+const fillKindOf = (n: string | undefined): AnnotInfo['fillSign'] => (n === 'Mark' || n === 'Text' || n === 'Signature' ? n : null)
 
 /** All listed annotations of the document. Pages or entries that cannot be parsed are skipped, never fatal. */
 export function readAnnotations(pdf: PDFDocument): AnnotInfo[] {

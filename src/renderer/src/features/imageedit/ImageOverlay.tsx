@@ -11,6 +11,8 @@ import type { ImageItem } from '../textedit/pdfcontent/analyze'
 import type { Rect } from '../textedit/pdfcontent/matrix'
 import { applyImageBox, placeImage, placementFromViewportRect, removeImage } from './actions'
 import { useImageEdit, type SelectedImage } from './state'
+import { liftRegion, liftedBoxAt, type Lifted } from '../../viewer/lift'
+import { CanvasAt } from '../../viewer/LiftedView'
 
 export const IMAGE_TOOL_ID = 'edit-images'
 
@@ -31,6 +33,8 @@ const toBox = (viewport: PageViewport, r: Rect): Box => {
   const [bx, by] = viewport.convertToViewportPoint(r.x1, r.y1)
   return { left: Math.min(ax, bx), top: Math.min(ay, by), width: Math.abs(bx - ax), height: Math.abs(by - ay) }
 }
+
+const boxRect = (b: Box): [number, number, number, number] => [b.left, b.top, b.left + b.width, b.top + b.height]
 
 /** A box on the displayed page (CSS pixels) back to a user-space rectangle. */
 export const toRect = (viewport: PageViewport, b: Box): Rect => {
@@ -103,7 +107,7 @@ export function ImageOverlay(props: PageOverlayProps): JSX.Element | null {
   return <Layer {...props} viewport={props.viewport} />
 }
 
-function Layer({ docId, pageIndex, pageNumber, scale, width, height, viewport }: PageOverlayProps & { viewport: PageViewport }): JSX.Element {
+function Layer({ docId, pageIndex, pageNumber, scale, width, height, viewport, renderVersion }: PageOverlayProps & { viewport: PageViewport }): JSX.Element {
   const version = useEditInfo(docId).version
   const selected = useImageEdit((s) => (s.selected && s.selected.docId === docId && s.selected.pageIndex === pageIndex ? s.selected : null))
   const pending = useImageEdit((s) => (s.pending && s.pending.docId === docId ? s.pending : null))
@@ -198,6 +202,29 @@ function Layer({ docId, pageIndex, pageNumber, scale, width, height, viewport }:
           ? 'No images on this page. Use “Add image…” to insert one.'
           : null
 
+  // The picture itself follows the pointer (lifted off the page), and stays where it was dropped until the page has
+  // been redrawn with it there: `landed` is the render version at the drop.
+  // Both clear once the page is redrawn *and* its images were read again after the edit (so the outline doesn't snap
+  // back to the old place for a moment).
+  const [lift, setLift] = useState<{ lifted: Lifted; from: Box } | null>(null)
+  const [landing, setLanding] = useState<{ box: Box; render: number; edit: number; id: string } | null>(null)
+  const renderRef = useRef(renderVersion)
+  renderRef.current = renderVersion
+  const arrived = !!landing && renderVersion !== landing.render && !!loaded && loaded.v !== landing.edit
+  useEffect(() => {
+    if (!arrived) return
+    setLanding(null)
+    setLift(null)
+  }, [arrived])
+
+  const startLift = (box: Box): void => {
+    const pageEl = layerRef.current?.closest('.epdf-page') as HTMLElement | null
+    if (!pageEl) return
+    void liftRegion({ pageEl, docId, pageIndex, viewport, rect: [box.left, box.top, box.left + box.width, box.top + box.height], mode: 'content' }).then((lifted) => {
+      if (lifted && (drag.current || landingRef.current)) setLift({ lifted, from: box })
+    })
+  }
+
   const onMove = (e: React.PointerEvent): void => {
     const d = drag.current
     if (!d) return
@@ -212,10 +239,26 @@ function Layer({ docId, pageIndex, pageNumber, scale, width, height, viewport }:
     const box = live
     setLive(null)
     const sel = useImageEdit.getState().selected
-    if (!d || !box || !sel) return
-    if (Math.abs(box.left - d.box.left) < 2 && Math.abs(box.top - d.box.top) < 2 && Math.abs(box.width - d.box.width) < 2 && Math.abs(box.height - d.box.height) < 2) return
-    void applyImageBox(sel, toRect(viewport, box))
+    if (!d || !box || !sel || (Math.abs(box.left - d.box.left) < 2 && Math.abs(box.top - d.box.top) < 2 && Math.abs(box.width - d.box.width) < 2 && Math.abs(box.height - d.box.height) < 2)) {
+      setLift(null)
+      return
+    }
+    const drop = { box, render: renderRef.current, edit: version, id: sel.id }
+    landingRef.current = true
+    setLanding(drop)
+    void applyImageBox(sel, toRect(viewport, box)).then((ok) => {
+      if (!ok) {
+        landingRef.current = false
+        setLift(null)
+        setLanding(null)
+      }
+    })
   }
+  const landingRef = useRef(false)
+  useEffect(() => {
+    if (!landing) landingRef.current = false
+  }, [landing])
+  const shownAt = live ?? landing?.box ?? null
 
   return (
     <div ref={layerRef} className="absolute inset-0" onPointerMove={onMove} onPointerUp={onUp}>
@@ -251,8 +294,19 @@ function Layer({ docId, pageIndex, pageNumber, scale, width, height, viewport }:
           style={{ left: ghost.left, top: ghost.top, width: ghost.width, height: ghost.height, opacity: 0.55 }}
         />
       )}
+      {/* The picture being moved: dimmed where it was, its copy where it is going (or was dropped). */}
+      {lift && shownAt && (
+        <>
+          <div aria-hidden="true" className="pointer-events-none absolute bg-white/70" style={{ left: lift.from.left, top: lift.from.top, width: lift.from.width, height: lift.from.height }} />
+          <CanvasAt canvas={lift.lifted.image} box={liftedBoxAt(lift.lifted, boxRect(lift.from), boxRect(shownAt))} testId="lift-image" />
+        </>
+      )}
+      {landing && (
+        <div aria-hidden="true" className="pointer-events-none absolute rounded-sm outline outline-2 outline-accent" style={{ left: landing.box.left, top: landing.box.top, width: landing.box.width, height: landing.box.height }} />
+      )}
       {!pending &&
         images.map((im, i) => {
+          if (landing && im.id === landing.id) return null // shown at the drop point until the page catches up
           const isSel = selected?.id === im.id
           let b = toBox(viewport, im.bbox)
           if (isSel && live) b = live
@@ -286,6 +340,7 @@ function Layer({ docId, pageIndex, pageNumber, scale, width, height, viewport }:
                   }
                   e.currentTarget.setPointerCapture(e.pointerId)
                   drag.current = { kind: 'move', sx: e.clientX, sy: e.clientY, box: toBox(viewport, im.bbox) }
+                  startLift(toBox(viewport, im.bbox))
                 }}
                 onKeyDown={(e) => {
                   const sel = selectionOf(docId, pageIndex, im)
@@ -330,6 +385,7 @@ function Layer({ docId, pageIndex, pageNumber, scale, width, height, viewport }:
                         e.stopPropagation()
                         e.currentTarget.setPointerCapture(e.pointerId)
                         drag.current = { kind: h, sx: e.clientX, sy: e.clientY, box: toBox(viewport, im.bbox) }
+                        startLift(toBox(viewport, im.bbox))
                       }}
                     />
                   )

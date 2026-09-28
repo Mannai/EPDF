@@ -2,8 +2,17 @@ import { bytesForWriting, isDirty, markSaved, whenEditsSettled } from '../../edi
 import { askConfirm } from '../../state/confirm'
 import { errorMessage, notify } from '../../state/notify'
 import { useTabs } from '../../state/tabs'
+import { runBeforeSave } from '../api'
 
 const tabOf = (docId: string) => useTabs.getState().tabs.find((t) => t.docId === docId)
+
+/** Features' before-save steps (Fill & sign locking, ...). For Save / Save As they edit the document itself. */
+async function beforeSaving(docId: string): Promise<boolean> {
+  await whenEditsSettled(docId)
+  if ((await runBeforeSave(docId, 'save')) === false) return false
+  await whenEditsSettled(docId) // a step may have made an edit (e.g. locking items into the page)
+  return true
+}
 
 /**
  * Saves the document back to its own file. Returns true if there is nothing left unsaved afterwards.
@@ -30,6 +39,7 @@ export async function saveDoc(docId: string): Promise<boolean> {
     if (choice !== 'overwrite') return false
   }
 
+  if (!(await beforeSaving(docId))) return false
   try {
     const bytes = await bytesForWriting(docId)
     await window.epdf.saveFile(docId, bytes)
@@ -49,6 +59,7 @@ export async function saveDoc(docId: string): Promise<boolean> {
 export async function saveDocAs(docId: string): Promise<boolean> {
   const tab = tabOf(docId)
   if (!tab) return false
+  if (!(await beforeSaving(docId))) return false
   try {
     const bytes = await bytesForWriting(docId)
     const res = await window.epdf.saveFileAs(docId, bytes)
@@ -66,8 +77,13 @@ export async function saveDocAs(docId: string): Promise<boolean> {
 export async function saveDocCopy(docId: string): Promise<boolean> {
   const tab = tabOf(docId)
   if (!tab) return false
+  await whenEditsSettled(docId)
+  const transforms = await runBeforeSave(docId, 'copy')
+  if (transforms === false) return false
   try {
-    const res = await window.epdf.saveCopy(docId, await bytesForWriting(docId))
+    let bytes = await bytesForWriting(docId)
+    for (const t of transforms) bytes = await t(bytes)
+    const res = await window.epdf.saveCopy(docId, bytes)
     if (res) notify('success', `Saved a copy as “${res.name}”.`, { label: 'Show in folder', run: () => void window.epdf.revealDoc(docId) })
     return !!res
   } catch (err) {
