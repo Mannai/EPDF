@@ -4,7 +4,7 @@
   "description": "Epdf - desktop PDF application",
   "main": "./out/main/index.js",
   "author": "Meshal AlMannai",
-  "homepage": "https://github.com/Mannai/EPDF",
+  "homepage": "https://epdf.ing",
   "license": "SEE LICENSE IN LICENSE.md",
   "private": true,
   "scripts": {
