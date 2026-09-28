@@ -25,6 +25,32 @@ export function autoAnswerPrompts(env: Record<string, string | undefined>, meta:
   return meta.epdfTestBuild === true && env['EPDF_UPDATE_TEST_ACCEPT'] === '1'
 }
 
+/** Public release channel: the update feed (electron-builder.yml `publish`) and the page a user downloads from. */
+export const RELEASES_REPO = { owner: 'Mannai', repo: 'epdf-releases' } as const
+
+/** The release page of one version (the tags are `v<version>`). */
+export function releasePageUrl(version: string): string {
+  return `https://github.com/${RELEASES_REPO.owner}/${RELEASES_REPO.repo}/releases/tag/v${encodeURIComponent(version)}`
+}
+
+/**
+ * A pre-release (`1.0.8-beta.1`) follows the pre-release channel, so betas find newer betas. A release version only
+ * looks at full releases, so nobody on a release is moved onto a beta.
+ */
+export function followsPrereleases(currentVersion: string): boolean {
+  return /^\d+\.\d+\.\d+-[0-9A-Za-z.-]+/.test(currentVersion)
+}
+
+/**
+ * Whether the app can download and install its own update. Windows (NSIS) and macOS can, and so can an AppImage
+ * (electron-updater replaces the file named by $APPIMAGE). A .deb is owned by the system's package manager, so there
+ * the app only tells the user about the new version.
+ */
+export function canInstallUpdates(platform: NodeJS.Platform, env: Record<string, string | undefined>): boolean {
+  if (platform !== 'linux') return true
+  return !!env['APPIMAGE']
+}
+
 /** Milliseconds until the next background check is due (0 = now). `lastCheck` is epoch ms, or null if never. */
 export function msUntilNextAutoCheck(now: number, lastCheck: number | null, intervalMs = AUTO_CHECK_INTERVAL_MS): number {
   if (lastCheck === null || !Number.isFinite(lastCheck) || lastCheck > now) return 0 // never checked, or the clock went back

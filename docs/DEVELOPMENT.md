@@ -189,10 +189,23 @@ during startup). It never downloads without asking, shows progress on the taskba
 quits**, so the usual "Save changes?" prompt can still stop it and no work is lost. Choosing *Restart* installs and
 starts the new version. Portable/unpacked runs report that updates are unavailable.
 
-- **Feed**: the `publish` URL in `electron-builder.yml` (a placeholder `https://updates.epdf.example/win` today).
-  To release, build, then upload `latest.yml`, `Epdf-Setup-<version>.exe` and its `.blockmap` to that folder on any
-  static host. Later versions download only the changed blocks. The download is verified against the SHA-512 in
-  `latest.yml`; a corrupted or tampered installer is refused.
+- **Feed**: the `publish` entry in `electron-builder.yml`: the public GitHub releases of
+  [Mannai/epdf-releases](https://github.com/Mannai/epdf-releases/releases) (installers only). It is public, so the app
+  carries no token. To release, build on Windows and on Linux, then create a release tagged `v<version>` there
+  (a GitHub pre-release for a beta) and upload every file below. Later versions download only the changed blocks. The
+  download is verified against the SHA-512 in the `.yml`; a corrupted or tampered installer is refused.
+
+  | Asset | Used by |
+  |---|---|
+  | `Epdf-Setup-<version>.exe`, its `.blockmap`, `latest.yml` | Windows updates (NSIS) |
+  | `Epdf-<version>-x86_64.AppImage`, its `.blockmap`, `latest-linux.yml` | Linux AppImage updates |
+  | `Epdf-<version>.msi`, `Epdf-<version>-amd64.deb` | Downloads only |
+
+- **Channels**: a beta (`1.0.8-beta.1`) looks at pre-releases as well, so betas get newer betas; a release version
+  only looks at full releases. For a beta the updater first asks for `beta.yml` / `beta-linux.yml` and, when the
+  release has none, uses `latest.yml` / `latest-linux.yml`, so the `latest*` files are enough.
+- **Linux**: an AppImage downloads and replaces itself like the Windows app. A `.deb` belongs to the system's package
+  manager, so the app only says that a new version is out and offers to open its release page.
 - **Test it** with `node scripts/update-e2e.mjs --old <old installer> --feed <folder with the newer build>`
   (add `--tamper` to check that a corrupted download is refused). Both installers must be built with
   `--config.extraMetadata.epdfTestBuild=true`, the only kind that honours `EPDF_UPDATE_URL`, so nothing on a user's

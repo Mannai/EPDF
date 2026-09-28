@@ -2,6 +2,9 @@
  * The update conversation, independent of Electron and electron-updater so it can be tested with fakes:
  * check → (ask) download → (ask) restart. Installing happens when the app really quits, never before, so a
  * pending "Save changes?" prompt can still veto it and no work is lost.
+ *
+ * Where the app can't replace itself (a Linux .deb, installed by the system's package manager), the flow only tells
+ * the user about the new version and offers the download page; nothing is downloaded or installed.
  */
 
 export interface UpdateCheckResult {
@@ -20,11 +23,13 @@ export interface UpdateUi {
   notifyUpToDate(current: string): Promise<void>
   notifyError(message: string): Promise<void>
   notifyUnavailable(): Promise<void>
+  /** Notify-only installs: tells the user a version is out and opens the download page if they want it. True = opened. */
+  offerDownloadPage(version: string, current: string): Promise<boolean>
   /** 0..1 while downloading, null when finished. */
   progress(fraction: number | null): void
 }
 
-export type UpdateOutcome = 'unavailable' | 'busy' | 'up-to-date' | 'declined' | 'error' | 'ready' | 'restarting'
+export type UpdateOutcome = 'unavailable' | 'busy' | 'up-to-date' | 'declined' | 'error' | 'ready' | 'restarting' | 'notified'
 
 export interface UpdateFlowOptions {
   updater: UpdaterLike
@@ -32,6 +37,8 @@ export interface UpdateFlowOptions {
   currentVersion: string
   /** False for a dev/unpackaged run: there is nothing installed to update. */
   canUpdate: boolean
+  /** False when the app can't install its own updates (a Linux .deb): only tell the user. Default true. */
+  canInstall?: boolean
   /** Starts the normal quit (which asks about unsaved changes); the installer runs once the quit really happens. */
   requestQuit: () => void
 }
@@ -79,6 +86,11 @@ export function createUpdateFlow(o: UpdateFlowOptions): UpdateFlow {
         }
         const version = result.updateInfo.version
         if (!manual && declined.has(version)) return 'declined'
+        if (o.canInstall === false) {
+          if (await o.ui.offerDownloadPage(version, o.currentVersion)) return 'notified'
+          declined.add(version)
+          return 'declined'
+        }
         if (!(await o.ui.confirmDownload(version, o.currentVersion))) {
           declined.add(version)
           return 'declined'

@@ -1,22 +1,34 @@
-import { app, dialog, type BrowserWindow, type MessageBoxOptions } from 'electron'
+import { app, dialog, shell, type BrowserWindow, type MessageBoxOptions } from 'electron'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { contributeMenu } from '../../menu/contributions'
 import type { MainContext } from '../api'
 import { createUpdateFlow, type UpdateUi, type UpdaterLike } from './flow'
-import { AUTO_CHECK_INTERVAL_MS, AUTO_CHECK_STARTUP_DELAY_MS, autoAnswerPrompts, feedOverride, msUntilNextAutoCheck, type UpdateMeta } from './policy'
+import {
+  AUTO_CHECK_INTERVAL_MS,
+  AUTO_CHECK_STARTUP_DELAY_MS,
+  autoAnswerPrompts,
+  canInstallUpdates,
+  feedOverride,
+  followsPrereleases,
+  msUntilNextAutoCheck,
+  releasePageUrl,
+  type UpdateMeta
+} from './policy'
 
 /**
- * Updates (Windows installer builds): Help ▸ Check for Updates… and an optional background check once a day.
+ * Updates (installed builds): Help ▸ Check for Updates… and an optional background check once a day.
  *
- * The feed is the `publish` URL in electron-builder.yml (baked into the installed app as resources/app-update.yml).
- * Nothing is downloaded without the user saying yes, and an update installs only when the app really quits.
- * electron-updater is loaded on first use so it costs nothing at startup.
+ * The feed is the `publish` entry in electron-builder.yml, the public GitHub releases of Mannai/epdf-releases (baked
+ * into the installed app as resources/app-update.yml; public, so no token is involved). Nothing is downloaded without
+ * the user saying yes, and an update installs only when the app really quits. On a Linux .deb the app only says that a
+ * new version is out and offers its download page. electron-updater is loaded on first use so it costs nothing at startup.
  */
 export function register(ctx: MainContext): void {
   const kv = ctx.kv('updates')
   const meta = readMeta()
   const auto = autoAnswerPrompts(process.env, meta)
+  const canInstall = canInstallUpdates(process.platform, process.env)
 
   const focusedWindow = (): BrowserWindow | undefined => ctx.windows.focused()?.win
   const say = async (options: MessageBoxOptions): Promise<number> => {
@@ -50,6 +62,19 @@ export function register(ctx: MainContext): void {
     notifyError: async (message) => void (await say({ type: 'warning', message: 'Could not check for updates', detail: message })),
     notifyUnavailable: async () =>
       void (await say({ type: 'info', message: 'Updates are only available in the installed app', detail: 'This copy of Epdf is not an installed release.' })),
+    offerDownloadPage: async (version, current) => {
+      const open =
+        (await say({
+          type: 'info',
+          message: `Epdf ${version} is available`,
+          detail: `You have version ${current}. Open the download page to get the new package? Install it the same way you installed Epdf.`,
+          buttons: ['Open Download Page', 'Not Now'],
+          defaultId: 0,
+          cancelId: 1
+        })) === 0
+      if (open) await shell.openExternal(releasePageUrl(version))
+      return open
+    },
     progress: (fraction) => {
       for (const w of ctx.windows.all()) w.win.setProgressBar(fraction === null ? -1 : fraction)
     }
@@ -68,7 +93,7 @@ export function register(ctx: MainContext): void {
       autoUpdater.autoDownload = false // always ask first
       autoUpdater.autoInstallOnAppQuit = false // installing is done below, on the real quit, so it can also relaunch
       autoUpdater.allowDowngrade = false
-      autoUpdater.allowPrerelease = false
+      autoUpdater.allowPrerelease = followsPrereleases(app.getVersion()) // betas look for newer betas; releases only for releases
       const override = feedOverride(process.env, meta)
       if (override) autoUpdater.setFeedURL({ provider: 'generic', url: override })
       autoUpdater.on('download-progress', (p) => ui.progress(Math.min(1, Math.max(0, p.percent / 100))))
@@ -93,6 +118,7 @@ export function register(ctx: MainContext): void {
     ui,
     currentVersion: app.getVersion(),
     canUpdate: app.isPackaged,
+    canInstall,
     requestQuit: () => {
       restartRequestedAt = Date.now()
       app.quit()

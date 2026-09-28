@@ -1,6 +1,17 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { createUpdateFlow, type UpdateUi, type UpdaterLike } from '../../src/main/features/updates/flow'
-import { AUTO_CHECK_INTERVAL_MS, autoAnswerPrompts, feedOverride, msUntilNextAutoCheck } from '../../src/main/features/updates/policy'
+import {
+  AUTO_CHECK_INTERVAL_MS,
+  autoAnswerPrompts,
+  canInstallUpdates,
+  feedOverride,
+  followsPrereleases,
+  msUntilNextAutoCheck,
+  RELEASES_REPO,
+  releasePageUrl
+} from '../../src/main/features/updates/policy'
 
 describe('update policy', () => {
   it('only a test build may redirect the update feed', () => {
@@ -29,9 +40,41 @@ describe('update policy', () => {
     expect(msUntilNextAutoCheck(now, now - 1000)).toBe(AUTO_CHECK_INTERVAL_MS - 1000)
     expect(msUntilNextAutoCheck(now, now + 5000)).toBe(0) // clock went backwards: don't wait a day
   })
+
+  it('a beta follows pre-releases, a release does not', () => {
+    expect(followsPrereleases('1.0.8-beta.1')).toBe(true)
+    expect(followsPrereleases('2.0.0-rc.3')).toBe(true)
+    expect(followsPrereleases('1.0.8')).toBe(false)
+    expect(followsPrereleases('1.1.0')).toBe(false)
+  })
+
+  it('only a Linux .deb (no $APPIMAGE) is notify-only', () => {
+    expect(canInstallUpdates('win32', {})).toBe(true)
+    expect(canInstallUpdates('darwin', {})).toBe(true)
+    expect(canInstallUpdates('linux', { APPIMAGE: '/home/u/Epdf-1.0.8-beta.1-x86_64.AppImage' })).toBe(true)
+    expect(canInstallUpdates('linux', {})).toBe(false)
+    expect(canInstallUpdates('linux', { APPIMAGE: '' })).toBe(false)
+  })
+
+  it('points at the public release channel', () => {
+    expect(RELEASES_REPO).toEqual({ owner: 'Mannai', repo: 'epdf-releases' })
+    expect(releasePageUrl('1.0.8-beta.1')).toBe('https://github.com/Mannai/epdf-releases/releases/tag/v1.0.8-beta.1')
+  })
+
+  it('the build configuration publishes to the same public repo, with no token', () => {
+    const yml = readFileSync(join(__dirname, '../../electron-builder.yml'), 'utf8').replace(/\r\n/g, '\n')
+    const publish = /^publish:\n((?:[ \t-].*\n)+)/m.exec(yml)?.[1] ?? ''
+    expect(publish).toMatch(/provider: github/)
+    expect(publish).toMatch(/owner: Mannai/)
+    expect(publish).toMatch(/repo: epdf-releases/)
+    expect(publish).toMatch(/releaseType: prerelease/)
+    expect(publish).not.toMatch(/token|private: true/i)
+  })
 })
 
-function harness(over: { check?: UpdaterLike['checkForUpdates']; download?: UpdaterLike['downloadUpdate']; canUpdate?: boolean; yes?: boolean } = {}) {
+function harness(
+  over: { check?: UpdaterLike['checkForUpdates']; download?: UpdaterLike['downloadUpdate']; canUpdate?: boolean; canInstall?: boolean; yes?: boolean } = {}
+) {
   const updater: UpdaterLike = {
     checkForUpdates: vi.fn(over.check ?? (async () => ({ isUpdateAvailable: true, updateInfo: { version: '0.2.0' } }))),
     downloadUpdate: vi.fn(over.download ?? (async () => ['x']))
@@ -43,10 +86,11 @@ function harness(over: { check?: UpdaterLike['checkForUpdates']; download?: Upda
     notifyUpToDate: vi.fn(async () => undefined),
     notifyError: vi.fn(async () => undefined),
     notifyUnavailable: vi.fn(async () => undefined),
+    offerDownloadPage: vi.fn(async () => yes),
     progress: vi.fn()
   }
   const requestQuit = vi.fn()
-  const flow = createUpdateFlow({ updater, ui, currentVersion: '0.1.0', canUpdate: over.canUpdate ?? true, requestQuit })
+  const flow = createUpdateFlow({ updater, ui, currentVersion: '0.1.0', canUpdate: over.canUpdate ?? true, canInstall: over.canInstall, requestQuit })
   return { updater, ui, requestQuit, flow }
 }
 
@@ -131,5 +175,24 @@ describe('update flow', () => {
     const quiet = harness({ canUpdate: false })
     await quiet.flow.check(false)
     expect(quiet.ui.notifyUnavailable).not.toHaveBeenCalled()
+  })
+
+  it('a notify-only install (Linux .deb) offers the download page and never downloads or quits', async () => {
+    const h = harness({ canInstall: false })
+    expect(await h.flow.check(false)).toBe('notified')
+    expect(h.ui.offerDownloadPage).toHaveBeenCalledWith('0.2.0', '0.1.0')
+    expect(h.ui.confirmDownload).not.toHaveBeenCalled()
+    expect(h.updater.downloadUpdate).not.toHaveBeenCalled()
+    expect(h.requestQuit).not.toHaveBeenCalled()
+  })
+
+  it('a notify-only install does not nag again in the background after "Not Now"', async () => {
+    const h = harness({ canInstall: false, yes: false })
+    expect(await h.flow.check(false)).toBe('declined')
+    expect(await h.flow.check(false)).toBe('declined')
+    expect(h.ui.offerDownloadPage).toHaveBeenCalledOnce()
+    await h.flow.check(true)
+    expect(h.ui.offerDownloadPage).toHaveBeenCalledTimes(2)
+    expect(h.updater.downloadUpdate).not.toHaveBeenCalled()
   })
 })
