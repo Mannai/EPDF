@@ -1,8 +1,8 @@
 EPDF END USER LICENSE AGREEMENT
 
-Version 1.0, 28 September 2026
+Version 1.1, 28 September 2026
 
-Please read this agreement carefully. It is a legal agreement between you and Meshal AlMannai ("the Licensor", "we", "us"), the owner of Epdf. By clicking "I Agree", or by installing, copying or using Epdf, you agree to be bound by this agreement. If you do not agree, click "Cancel", do not install Epdf, and delete any copy you have. If you accept this agreement for an organization, you confirm that you have the authority to bind it, and "you" means that organization.
+Please read this agreement carefully. It is a legal agreement between you and Epdf ("the Licensor", "we", "us"), the owner of the Epdf software. By clicking "I Agree", or by installing, copying or using Epdf, you agree to be bound by this agreement. If you do not agree, click "Cancel", do not install Epdf, and delete any copy you have. If you accept this agreement for an organization, you confirm that you have the authority to bind it, and "you" means that organization.
 
 1. DEFINITIONS
 
@@ -111,7 +111,7 @@ This agreement, and any dispute or claim arising out of or in connection with it
 
 17. CONTACT
 
-Meshal AlMannai
+Epdf
 support@epdf.ing (licenses and purchases: sales@epdf.ing)
 
-Copyright (c) 2026 Meshal AlMannai. All rights reserved.
+Copyright (c) 2026 Epdf. All rights reserved.

@@ -1,6 +1,6 @@
 appId: com.epdf.app
 productName: Epdf
-copyright: Copyright © 2026 Meshal AlMannai
+copyright: Copyright © 2026 Epdf
 directories:
   buildResources: build
   output: dist
@@ -142,8 +142,8 @@ linux:
   # (application/pdf comes from fileAssociations above; listing it here too repeated it in the desktop entry)
   icon: build/icons # 16...1024 px, so menus, docks and file managers get a sharp icon at every size
   executableName: epdf # lowercase command and desktop entry id (epdf.desktop), as Linux expects
-  maintainer: Meshal AlMannai <support@epdf.ing>
-  vendor: Meshal AlMannai
+  maintainer: Epdf <support@epdf.ing>
+  vendor: Epdf
   synopsis: Every PDF tool in one offline app
   description: >-
     View, edit, sign, redact, OCR and compare PDFs in any language, right-to-left included. Fully offline.

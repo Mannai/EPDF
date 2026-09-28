@@ -186,7 +186,7 @@ done or not verified yet is listed honestly in [Known limitations](docs/LIMITATI
 
 ## License
 
-Copyright © 2026 Meshal AlMannai. Epdf is **source-available, not open source**: the code and the installers are
+Copyright © 2026 Epdf. Epdf is **source-available, not open source**: the code and the installers are
 published under the [PolyForm Strict License 1.0.0](LICENSE.md).
 
 | | |

@@ -5,8 +5,8 @@
  * version. Automated deployments and tests accept it with EPDF_ACCEPT_EULA=1, as a silent Windows install does.
  */
 
-/** Raise when the agreement's terms change, so everyone is asked again. */
-export const EULA_VERSION = '1.0'
+/** Raise when the agreement's terms change, so everyone is asked again. Keep it equal to the "Version" line of build/license.txt. */
+export const EULA_VERSION = '1.1'
 
 export function eulaNeedsAcceptance(platform: NodeJS.Platform, accepted: string | null, env: NodeJS.ProcessEnv = process.env): boolean {
   if (platform === 'win32') return false // the installer asked

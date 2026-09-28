@@ -1,4 +1,4 @@
-Copyright (c) 2026 Meshal AlMannai. All rights reserved, except as granted by the license below.
+Copyright (c) 2026 Epdf. All rights reserved, except as granted by the license below.
 
 The source code of Epdf and the Epdf installers are made available under the PolyForm Strict License 1.0.0,
 reproduced below. For commercial use, redistribution or any other permission not granted here, contact
