@@ -875,6 +875,11 @@ test.describe('printing (through the EPDF_PRINT_TO_FILE test hook)', () => {
     }
   })
 
+  // Chromium's own shared-memory files (.org.chromium.Chromium.*): Playwright starts Electron with
+  // --disable-dev-shm-usage, which puts them in the temp folder instead of /dev/shm (Linux), and an app it closes can
+  // leave one behind. They are not Epdf's.
+  const chromiumOwn = (f: string): boolean => f.startsWith('.org.chromium.')
+
   test('printing leaves no temporary files behind', async () => {
     const { out, env } = printTo()
     // Give the app a private temp folder, so nothing another process creates can be mistaken for a leak.
@@ -889,14 +894,12 @@ test.describe('printing (through the EPDF_PRINT_TO_FILE test hook)', () => {
       await dlg.getByRole('button', { name: 'Print…' }).click()
       await expect(page.getByRole('dialog')).toHaveCount(0)
       expect((await load(out)).getPageCount()).toBe(3)
-      // Chromium keeps a scratch folder of its own there on Linux (.org.chromium.Chromium.*) while it runs.
-      const chromiumOwn = (f: string): boolean => f.startsWith('.org.chromium.')
       expect(listing().filter((f) => !before.includes(f) && !chromiumOwn(f))).toEqual([])
     } finally {
       await app.close()
     }
-    // After quitting, nothing at all is left (Chromium removes its own folder too).
-    await expect.poll(() => readdirSync(privateTemp).filter((f) => !f.startsWith('epdf-e2e-')), { timeout: 10_000 }).toEqual([])
+    // After quitting, nothing of Epdf's is left either.
+    expect(readdirSync(privateTemp).filter((f) => !chromiumOwn(f))).toEqual([])
   })
 
   test('Print to PDF saves the current (edited) state as vector PDF with the chosen range, scale and annotations', async () => {
