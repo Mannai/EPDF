@@ -29,6 +29,9 @@ async function pdfPoint(page: Page, x: number, y: number): Promise<{ x: number; 
 
 const dot = (page: Page) => page.getByTestId('unsaved-dot')
 
+/** The item that shows a file in the file manager (Finder on macOS). */
+const SHOW_IN = process.platform === 'darwin' ? 'Show in Finder' : 'Show in File Explorer'
+
 async function settle(page: Page, n = 1): Promise<void> {
   await expect(page.locator(`[data-page="${n}"] canvas`)).toBeVisible()
   await expect(page.locator(`[data-page="${n}"] .textLayer span`).first()).toBeVisible()
@@ -235,15 +238,17 @@ test.describe('right-click menus', () => {
       const tabs = page.getByRole('tablist', { name: 'Open documents' }).getByRole('tab')
       await expect(tabs).toHaveCount(3)
       const menu = await contextMenu(app, tabs.nth(2), null)
-      expect(menuLabels(menu)).toEqual(['Close', 'Close other tabs', 'Close tabs to the right (off)', '—', 'Move to new window', '—', 'Show in File Explorer', 'Copy file path'])
+      expect(menuLabels(menu)).toEqual(['Close', 'Close other tabs', 'Close tabs to the right (off)', '—', 'Move to new window', '—', SHOW_IN, 'Copy file path'])
 
       await contextMenu(app, tabs.nth(0), 'Close tabs to the right')
       await expect(tabs).toHaveCount(1)
 
-      // Shift+F10 on the focused tab.
-      await tabs.nth(0).focus()
-      const kb = await contextMenu(app, () => page.keyboard.press('Shift+F10'), null)
-      expect(menuLabels(kb)[0]).toBe('Close')
+      // Shift+F10 on the focused tab (Windows and Linux; macOS has no keyboard key for context menus).
+      if (process.platform !== 'darwin') {
+        await tabs.nth(0).focus()
+        const kb = await contextMenu(app, () => page.keyboard.press('Shift+F10'), null)
+        expect(menuLabels(kb)[0]).toBe('Close')
+      }
     } finally {
       await quitDiscarding(app, page)
     }
@@ -324,7 +329,7 @@ test.describe('right-click menus', () => {
       await expect(lib.getByTestId('indexing-message')).toHaveCount(0, { timeout: 60_000 })
 
       const menu = await contextMenu(app, rows.nth(0), null)
-      expect(menuLabels(menu)).toEqual(['Open', 'Open in new window', 'Show in File Explorer', '—', 'Favorite', 'Add to folder…', '—', 'Remove from library…'])
+      expect(menuLabels(menu)).toEqual(['Open', 'Open in new window', SHOW_IN, '—', 'Favorite', 'Add to folder…', '—', 'Remove from library…'])
       await expect(rows.nth(0)).toHaveAttribute('aria-selected', 'true') // right-click selected it
 
       await contextMenu(app, rows.nth(0), 'Favorite')
@@ -334,7 +339,7 @@ test.describe('right-click menus', () => {
       await rows.nth(0).click()
       await rows.nth(1).click({ modifiers: ['Shift'] })
       const both = await contextMenu(app, rows.nth(1), null)
-      expect(menuLabels(both).slice(0, 3)).toEqual(['Open 2 files', 'Open in new window (off)', 'Show in File Explorer (off)'])
+      expect(menuLabels(both).slice(0, 3)).toEqual(['Open 2 files', 'Open in new window (off)', `${SHOW_IN} (off)`])
 
       await contextMenu(app, rows.nth(1), 'Remove from library…')
       await page.getByRole('dialog', { name: 'Remove from library?' }).getByRole('button', { name: 'Remove from library' }).click()

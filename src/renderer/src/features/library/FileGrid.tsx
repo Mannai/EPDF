@@ -11,6 +11,7 @@ import { openContextMenu, type ContextItem } from '../../components/contextMenu'
 import { detachActiveTab } from '../../state/actions'
 import { useTabs } from '../../state/tabs'
 import { formatDate } from './format'
+import { SHOW_IN_FILE_MANAGER } from '../keys'
 
 export const DRAG_TYPE = 'application/x-epdf-library-refs'
 
@@ -442,7 +443,7 @@ function fileMenu(t: LibraryItem[]): ContextItem[] {
   return [
     { label: one ? 'Open' : `Open ${t.length} files`, keys: 'Enter', run: () => openRefs(t.map((i) => i.ref)) },
     { label: 'Open in new window', enabled: !!one, run: () => one && openInNewWindow(one.ref) },
-    { label: 'Show in File Explorer', enabled: !!one, run: () => one && revealRef(one.ref) },
+    { label: SHOW_IN_FILE_MANAGER, enabled: !!one, run: () => one && revealRef(one.ref) },
     { type: 'separator' },
     { label: 'Favorite', keys: 'Ctrl+D', checked: allFav, run: () => setFavorite(t.map((i) => i.ref), !allFav) },
     { label: 'Add to folder…', enabled: lib.length > 0, run: () => askAddToFolder(lib.map((i) => i.ref)) },

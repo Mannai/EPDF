@@ -59,7 +59,10 @@ async function renderReference(spec: unknown): Promise<Ink> {
   const rect = await page.evaluate((s) => (window as unknown as { __harness: Harness }).__harness.renderHtml(s), spec)
   const cap = await app.evaluate(async ({ BrowserWindow }, r) => {
     const win = BrowserWindow.getAllWindows()[0]!
-    const img = await win.webContents.capturePage(r)
+    const shot = await win.webContents.capturePage(r)
+    // macOS captures at the display's backing scale (2x on a Retina screen, --force-device-scale-factor or not):
+    // bring it back to the CSS pixels the PDF side is rendered at.
+    const img = shot.getSize().width === r.width ? shot : shot.resize({ width: r.width, height: r.height, quality: 'best' })
     const size = img.getSize()
     return { width: size.width, height: size.height, data: img.toBitmap().toString('base64') }
   }, rect)

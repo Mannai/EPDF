@@ -20,7 +20,8 @@ test.describe('OCR in a packaged build', () => {
   })
 
   test('recognizes text with the engine, WebAssembly core and English data shipped inside the app (offline)', async () => {
-    const resources = join(dirname(exe!), 'resources')
+    // Windows/Linux: <app>/resources next to the executable; macOS: Epdf.app/Contents/Resources (exe in Contents/MacOS)
+    const resources = process.platform === 'darwin' ? join(dirname(exe!), '..', 'Resources') : join(dirname(exe!), 'resources')
     // what the installer ships
     expect(existsSync(join(resources, 'ocr', 'eng.traineddata'))).toBe(true)
     expect(existsSync(join(resources, 'ocr', 'LICENSE-tessdata_fast.txt'))).toBe(true)

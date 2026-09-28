@@ -3,6 +3,9 @@ const defaultIsMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(
 /** Running on macOS (Cmd instead of Ctrl, Mac key symbols). */
 export const isMac = defaultIsMac
 
+/** The right-click item that shows a file in the system's file manager. */
+export const SHOW_IN_FILE_MANAGER = isMac ? 'Show in Finder' : 'Show in File Explorer'
+
 interface KeyLike {
   key: string
   /** The physical key (`KeyM`, `Digit1`); optional for callers that only have `key`. */

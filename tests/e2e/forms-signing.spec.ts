@@ -408,11 +408,17 @@ test.describe('form filling', () => {
       const name = fld(page, 'Full name')
       await name.click()
       await name.pressSequentially('abcdef')
-      await page.keyboard.press('Home')
+      // A Mac text field goes to the start / end of the line with Cmd+Left / Cmd+Right (Home and End only scroll).
+      const mac = process.platform === 'darwin'
+      await page.keyboard.press(mac ? 'Meta+ArrowLeft' : 'Home')
       await page.keyboard.press('ArrowRight')
       await page.keyboard.press('X')
-      await page.keyboard.press('End')
+      await page.keyboard.press(mac ? 'Meta+ArrowRight' : 'End')
       await page.keyboard.press('Y')
+      if (mac) {
+        await page.keyboard.press('Home') // still must not turn pages
+        await page.keyboard.press('End')
+      }
       await expect(name).toHaveValue('aXbcdefY')
       await expect(page.getByLabel('Page number')).toHaveValue('1')
       await page.keyboard.press('Escape')

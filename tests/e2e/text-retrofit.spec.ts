@@ -94,7 +94,9 @@ async function compareWithChromium(name: string, bytes: Uint8Array, region: { x0
         { fonts: SANS_FONTS, families: SANS_FONTS.map((f) => f.name), sizePt, boxWidth: 700, lines: [{ text: t, dir: d, height: sizePt * 2 }] }
       )
       const cap = await harness.evaluate(async ({ BrowserWindow }, rr) => {
-        const img = await BrowserWindow.getAllWindows()[0]!.webContents.capturePage(rr)
+        const shot = await BrowserWindow.getAllWindows()[0]!.webContents.capturePage(rr)
+        // macOS captures at the display's backing scale (2x on Retina): back to CSS pixels, as the PDF side.
+        const img = shot.getSize().width === rr.width ? shot : shot.resize({ width: rr.width, height: rr.height, quality: 'best' })
         return { width: img.getSize().width, height: img.getSize().height, data: img.toBitmap().toString('base64') }
       }, rect)
       const bgra = Buffer.from(cap.data, 'base64')

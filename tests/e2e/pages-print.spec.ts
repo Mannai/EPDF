@@ -881,6 +881,9 @@ test.describe('printing (through the EPDF_PRINT_TO_FILE test hook)', () => {
   const chromiumOwn = (f: string): boolean => f.startsWith('.org.chromium.')
 
   test('printing leaves no temporary files behind', async () => {
+    // macOS: Electron and Chromium use the user's system temp folder (NSTemporaryDirectory), which TMPDIR does not
+    // move, so the app can't be given a private one and its files can't be told apart from other processes'.
+    test.skip(process.platform === 'darwin', 'the temp folder cannot be made private on macOS')
     const { out, env } = printTo()
     // Give the app a private temp folder, so nothing another process creates can be mistaken for a leak.
     const privateTemp = tmpDir()

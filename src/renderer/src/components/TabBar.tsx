@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useEdits } from '../edit/session'
 import { closeTabInteractive } from '../features/core/closeFlow'
-import { shortcutLabel } from '../features/keys'
+import { SHOW_IN_FILE_MANAGER, shortcutLabel } from '../features/keys'
 import { useTabs } from '../state/tabs'
 import { detachActiveTab, openFiles } from '../state/actions'
 import { openContextMenu, type ContextItem } from './contextMenu'
@@ -34,7 +34,7 @@ function tabMenu(docId: string, path: string): ContextItem[] {
       }
     },
     { type: 'separator' },
-    { label: 'Show in File Explorer', run: () => void window.epdf.revealDoc(docId) },
+    { label: SHOW_IN_FILE_MANAGER, run: () => void window.epdf.revealDoc(docId) },
     { label: 'Copy file path', run: () => navigator.clipboard.writeText(path) }
   ]
 }

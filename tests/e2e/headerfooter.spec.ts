@@ -181,7 +181,9 @@ test.describe('headers and footers', () => {
           { fonts, families: fonts.map((f) => f.name), sizePt: 18, boxWidth: 400, lines: [{ text, dir, height: 40, align: 'center' }] }
         )
         const cap = await harness.evaluate(async ({ BrowserWindow }, r) => {
-          const img = await BrowserWindow.getAllWindows()[0]!.webContents.capturePage(r)
+          const shot = await BrowserWindow.getAllWindows()[0]!.webContents.capturePage(r)
+          // macOS captures at the display's backing scale (2x on Retina): back to CSS pixels, as the PDF side.
+          const img = shot.getSize().width === r.width ? shot : shot.resize({ width: r.width, height: r.height, quality: 'best' })
           return { width: img.getSize().width, height: img.getSize().height, data: img.toBitmap().toString('base64') }
         }, rect)
         const bgra = Buffer.from(cap.data, 'base64')
