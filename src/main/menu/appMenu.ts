@@ -6,6 +6,7 @@ import type { Controller } from '../controller'
 import { APP_MENU_ID, commandItem, contributionsFor, NEEDS_DOCUMENT, setCommandSender, type MenuName } from './contributions'
 
 const isMac = process.platform === 'darwin'
+const PRODUCT_NAME = 'Epdf'
 
 type Item = MenuItemConstructorOptions
 
@@ -65,20 +66,22 @@ export function installMenus(c: Controller): void {
       ? [
           {
             // There is no Settings window: Epdf's settings are the checkable items of the Edit, View and Help menus.
+            // The labels name the product explicitly: app.name is the package name "epdf" (it also names the
+            // profile folder, so it stays), and the roles would print "About epdf" / "Quit epdf".
             id: APP_MENU_ID,
-            label: app.name,
+            label: PRODUCT_NAME,
             submenu: [
-              { role: 'about' },
+              { role: 'about', label: `About ${PRODUCT_NAME}` },
               { type: 'separator' },
               { label: 'Set as Default PDF App…', click: () => c.setDefaultPdfApp() },
               { type: 'separator' },
               { role: 'services' },
               { type: 'separator' },
-              { role: 'hide' },
+              { role: 'hide', label: `Hide ${PRODUCT_NAME}` },
               { role: 'hideOthers' },
               { role: 'unhide' },
               { type: 'separator' },
-              { role: 'quit' }
+              { role: 'quit', label: `Quit ${PRODUCT_NAME}` }
             ] as Item[]
           }
         ]

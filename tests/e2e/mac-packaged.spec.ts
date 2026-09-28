@@ -35,9 +35,14 @@ test.describe('macOS packaged app', () => {
       await app.firstWindow()
       // The Epdf menu with About, Hide and Quit (Cmd+Q comes with the role); Edit has Cut / Copy / Paste.
       const menus = await app.evaluate(({ Menu }) =>
-        Menu.getApplicationMenu()!.items.map((m) => ({ label: m.label, roles: (m.submenu?.items ?? []).map((i) => (i.role ?? '').toLowerCase()) }))
+        Menu.getApplicationMenu()!.items.map((m) => ({
+          label: m.label,
+          roles: (m.submenu?.items ?? []).map((i) => (i.role ?? '').toLowerCase()),
+          labels: (m.submenu?.items ?? []).map((i) => i.label)
+        }))
       )
       expect(menus[0]!.label).toBe('Epdf')
+      expect(menus[0]!.labels).toEqual(expect.arrayContaining(['About Epdf', 'Hide Epdf', 'Quit Epdf']))
       expect(menus[0]!.roles).toEqual(expect.arrayContaining(['about', 'hide', 'hideothers', 'unhide', 'quit', 'services']))
       expect(menus.find((m) => m.label.replace('&', '') === 'Edit')!.roles).toEqual(expect.arrayContaining(['cut', 'copy', 'paste', 'selectall']))
 

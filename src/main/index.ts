@@ -56,6 +56,10 @@ async function start(): Promise<void> {
 
   await app.whenReady()
   app.setAppUserModelId('com.epdf.app')
+  // macOS: Epdf ▸ About Epdf. The product name, and the version once (not "1.1.0-beta.1 (1.1.0-beta.1)").
+  if (process.platform === 'darwin') {
+    app.setAboutPanelOptions({ applicationName: 'Epdf', applicationVersion: app.getVersion(), version: '', copyright: 'Copyright © 2026 Epdf' })
+  }
 
   const repos = openRepos(join(app.getPath('userData'), 'epdf.db'))
   // The license agreement, where no installer asked for it (Linux, macOS): nothing opens until it is accepted.
