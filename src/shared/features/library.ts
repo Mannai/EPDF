@@ -207,7 +207,9 @@ export interface OpenResult {
 export const RefRequestSchema = z.object({ ref: RefSchema })
 export const RootRequestSchema = z.object({ rootId: IdSchema })
 export const FavoriteRequestSchema = z.object({ refs: RefsSchema, value: z.boolean() })
-export const AddSuggestedSchema = z.object({ key: z.string().max(80) })
+// The key is `<kind>:<normalised path>`, so it is as long as the folder's path (macOS cloud folders such as
+// ~/Library/CloudStorage/GoogleDrive-<account>/My Drive, or anything under /var/folders, pass 80 characters easily).
+export const AddSuggestedSchema = z.object({ key: z.string().max(4200) })
 export const SyncRequestSchema = z.object({ rootId: IdSchema.optional() })
 export const IndexFileRequestSchema = z.object({ ref: RefSchema })
 export const ForgetRequestSchema = z.object({ keepFolders: z.boolean() })

@@ -9,7 +9,7 @@ import { FeatureKv, RecentFilesRepo } from '../../src/main/db/repos'
 import { LibraryRepo } from '../../src/main/features/library/repo'
 import { LibraryService, type ServicePorts, type SyncJobPayload } from '../../src/main/features/library/service'
 import { detectFolders, dropboxPathsFromInfo, type SuggestEnv } from '../../src/main/features/library/suggest'
-import { DEFAULT_LIBRARY_SETTINGS } from '../../src/shared/features/library'
+import { AddSuggestedSchema, DEFAULT_LIBRARY_SETTINGS } from '../../src/shared/features/library'
 import { DirectEngine, TEST_ASSETS } from '../support/libraryEngine'
 import { makeTextPdf } from '../support/libraryFixtures'
 
@@ -89,6 +89,10 @@ describe('folder suggestions', () => {
     expect(by('onedrive')).toHaveLength(1)
     expect(by('icloud')[0].path).toContain('com~apple~CloudDocs')
     expect(by('dropbox').length).toBeGreaterThanOrEqual(1)
+    // The key the renderer sends back to add a suggestion is as long as the path; the channel must accept it.
+    for (const x of s) expect(AddSuggestedSchema.safeParse({ key: x.key }).success, x.key).toBe(true)
+    const long = `gdrive:/users/ann/library/cloudstorage/googledrive-a.rather.long.address@example-company.com/my drive/${'sub/'.repeat(40)}`
+    expect(AddSuggestedSchema.safeParse({ key: long }).success).toBe(true)
   })
 
   it('Linux and empty machines give at most the document folders', () => {
