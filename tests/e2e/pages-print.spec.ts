@@ -889,10 +889,14 @@ test.describe('printing (through the EPDF_PRINT_TO_FILE test hook)', () => {
       await dlg.getByRole('button', { name: 'Print…' }).click()
       await expect(page.getByRole('dialog')).toHaveCount(0)
       expect((await load(out)).getPageCount()).toBe(3)
-      expect(listing().filter((f) => !before.includes(f))).toEqual([])
+      // Chromium keeps a scratch folder of its own there on Linux (.org.chromium.Chromium.*) while it runs.
+      const chromiumOwn = (f: string): boolean => f.startsWith('.org.chromium.')
+      expect(listing().filter((f) => !before.includes(f) && !chromiumOwn(f))).toEqual([])
     } finally {
       await app.close()
     }
+    // After quitting, nothing at all is left (Chromium removes its own folder too).
+    await expect.poll(() => readdirSync(privateTemp).filter((f) => !f.startsWith('epdf-e2e-')), { timeout: 10_000 }).toEqual([])
   })
 
   test('Print to PDF saves the current (edited) state as vector PDF with the chosen range, scale and annotations', async () => {
