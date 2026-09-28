@@ -118,6 +118,9 @@ nsis:
   runAfterFinish: true
   artifactName: Epdf-Setup-${version}.${ext} # no spaces: friendlier in update URLs and download links
 
+msi:
+  artifactName: Epdf-${version}.${ext}
+
 # Where the installed app looks for updates (Help > Check for Updates): the public releases of Mannai/epdf-releases
 # (installers only, separate from the source repository; a public feed needs no token in the app). A release is tagged
 # v<version>; its assets are the installers, their .blockmap files, latest.yml (Windows) and latest-linux.yml.

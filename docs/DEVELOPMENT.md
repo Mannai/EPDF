@@ -62,7 +62,7 @@ npm run dist:win     # NSIS installer (.exe) + MSI, x64
 | Artifact | For | Notes |
 |---|---|---|
 | `Epdf-Setup-<version>.exe` | People | Per-user install (no admin rights), choose the folder, Start Menu + Desktop shortcuts, `.pdf` association, Explorer right-click entries (below), uninstaller. Installer text: English, Arabic (right-to-left), French, German, Spanish; it follows the language of Windows. |
-| `Epdf <version>.msi` | IT deployment | Per-user, silent (`msiexec /i ... /qn`), shortcuts and `.pdf` association. **Does not add the Explorer right-click entries** (those are NSIS-only). |
+| `Epdf-<version>.msi` | IT deployment | Per-user, silent (`msiexec /i ... /qn`), shortcuts and `.pdf` association. **Does not add the Explorer right-click entries** (those are NSIS-only). |
 | `latest.yml` + `.blockmap` | Auto-update | Upload next to the installer (see "Updates"). |
 
 Windows reports an MSI's version without the pre-release label (`1.0.6-beta.1` installs as `1.0.6.0`), so every beta
