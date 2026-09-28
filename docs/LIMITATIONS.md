@@ -1,6 +1,6 @@
 # Known limitations
 
-What Epdf 1.0.6-beta.1 does not do yet, and what has not been verified. Each feature's page in
+What Epdf 1.1.0-beta.1 does not do yet, and what has not been verified. Each feature's page in
 [`docs/features/`](features/) has the details; this page collects the ones that matter most.
 
 ## Platforms and distribution
@@ -9,8 +9,13 @@ What Epdf 1.0.6-beta.1 does not do yet, and what has not been verified. Each fea
   only: other distributions, desktops (KDE, XFCE...), Wayland sessions and ARM were not tried. On Linux, scanners
   are not supported (webcam and phone are), HEIC pictures need `heif-convert` or ImageMagick, saving signatures needs
   a desktop keyring, and there are no file-manager "Convert to PDF" entries.
-- **macOS** is configured but was never built or run: the universal `.dmg`, Dock menu, `open-file` handling, the
-  macOS HEIC decoder and key storage are written but untested.
+- **macOS** (since 1.1.0-beta.1): the universal `.dmg`/`.zip` was built and tested on one Apple Silicon Mac (M2,
+  macOS 26). Not tried: an Intel Mac (the universal app contains the Intel code, but it never ran on one), macOS 13
+  to 15, a Mac with an Apple Developer ID signature. The app is signed ad hoc, not notarized: users allow it once in
+  System Settings, and it cannot update itself (it only announces new versions). Scanners are not supported on macOS
+  (the camera and phone are); the camera scan, printing to a real printer, the Keychain question after replacing
+  the app with a newer build, and double-clicking a PDF in Finder by hand were not exercised (the tests open files
+  through Launch Services with `open`, which is what Finder uses).
 - **The beta is unsigned**, so Windows SmartScreen warns on download. The signing pipeline works with a test
   certificate; see [Code signing](DEVELOPMENT.md#code-signing).
 - **Auto-update** was tested end to end against a local server (update, relaunch, tampered download refused), but
@@ -58,7 +63,8 @@ What Epdf 1.0.6-beta.1 does not do yet, and what has not been verified. Each fea
   when it cannot be sure; [Redaction](features/redact.md) states exactly what is and is not removed. Copies outside
   Epdf's data folder (backups, the original left after Save As) are not controlled.
 - **Compression** does not linearize ("Fast Web View").
-- **HEIC** pictures depend on the Windows HEIF extension; everything else is built in.
+- **HEIC** pictures depend on the Windows HEIF extension (macOS: its built-in `sips`; Linux: `heif-convert` or
+  ImageMagick); everything else is built in.
 - Old binary Office formats (`.doc`, `.xls`, `.ppt`) are not converted; save them as `.docx/.xlsx/.pptx` first.
 - A spreadsheet that declares absurd repeat counts is capped at 512 columns × 2000 rows; converting that still takes
   about 40 s.

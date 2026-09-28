@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.6--beta.1-2563eb" alt="Version 1.0.6-beta.1">
-  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-2563eb" alt="Platform: Windows and Linux">
+  <img src="https://img.shields.io/badge/version-1.1.0--beta.1-2563eb" alt="Version 1.1.0-beta.1">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-2563eb" alt="Platform: Windows, macOS and Linux">
   <img src="https://img.shields.io/badge/works-offline-16a34a" alt="Works offline">
   <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-PolyForm%20Strict%201.0.0-6b7280" alt="License: PolyForm Strict 1.0.0"></a>
 </p>
@@ -154,20 +154,40 @@ Converting Office documents in right-to-left languages is covered in [Office →
 
 ## Install
 
-Epdf is a beta for **Windows** (64-bit; tested on Windows 11) and **Linux** (64-bit; tested on Ubuntu 26.04). macOS is
-coming. Download it from [epdf.ing](https://epdf.ing); every release, with its notes, is also on
-[GitHub](https://github.com/Mannai/EPDF/releases).
+Epdf is a beta for **Windows** (64-bit; tested on Windows 11), **macOS** (13 or later, Apple Silicon and Intel; tested
+on macOS 26 with Apple Silicon) and **Linux** (64-bit; tested on Ubuntu 26.04). Download it from
+[epdf.ing](https://epdf.ing); every release, with its notes, is also on [GitHub](https://github.com/Mannai/EPDF/releases).
 
 | Download | For |
 |---|---|
 | `Epdf-Setup-<version>.exe` | Windows, most people. Installs for your account only (no admin rights), adds Start menu and desktop shortcuts, and offers Epdf under **Open with** for PDFs. Available in English, Arabic, French, German and Spanish. |
 | `Epdf-<version>.msi` | Windows, IT departments: silent deployment with `msiexec /i "Epdf-<version>.msi" /qn`. |
+| `Epdf-<version>-universal.dmg` | Mac: open it and drag Epdf into Applications. One download for Apple Silicon and Intel. (The `.zip` holds the same app.) |
 | `Epdf-<version>-amd64.deb` | Ubuntu, Debian and their relatives: `sudo apt install ./Epdf-<version>-amd64.deb`. |
 | `Epdf-<version>-x86_64.AppImage` | Other Linux distributions: make it executable and run it. |
 
 The beta is not code-signed yet, so Windows SmartScreen shows a warning the first time; choose **More info ▸ Run
-anyway**. On Linux, Epdf asks you to accept the license agreement the first time it starts. To build the installers
-yourself, see [Packaging](docs/DEVELOPMENT.md#packaging).
+anyway**. On Linux and macOS, Epdf asks you to accept the license agreement the first time it starts. To build the
+installers yourself, see [Packaging](docs/DEVELOPMENT.md#packaging).
+
+### Opening Epdf on a Mac the first time
+
+The Mac app is not signed with an Apple Developer ID or notarized by Apple yet, so macOS stops it the first time
+with a message such as “Apple could not verify “Epdf” is free of malware”. You allow it once, and after that Epdf
+opens normally:
+
+1. Drag Epdf from the disk image into **Applications**, then double-click it there. When macOS says it can't open
+   Epdf, click **Done** (not Move to Trash).
+2. Open **System Settings ▸ Privacy & Security**, scroll down to the message about Epdf, and click **Open Anyway**.
+   Confirm with your password or Touch ID, then click **Open Anyway** again.
+
+On macOS 14 (Sonoma) and earlier you can instead Control-click (or right-click) Epdf in Applications, choose
+**Open**, and click **Open** in the dialog. (In Terminal, `xattr -dr com.apple.quarantine /Applications/Epdf.app`
+does the same.)
+
+Epdf tells you when a new version is out and opens its download page; it doesn't update itself on a Mac. To update,
+quit Epdf, then drag the new version into Applications and choose **Replace**. macOS may then ask once whether Epdf
+may use its key in your keychain (it protects your saved signatures): click **Always Allow**.
 
 ## Documentation
 

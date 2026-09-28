@@ -93,11 +93,67 @@ npm run test:packaged
 ### macOS (run on a Mac)
 
 ```bash
-npm run dist:mac     # universal .dmg (Apple Silicon + Intel) and .zip
+npm run dist:mac     # dist/Epdf-<version>-universal.dmg and .zip (Apple Silicon + Intel), latest-mac.yml
 ```
 
-A universal build must be produced on macOS. The macOS build is configured but has **not been run yet**; expect to
-check it on a Mac or a `macos-latest` CI runner.
+| Artifact | For | Notes |
+|---|---|---|
+| `Epdf-<version>-universal.dmg` | People | Open it and drag Epdf into Applications. One app for Apple Silicon and Intel Macs, macOS 13 or later. |
+| `Epdf-<version>-universal.zip` | Alternative download | The same app, zipped. `latest-mac.yml` points at it. |
+| `latest-mac.yml` + `.blockmap` files | Update check | Upload with the release, or Macs report that they cannot check for updates. |
+
+A universal build must be produced on macOS. It was developed and verified on an Apple M2 (8 GB) with macOS 26 and
+the Command Line Tools only (no Xcode, no Homebrew): Node from the nodejs.org tarball, `npm ci`, and
+`node node_modules/electron/install.js` if Electron's binary is missing. `npm run dist:mac` takes about 1.5 minutes
+there and needs about 2 GB free while it runs (`dist/` ends up at about 1.2 GB).
+
+**Signing.** There is no Apple Developer ID yet, so the app is signed **ad hoc** (`mac.identity: '-'`): Apple Silicon
+refuses to run unsigned code, and an ad hoc signature is enough for that. The hardened runtime stays on; with an ad
+hoc signature it needs `com.apple.security.cs.disable-library-validation` (Electron's frameworks and the SQLite addon
+are separate code objects), and `com.apple.security.device.camera` plus `NSCameraUsageDescription` let the camera scan
+work. Check a build with:
+
+```bash
+codesign -dv --verbose=2 dist/mac-universal/Epdf.app     # Signature=adhoc, flags=0x10002(adhoc,runtime)
+codesign --verify --deep --strict dist/mac-universal/Epdf.app
+spctl -a -vv dist/mac-universal/Epdf.app                 # "rejected": not notarized, expected
+```
+
+Gatekeeper does not know an ad hoc signed app, so users allow it once (README, "Install"). With a Developer ID later:
+remove `identity: '-'`, provide `CSC_LINK` / `CSC_KEY_PASSWORD`, drop `disable-library-validation`, set
+`notarize: true` with the Apple credentials (see "Code signing"), and let macOS install updates again
+(`canInstallUpdates` in `features/updates/policy.ts`).
+
+What differs on macOS:
+- **Window and menus**: the native title bar, and the menu bar at the top of the screen with the **Epdf** menu (About
+  Epdf, Set as Default PDF App, Services, Hide, Quit ⌘Q). There is no Settings window: Epdf's settings are the
+  checkable items in the Edit, View and Help menus. The ribbon's File button shows the same menus except the Epdf menu.
+  Every shortcut uses ⌘ where Windows uses Ctrl; tooltips and right-click menus show the Mac notation (⇧⌘B).
+- **Windows**: closing the last window keeps Epdf running, as Mac apps do; clicking the Dock icon opens a new window.
+  PDFs opened from Finder (double-click, Open With, a drop on the Dock icon) arrive as `open-file`, also while Epdf is
+  still starting.
+- **License agreement**: asked on first start (the disk image has no installer screens), as on Linux.
+- **Saved signatures** are encrypted with a key kept in the login Keychain ("Epdf Safe Storage"). An ad hoc signed
+  new version counts as a different app for the Keychain, so after an update macOS is expected to ask once whether
+  Epdf may use that key (**Always Allow**; not yet observed); with **Deny**, saved signatures can't be read until
+  access is allowed.
+- **Updates**: macOS installs updates only for an app signed with a Developer ID, so Epdf only says that a new
+  version is out and offers its release page, like the Linux .deb.
+- **Scanners** are not supported (a scanner helper for macOS does not exist yet); the camera and phone work.
+  **HEIC** pictures are converted with the `sips` tool that is part of macOS. **Set as Default PDF App** shows the
+  Finder steps (Get Info ▸ Open with ▸ Change All). There are no Finder "Convert to PDF" entries.
+
+**Testing on macOS.** Over ssh, Electron cannot reach the login Keychain (`safeStorage` reports no encryption), so
+the signature tests fail there. Run the tests in the logged-in user's session instead: from Terminal on the Mac, or
+as a launchd job in the `gui/$(id -u)` domain. `EPDF_E2E_WORKERS=2` suits an 8 GB Mac. Packaged-app specs:
+
+```bash
+EPDF_PACKAGED_EXE=$PWD/dist/mac-universal/Epdf.app/Contents/MacOS/Epdf npx playwright test \
+  packaged.spec.ts library-packaged.spec.ts ocr-packaged.spec.ts text-engine-packaged.spec.ts mac-packaged.spec.ts
+```
+
+`mac-packaged.spec.ts` drives the app through Launch Services (`open -a`), as Finder and the Dock do; its update test
+needs a test build (instructions at the top of the file).
 
 ### Linux (run on Linux)
 
@@ -191,7 +247,7 @@ starts the new version. Portable/unpacked runs report that updates are unavailab
 
 - **Feed**: the `publish` entry in `electron-builder.yml`: the GitHub releases of this repository,
   [Mannai/EPDF](https://github.com/Mannai/EPDF/releases) (since 1.0.9; 1.0.8 reads the releases of
-  Mannai/epdf-releases). It is public, so the app carries no token. To release, build on Windows and on Linux, then
+  Mannai/epdf-releases). It is public, so the app carries no token. To release, build on Windows, Linux and macOS, then
   create a release tagged `v<version>` there
   (a GitHub pre-release for a beta) and upload every file below. Later versions download only the changed blocks. The
   download is verified against the SHA-512 in the `.yml`; a corrupted or tampered installer is refused.
@@ -200,13 +256,17 @@ starts the new version. Portable/unpacked runs report that updates are unavailab
   |---|---|
   | `Epdf-Setup-<version>.exe`, its `.blockmap`, `latest.yml` | Windows updates (NSIS) |
   | `Epdf-<version>-x86_64.AppImage`, its `.blockmap`, `latest-linux.yml` | Linux AppImage updates |
-  | `Epdf-<version>.msi`, `Epdf-<version>-amd64.deb` | Downloads only |
+  | `latest-mac.yml` | macOS update check (announces the version; the Mac app does not install it itself) |
+  | `Epdf-<version>.msi`, `Epdf-<version>-amd64.deb`, `Epdf-<version>-universal.dmg` / `.zip` (+ `.blockmap`) | Downloads |
 
 - **Channels**: a beta (`1.0.8-beta.1`) looks at pre-releases as well, so betas get newer betas; a release version
   only looks at full releases. For a beta the updater first asks for `beta.yml` / `beta-linux.yml` and, when the
   release has none, uses `latest.yml` / `latest-linux.yml`, so the `latest*` files are enough.
 - **Linux**: an AppImage downloads and replaces itself like the Windows app. A `.deb` belongs to the system's package
   manager, so the app only says that a new version is out and offers to open its release page.
+- **macOS**: the same as the `.deb`. macOS's installer for app updates (Squirrel.Mac) accepts only apps signed with an
+  Apple Developer ID, which the Mac build is not, so the app never downloads or installs; it reads `latest-mac.yml`,
+  says that a new version is out and offers the release page. The user replaces Epdf in Applications by hand.
 - **Test it** with `node scripts/update-e2e.mjs --old <old installer> --feed <folder with the newer build>`
   (add `--tamper` to check that a corrupted download is refused). Both installers must be built with
   `--config.extraMetadata.epdfTestBuild=true`, the only kind that honours `EPDF_UPDATE_URL`, so nothing on a user's
