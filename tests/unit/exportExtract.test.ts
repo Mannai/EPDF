@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inflateSync } from 'node:zlib'
@@ -12,6 +12,7 @@ import { encodePng, toRgba } from '../../src/renderer/src/features/export/png'
 import { makePng } from '../support/images'
 import { makeRichPdf, openWithPdfjs, TABLE_ROWS } from '../support/exportFixtures'
 import { checkPackage, NS, textsOf, type Checked } from '../support/exportOoxml'
+import { HAVE_SOFFICE, SOFFICE } from '../support/tools'
 
 let pdf: Uint8Array
 beforeAll(async () => {
@@ -329,11 +330,7 @@ describe('png encoder', () => {
 // Optional: a real consumer (LibreOffice) opens what we wrote
 // ---------------------------------------------------------------------------------------------------
 
-const SOFFICE = [process.env['EPDF_TOOL_SOFFICE'], 'C:\\Program Files\\LibreOffice\\program\\soffice.exe', '/Applications/LibreOffice.app/Contents/MacOS/soffice', '/usr/bin/soffice'].find(
-  (p) => !!p && existsSync(p)
-)
-
-describe.skipIf(!SOFFICE)('LibreOffice opens the generated files (skipped when LibreOffice is not installed)', () => {
+describe.skipIf(!HAVE_SOFFICE)('LibreOffice opens the generated files (skipped when LibreOffice is not installed)', () => {
   let out: Checked | null = null
   void out
   it(
@@ -348,7 +345,7 @@ describe.skipIf(!SOFFICE)('LibreOffice opens the generated files (skipped when L
           const file = join(dir, `sample.${format}`)
           writeFileSync(file, r.bytes)
           const outDir = join(dir, `out-${format}`)
-          execFileSync(SOFFICE!, ['--headless', '--norestore', `-env:UserInstallation=file:///${join(dir, 'profile').replace(/\\/g, '/')}`, '--convert-to', 'pdf', '--outdir', outDir, file], {
+          execFileSync(SOFFICE, ['--headless', '--norestore', `-env:UserInstallation=file:///${join(dir, 'profile').replace(/\\/g, '/')}`, '--convert-to', 'pdf', '--outdir', outDir, file], {
             timeout: 150_000,
             stdio: 'ignore'
           })

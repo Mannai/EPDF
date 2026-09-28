@@ -9,12 +9,12 @@ import { flattenText, readPdf } from '../support/pdfText'
 import { logFidelity } from '../support/fidelity'
 import { XF, buildXlsx, row, worksheet } from '../support/xlsxBuilder'
 import { buildOds, tcell, trow } from '../support/odsBuilder'
+import { SOFFICE } from '../support/tools'
 
 /**
  * Optional cross-check against a real LibreOffice: the same fixtures are converted by soffice and by the
  * built-in engine, and page counts / text are compared broadly. Skipped when LibreOffice is not installed.
  */
-const SOFFICE = process.env['EPDF_TOOL_SOFFICE'] || 'C:\\Program Files\\LibreOffice\\program\\soffice.exe'
 const have = existsSync(SOFFICE)
 
 async function withSoffice(name: string, bytes: Uint8Array): Promise<Uint8Array> {

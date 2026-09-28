@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { convertOffice } from '../../src/main/features/create/office'
 import { flattenText, readPdf } from '../support/pdfText'
 import { logFidelity } from '../support/fidelity'
+import { SOFFICE } from '../support/tools'
 
 /**
  * Real-world check of the DOCX reader: documents WRITTEN BY REAL LibreOffice (HTML -> docx) are converted by our
@@ -14,7 +15,6 @@ import { logFidelity } from '../support/fidelity'
  * is not installed. One soffice at a time (shared cross-process lock), throw-away profile per run, temp files removed.
  */
 
-const SOFFICE = process.env['EPDF_TOOL_SOFFICE'] || 'C:\\Program Files\\LibreOffice\\program\\soffice.exe'
 const HAVE = existsSync(SOFFICE)
 const fontsDir = resolve('resources/fonts')
 const LOCK = join(tmpdir(), 'epdf-soffice.lock')

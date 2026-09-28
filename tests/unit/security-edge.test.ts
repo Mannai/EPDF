@@ -24,8 +24,8 @@ import { authenticate, createProtection, UnsupportedEncryptionError } from '../.
 import { _resetEditHooks, registerEditHooks, runBeforeWrite } from '../../src/renderer/src/edit/hooks'
 import { allStreamText, fixtureBytes, openWith } from './helpers/securityHelpers'
 import { assemble, encryptDictText, pageObjects, rawEncryption, showText, streamObject } from './helpers/rawPdf'
+import { QPDF } from '../support/tools'
 
-const QPDF = process.env.QPDF ?? 'C:\\Program Files\\qpdf 12.4.1\\bin\\qpdf.exe'
 const haveQpdf = existsSync(QPDF)
 const tmp = mkdtempSync(join(tmpdir(), 'epdf-sec-edge-'))
 afterAll(() => rmSync(tmp, { recursive: true, force: true }))

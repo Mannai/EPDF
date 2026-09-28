@@ -8,6 +8,7 @@ import { convertOffice } from '../../src/main/features/create/office'
 import { odtPackage, p } from '../support/odt'
 import { flattenText, readPdf } from '../support/pdfText'
 import { logFidelity } from '../support/fidelity'
+import { SOFFICE } from '../support/tools'
 
 /**
  * Comparison of our built-in RTF/ODT conversion with real LibreOffice (page count and text should broadly match).
@@ -15,7 +16,6 @@ import { logFidelity } from '../support/fidelity'
  * own throw-away profile directory, and every temp file is removed.
  */
 
-const SOFFICE = process.env['EPDF_TOOL_SOFFICE'] || 'C:\\Program Files\\LibreOffice\\program\\soffice.exe'
 const HAVE = existsSync(SOFFICE)
 const fontsDir = resolve('resources/fonts')
 const LOCK = join(tmpdir(), 'epdf-soffice.lock')

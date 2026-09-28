@@ -18,7 +18,7 @@ const root = resolve(here, '../../..')
 const require = createRequire(import.meta.url)
 const args = new Set(process.argv.slice(2))
 const all = !args.has('--lo') && !args.has('--chromium') && !args.has('--engine')
-const SOFFICE = process.env.EPDF_TOOL_SOFFICE || 'C:\\Program Files\\LibreOffice\\program\\soffice.exe'
+const SOFFICE = process.env.EPDF_TOOL_SOFFICE || (process.platform === 'win32' ? 'C:\\Program Files\\LibreOffice\\program\\soffice.exe' : '/usr/bin/soffice')
 
 function write(name, bytes) {
   writeFileSync(join(here, name), bytes)
