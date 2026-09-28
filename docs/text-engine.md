@@ -451,6 +451,7 @@ Sans and every script's Noto font), `['Times']`, `['Courier']`, bold/italic as a
 | Comparison report (`compare/report.ts`) | old/new passages, file names, any line | `layoutParagraph` for the line breaks, `drawText` per line with the paragraph direction; right-to-left lines right-aligned in their column |
 | Redaction overlay (`redact/logic/redact.ts`, `pageRedact.ts`) | custom overlay text | `textContent` once at size 1, scaled into each mark with `cm`; fonts under the overlay prefix `EpdfRdFont` so the self-check ignores them |
 | Text editing (`textedit/pdfcontent/textEdit.ts`) | new text needing shaping/RTL, and characters the bundled Noto Sans lacks | `textContent` inserted as `q <text matrix> cm … Q` by the replace strategy; never spliced in place. Exception to the rule: left-to-right non-WinAnsi text Noto Sans covers (Cyrillic, Greek) keeps the editor's pdf-lib Noto Sans path |
+| Editing existing right-to-left / complex-script text (`textedit/pdfcontent/logicalEdit.ts`) | the whole edited line or paragraph, whatever its characters | `layoutParagraph` with per-script spans (script letters: the document font's family or Noto Naskh/Sans Arabic; the rest: the line's Latin family), baselines placed at the old line pitch, `emitLayout`, inserted as `q cm … Q`; the document's own embedded font when it can shape the text |
 | Headers/footers, watermarks, Bates (`headerfooter`) | all text | already on the engine (`makeTextXObject`) |
 
 Not converted (not text in the PDF or out of scope): typed signatures (a Chromium-rendered picture), the OCR invisible

@@ -56,6 +56,8 @@ export interface RunGlyph {
   /** Extent along the baseline in text-space units from the start of the run. */
   x0: number
   x1: number
+  /** How far the glyph moves the text position (width + Tc, + Tw for a single-byte space), in the same units. */
+  adv: number
   /** Which operand element holds the code: -1 = the string operand itself, otherwise the index inside the TJ array. */
   el: number
   /** Byte offset of the code inside that string. */
@@ -307,9 +309,10 @@ class Walker {
         let off = 0
         for (const gl of font.glyphs(bytes)) {
           const w = (gl.width / 1000) * ts.size * th
-          glyphs.push({ code: gl.code, n: gl.n, text: gl.text, known: gl.known, x0: u, x1: u + w, el, off })
+          const adv = w + tc * th + (gl.space ? tw * th : 0)
+          glyphs.push({ code: gl.code, n: gl.n, text: gl.text, known: gl.known, x0: u, x1: u + w, adv, el, off })
           used.add(gl.code)
-          u += w + tc * th + (gl.space ? tw * th : 0)
+          u += adv
           off += gl.n
         }
       }

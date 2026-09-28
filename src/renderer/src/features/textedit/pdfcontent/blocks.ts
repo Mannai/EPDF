@@ -1,6 +1,7 @@
 import type { PageAnalysis, TextRun } from './analyze'
 import type { Color } from './analyze'
 import type { PdfFont } from './fonts'
+import type { LogicalInfo } from './logical'
 import type { Rect } from './matrix'
 
 /**
@@ -44,6 +45,11 @@ export interface TextBlock {
   leading: number
   editable: boolean
   reason?: string
+  /**
+   * Set for blocks read in logical order through the page text model (right-to-left and complex-script lines, see
+   * logical.ts): `text` is then the text as it is read, and an edit always replaces the whole block.
+   */
+  logical?: LogicalInfo
 }
 
 export interface BlockSet {

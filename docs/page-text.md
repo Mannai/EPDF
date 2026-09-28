@@ -28,6 +28,7 @@ rangeQuads(model, a, b)           // the same as rotated quads (rotated text)
 model.transform                   // user space -> display space (invert it for annotations / redaction marks)
 needsPageModel(pdfjsText)         // does this page contain RTL/complex text (worth reading with the model)?
 modelIsUsable(model, pdfjsText)   // quality gate: fonts decoded, no text lost compared with PDF.js
+buildPageText(pdf, i, { glyphLines: true }).glyphLine  // optional: line index of every glyph of interpretPage(pdf, i)
 ```
 
 Geometry is in **display space**: points, origin top-left of the page as shown (CropBox ∩ MediaBox, `/Rotate`
@@ -98,6 +99,7 @@ model's text is NFC per glyph cluster.
 | Library index (`main/features/library/extract.ts`) | Pages with RTL/complex PDF.js text are indexed with the model's text (pdf-lib parses the file lazily, once). |
 | Redaction (`features/redact/logic/search.ts`, `verify.ts`) | Search-to-redact finds words in the logical text; the self-check additionally reads those pages in logical order (a leak = an occurrence whose glyphs lie under a mark). |
 | Links / bookmarks (`features/bookmarks/pdf/pageLines.ts`, `shared/features/textlines.ts`) | Heading detection and address detection read every page through the model; `visualToLogical` there now uses the model's verified reordering. |
+| Edit text (`features/textedit/pdfcontent/logical.ts`) | Right-to-left / complex-script lines are offered as logical lines and paragraphs; `modelFromInterpretation(ip, i, { glyphLines: true, includeHidden: false })` gives `model.glyphLine` (line of every interpretation glyph, marks included), which is mapped to the content-stream glyphs by origin, so an edit can remove exactly the glyphs of a line (docs/features/edit-content.md). |
 | OCR "page already has text" (`features/ocr/render.ts`) | Unchanged: it only counts characters, which is independent of their order. |
 | Redaction's PDF.js reader (`features/redact/pdfjsText.ts`) | Kept as the independent PDF.js reader of the self-check (what other software extracts); the model is added as a second reader, not a replacement. |
 

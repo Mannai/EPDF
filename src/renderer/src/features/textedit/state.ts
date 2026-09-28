@@ -26,6 +26,11 @@ export interface TextEditing {
   /** Baseline distance in points (0 for a single line) and number of lines. */
   leading: number
   lineCount: number
+  /**
+   * Set for text read in logical order (right-to-left and complex-script lines): the paragraph direction. The editor
+   * then shows the text as it is read, right-to-left text right-aligned at the block's right edge.
+   */
+  dir?: 'ltr' | 'rtl'
 }
 
 interface TextEditState {

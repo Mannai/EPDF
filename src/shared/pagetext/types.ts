@@ -66,6 +66,11 @@ export interface PageTextModel {
   quads: Float32Array
   stats: PageTextStats
   warnings: string[]
+  /**
+   * Only with `BuildOptions.glyphLines`: for every glyph of the interpretation (`interpretPage(...).glyphs`), the index
+   * of the line in `lines` it belongs to (base glyphs and the marks attached to them), or -1.
+   */
+  glyphLine?: Int32Array
 }
 
 /** An axis-aligned rectangle in display space. */
