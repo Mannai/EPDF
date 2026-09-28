@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { pureCodec } from '../../src/renderer/src/features/compress/pdf/codec'
 import { compressPdf } from '../../src/renderer/src/features/compress/pdf/compress'
 import { PRESETS, type CompressOptions } from '../../src/renderer/src/features/compress/pdf/options'
-import { parseSfnt, pruneTrueType } from '../../src/renderer/src/features/compress/pdf/ttf'
+import { glyphsForText, parseSfnt, pruneTrueType } from '../../src/renderer/src/features/compress/pdf/ttf'
 import { decodeStream, encodedBytes } from '../../src/renderer/src/features/compress/pdf/streams'
 import { pdfjsPageCount, pdfjsText } from './compressPdfjs'
 import { notoBytes } from './helpers/pdfBuilder'
@@ -53,9 +53,26 @@ describe('TrueType pruning', () => {
     const e = kit.create(pruned.bytes).glyphForCodePoint(0xe9)
     expect(JSON.stringify(e.path.commands)).toBe(JSON.stringify(eacute.path.commands))
     // an unused glyph is empty
-    const unused = k.glyphForCodePoint('Q'.codePointAt(0)!).id
+    const unused = k.glyphForCodePoint('W'.codePointAt(0)!).id
     expect(k.getGlyph(unused).path.commands.length).toBeGreaterThan(0)
     expect(p.getGlyph(unused).path.commands.length).toBe(0)
+    // ...but the letters FreeType's auto-hinter measures stay, so the used ones are hinted as before (Linux)
+    for (const ch of 'HOoxpg') {
+      const g = k.glyphForCodePoint(ch.codePointAt(0)!).id
+      expect(JSON.stringify(p.getGlyph(g).path.commands), ch).toBe(JSON.stringify(k.getGlyph(g).path.commands))
+    }
+  })
+
+  it('maps characters to glyph ids through the cmap as fontkit does (Latin, Greek, Cyrillic, Hebrew, Arabic, missing)', () => {
+    for (const face of ['Regular', 'Bold'] as const) {
+      const font = notoBytes(face)
+      const k = kit.create(font)
+      const cmap = parseSfnt(font)!.tables.get('cmap')
+      const text = 'AHox0ΩЖש'
+      const expected = [...text].map((ch) => k.glyphForCodePoint(ch.codePointAt(0)!).id).filter((g) => g > 0)
+      expect(glyphsForText(cmap, text), face).toEqual(expected)
+    }
+    expect(glyphsForText(undefined, 'abc')).toEqual([])
   })
 
   it('produces a structurally valid sfnt: sorted directory, correct checksums, whole-file checksum constant', () => {

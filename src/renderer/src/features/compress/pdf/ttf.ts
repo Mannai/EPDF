@@ -15,6 +15,79 @@ const u16 = (b: Uint8Array, o: number): number => (b[o] << 8) | b[o + 1]
 const i16 = (b: Uint8Array, o: number): number => (u16(b, o) << 16) >> 16
 const u32 = (b: Uint8Array, o: number): number => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0
 
+/**
+ * Letters FreeType's auto-hinter (Chromium on Linux) measures to set a font's alignment zones and stem widths, per
+ * script. Emptying them changed how the letters that remain are hinted, so the trimmed font rendered a little
+ * differently there; they are kept (a few dozen glyphs at most, only those the font has).
+ */
+const HINT_REFERENCE =
+  'THEZOCQSHLUfijkdbhxzroescpqgjyoO0' + // Latin
+  'ΓΒΕΖΘΟΩβδζθλξοσςτφχψω' + // Greek
+  'БВЕЗОСЭПЧЪбвезосэпчъ' + // Cyrillic
+  'בדהחךכםסטץשתלק' + // Hebrew
+  'اإلكطظتثنبي' // Arabic
+
+/** Glyph ids of `text`'s characters through the font's Unicode cmap (formats 4 and 12); characters it lacks are skipped. */
+export function glyphsForText(cmap: Uint8Array | undefined, text: string): number[] {
+  if (!cmap || cmap.length < 4) return []
+  const cps = [...new Set([...text].map((c) => c.codePointAt(0)!))]
+  const n = u16(cmap, 2)
+  let fmt4 = -1
+  let fmt12 = -1
+  for (let i = 0; i < n && 4 + i * 8 + 8 <= cmap.length; i++) {
+    const platform = u16(cmap, 4 + i * 8)
+    const encoding = u16(cmap, 6 + i * 8)
+    const off = u32(cmap, 8 + i * 8)
+    if (off + 4 > cmap.length) continue
+    const unicode = platform === 0 || (platform === 3 && (encoding === 1 || encoding === 10))
+    if (!unicode) continue
+    const format = u16(cmap, off)
+    if (format === 12 && fmt12 < 0) fmt12 = off
+    if (format === 4 && fmt4 < 0) fmt4 = off
+  }
+  const out: number[] = []
+  if (fmt12 >= 0 && fmt12 + 16 <= cmap.length) {
+    const groups = u32(cmap, fmt12 + 12)
+    for (const cp of cps)
+      for (let g = 0; g < groups && fmt12 + 16 + g * 12 + 12 <= cmap.length; g++) {
+        const p = fmt12 + 16 + g * 12
+        const start = u32(cmap, p)
+        const end = u32(cmap, p + 4)
+        if (cp >= start && cp <= end) {
+          out.push(u32(cmap, p + 8) + (cp - start))
+          break
+        }
+      }
+    return out
+  }
+  if (fmt4 < 0 || fmt4 + 14 > cmap.length) return out
+  const segX2 = u16(cmap, fmt4 + 6)
+  const ends = fmt4 + 14
+  const starts = ends + segX2 + 2
+  const deltas = starts + segX2
+  const ranges = deltas + segX2
+  if (ranges + segX2 > cmap.length) return out
+  for (const cp of cps) {
+    if (cp > 0xffff) continue
+    for (let s = 0; s < segX2; s += 2) {
+      if (cp > u16(cmap, ends + s)) continue
+      const start = u16(cmap, starts + s)
+      if (cp < start) break
+      const delta = u16(cmap, deltas + s)
+      const ro = u16(cmap, ranges + s)
+      let gid = 0
+      if (ro === 0) gid = (cp + delta) & 0xffff
+      else {
+        const at = ranges + s + ro + (cp - start) * 2
+        if (at + 2 <= cmap.length) gid = u16(cmap, at) && (u16(cmap, at) + delta) & 0xffff
+      }
+      if (gid) out.push(gid)
+      break
+    }
+  }
+  return out
+}
+
 const tagOf = (b: Uint8Array, o: number): string => String.fromCharCode(b[o], b[o + 1], b[o + 2], b[o + 3])
 
 export interface Sfnt {
@@ -103,7 +176,8 @@ export function pruneTrueType(font: Uint8Array, keep: Iterable<number>): PruneRe
   const offsets: number[] = []
   for (let i = 0; i <= numGlyphs; i++) offsets.push(longLoca ? u32(loca, i * 4) : u16(loca, i * 2) * 2)
   for (let i = 0; i < numGlyphs; i++) if (offsets[i + 1] < offsets[i] || offsets[i + 1] > glyf.length) return null
-  const wanted = closure(glyf, offsets, [0, ...keep], numGlyphs)
+  const hintRefs = glyphsForText(tables.get('cmap'), HINT_REFERENCE).filter((g) => g < numGlyphs)
+  const wanted = closure(glyf, offsets, [0, ...keep, ...hintRefs], numGlyphs)
   if (!wanted) return null
 
   // new glyf + loca (long format)
