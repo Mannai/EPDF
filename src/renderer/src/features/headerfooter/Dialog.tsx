@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Advanced } from '../../components/Advanced'
 import { Modal } from '../../components/Modal'
 import { errorMessage, notify } from '../../state/notify'
 import { useTabs } from '../../state/tabs'
@@ -458,8 +459,9 @@ function PresetBar({ group, gs, source, onLoad }: { group: MarkGroup; gs: GroupS
     setMsg(`Deleted “${p.name}”.`)
   }
   return (
-    <fieldset className="mt-3 rounded-md border border-line p-2" data-testid="hf-presets">
-      <legend className="px-1 text-xs font-semibold">Presets</legend>
+    // Saved settings to reuse: folded away until wanted, like the other advanced options.
+    <Advanced id="hf-presets" label="Presets" summary={presets.length ? `${presets.length} saved` : undefined}>
+      <div data-testid="hf-presets">
       <div className="flex flex-wrap items-end gap-2">
         <div className="flex flex-col">
           <label htmlFor={`hf-preset-${group}`} className="text-xs text-ink-muted">
@@ -497,6 +499,7 @@ function PresetBar({ group, gs, source, onLoad }: { group: MarkGroup; gs: GroupS
           {msg}
         </p>
       )}
-    </fieldset>
+      </div>
+    </Advanced>
   )
 }

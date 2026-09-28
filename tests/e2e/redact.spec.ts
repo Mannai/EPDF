@@ -6,7 +6,7 @@ import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFStream, PDFSt
 import { analyzePage } from '../../src/renderer/src/features/textedit/pdfcontent/analyze'
 import { bytesToLatin1 } from '../../src/renderer/src/features/textedit/pdfcontent/content'
 import { decodeImage } from '../../src/renderer/src/features/redact/logic/imageRedact'
-import { FIX, answerDelete, axeViolations, copyFixture, launch, menuClick, quitDiscarding, clickTool } from './helpers'
+import { FIX, answerDelete, axeViolations, copyFixture, launch, menuClick, quitDiscarding, clickTool, showAdvanced } from './helpers'
 import { decoded, residue } from '../support/redactProof'
 import { flattenText, readPdf } from '../support/pdfText'
 import { openWith } from '../unit/helpers/securityHelpers'
@@ -53,6 +53,7 @@ async function search(page: Page, text: string): Promise<void> {
 }
 
 async function addArea(page: Page, pageNo: number, left: number, top: number, width: number, height: number): Promise<void> {
+  await showAdvanced(panel(page)) // "Areas by exact position"
   const add = page.getByTestId('redact-add-area-fields')
   await add.getByLabel('Page for the new area').fill(String(pageNo))
   await add.getByLabel('New area left in points').fill(String(left))
@@ -286,6 +287,7 @@ test.describe('redaction: mark, preview, apply, save, prove', () => {
       await page.mouse.up()
       await expect(marks(page)).toHaveCount(1)
       await expect(marks(page).first()).toHaveAttribute('aria-label', /Area on page 1/)
+      await showAdvanced(panel(page)) // "Areas by exact position"
       const edit = page.getByTestId('redact-edit-area-fields')
       await expect(edit).toBeVisible()
       const left = edit.getByLabel('Selected area left in points')
@@ -445,8 +447,9 @@ test.describe('find and mark: patterns, regular expressions, review list', () =>
       await panel(page).getByLabel('Text to find').fill('bob@example.net')
       await page.getByTestId('redact-search').click()
       await expect(page.getByTestId('redact-search-status')).toContainText('1 match on 1 page')
-      // the page range limits the search
+      // the page range (under Search options) limits the search
       await panel(page).getByLabel('Text to find').fill('example')
+      await showAdvanced(panel(page))
       await panel(page).getByLabel('Last page').fill('1')
       await page.getByTestId('redact-search').click()
       await expect(page.getByTestId('redact-search-status')).not.toContainText('2 pages')

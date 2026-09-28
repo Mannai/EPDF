@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PDFDocument, PDFArray, PDFName } from 'pdf-lib'
 import { pageLabelsOf } from '../unit/pdfTestUtils'
-import { FIX, axeViolations, copyFixture, fixture, gotoPage, launch, menuClick, quitDiscarding } from './helpers'
+import { FIX, answerDelete, axeViolations, copyFixture, fixture, gotoPage, launch, menuClick, quitDiscarding } from './helpers'
 
 test.beforeAll(() => {
   execFileSync(process.execPath, ['tests/fixtures/pages-print.mjs', FIX], { stdio: 'inherit' })
@@ -207,8 +207,9 @@ test.describe('organizer: opening, selecting, reordering', () => {
       await page.keyboard.press('Alt+Home')
       await save(app, page)
       expect(await order(path)).toEqual(['5', '3', '1', '2', '4'])
-      // Delete key removes the selection
+      // Delete key removes the selection, after asking
       await page.keyboard.press('Delete')
+      await answerDelete(page)
       await expect(thumbs(page)).toHaveCount(3)
     } finally {
       await quitDiscarding(app, page)

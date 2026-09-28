@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PDFDocument } from 'pdf-lib'
 import { allStreamText, fixtureBytes, openWith } from '../unit/helpers/securityHelpers'
-import { axeViolations, canvasHasInk, copyFixture, crash, fixture, launch, menuClick, quitDiscarding } from './helpers'
+import { axeViolations, canvasHasInk, copyFixture, crash, fixture, launch, menuClick, quitDiscarding, showAdvanced } from './helpers'
 
 /**
  * Password protection driven through the real app: protect, save, reopen, edit, recover, remove, change, permissions.
@@ -106,6 +106,8 @@ async function protectViaUi(app: ElectronApplication, page: Page, o: ProtectOpts
 }
 
 async function fillProtectForm(dlg: ReturnType<typeof dialogOf>, o: ProtectOpts): Promise<void> {
+  // The encryption type, password to edit and permissions are under Advanced options.
+  if (o.algorithm || o.owner !== undefined || o.noPrint || o.noCopy || o.noEdit) await showAdvanced(dlg)
   if (o.algorithm) await dlg.getByLabel('Encryption').selectOption(o.algorithm)
   if (o.user !== undefined) {
     await dlg.getByLabel('Password to open', { exact: true }).fill(o.user)
@@ -482,7 +484,9 @@ test.describe('security: removing and changing protection', () => {
       await menuClick(first.app, 'Tools', 'Protect with Password…')
       const dlg = dialogOf(first.page, 'Change Password Protection')
       await expect(dlg).toBeVisible()
-      // Defaults reflect what the file uses today.
+      // Defaults reflect what the file uses today (and the folded Advanced options say so).
+      await expect(dlg.locator('[data-advanced-toggle]')).toContainText('RC4')
+      await showAdvanced(dlg)
       await expect(dlg.getByLabel('Encryption')).toHaveValue('rc4-128')
       await fillProtectForm(dlg, { user: 'brand-new-user', owner: 'brand-new-owner', algorithm: 'aes256', noCopy: true })
       await dlg.getByRole('button', { name: 'Apply' }).click()

@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { degrees, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
 import { buildPageText } from '../../src/shared/pagetext'
-import { axeViolations, canvasHasInk, launch, menuClick, quitDiscarding, withSystemClipboard } from './helpers'
+import { axeViolations, canvasHasInk, launch, menuClick, quitDiscarding, showAdvanced, withSystemClipboard } from './helpers'
 
 /**
  * Arabic, Persian, Urdu and Hebrew OCR in the real app.
@@ -176,7 +176,8 @@ test.describe('OCR of right-to-left scans: languages and page orientation in the
         await expect(d.locator(`[data-lang="${code}"]`)).toContainText(text)
         await expect(d.locator(`[data-lang="${code}"]`)).toContainText('Not downloaded')
       }
-      // orientation detection: off by default, needs the data
+      // orientation detection (under Advanced options): off by default, needs the data
+      await showAdvanced(d)
       const orient = d.locator('[data-lang="osd"]')
       await expect(orient).toContainText('Needs a download · 10.1 MB')
       const box = orient.getByRole('checkbox', { name: /Detect turned pages/ })
@@ -319,6 +320,7 @@ test.describe('OCR of right-to-left scans with the REAL language data (EPDF_OCR_
     try {
       await expect(page.locator('[data-page="1"] canvas')).toBeVisible()
       const d = await openDialog(app, page)
+      await showAdvanced(d) // the orientation data is under Advanced options
       for (const code of ['ara', 'osd']) {
         const row = d.locator(`[data-lang="${code}"]`)
         await row.getByRole('button', { name: /Download/ }).click()

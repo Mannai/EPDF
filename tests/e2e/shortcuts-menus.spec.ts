@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PDFArray, PDFDict, PDFDocument, PDFName } from 'pdf-lib'
-import { FIX, answerDelete, clickTool, copyFixture, launch, quitDiscarding } from './helpers'
+import { FIX, answerDelete, clickTool, copyFixture, launch, menuClick, quitDiscarding } from './helpers'
 
 /**
  * Keyboard and menu behaviour around placed items and pages: Ctrl+C / Ctrl+V copy and paste a selected item, the
@@ -130,6 +130,53 @@ test.describe('shortcuts and menus', () => {
       for (const label of ['Save', 'Print…', 'Close Tab', 'Zoom In', 'Document']) expect(find(menu, label)?.enabled, label).toBe(true)
     } finally {
       await quitDiscarding(opened.app, opened.page)
+    }
+  })
+
+  test('busy dialogs fold their advanced settings away; opening them is remembered; a field with a problem opens them', async () => {
+    const { app, page } = await open('sample.pdf')
+    try {
+      await menuClick(app, 'Document', 'Header and Footer…')
+      const d = page.getByRole('dialog')
+      await expect(d.getByTestId('hf-dialog')).toHaveAttribute('data-ready', 'true', { timeout: 30_000 })
+      const toggle = d.locator('[data-advanced="headerfooter"] [data-advanced-toggle]')
+      // The common settings are there; margins and the page range are folded away.
+      await expect(d.getByLabel('Footer center')).toBeVisible()
+      await expect(d.getByLabel('Page numbers')).toBeVisible()
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      await expect(d.getByLabel('Page range (empty = all)')).toHaveCount(0)
+      await toggle.click()
+      await d.getByLabel('Page range (empty = all)').fill('2-')
+      await toggle.click()
+      // Folded again, it says what inside is not the default.
+      await expect(toggle).toContainText('pages changed')
+      // A bad range opens it by itself.
+      await toggle.click()
+      await d.getByLabel('Page range (empty = all)').fill('abc')
+      await toggle.click()
+      await expect(d.getByLabel('Page range (empty = all)')).toBeVisible()
+      await d.getByLabel('Page range (empty = all)').fill('')
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false') // no problem left: folded, as it was left
+      await toggle.click()
+      await d.getByRole('button', { name: 'Cancel' }).click()
+      await expect(d).toHaveCount(0)
+
+      // Left open, it is open next time.
+      await menuClick(app, 'Document', 'Header and Footer…')
+      await expect(page.getByRole('dialog').getByLabel('Page range (empty = all)')).toBeVisible()
+      await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+
+      // The same pattern in the Redact panel and the password dialog.
+      await clickTool(page, 'redact-find')
+      await expect(page.getByTestId('redact-panel').getByLabel('First page')).toHaveCount(0)
+      await expect(page.getByTestId('redact-panel').getByRole('button', { name: /Search options/ })).toHaveAttribute('aria-expanded', 'false')
+      await menuClick(app, 'Tools', 'Protect with Password…')
+      const p = page.getByRole('dialog', { name: 'Protect with Password' })
+      await expect(p.getByLabel('Password to open', { exact: true })).toBeVisible()
+      await expect(p.getByLabel('Password to edit', { exact: true })).toHaveCount(0)
+      await p.getByRole('button', { name: 'Cancel' }).click()
+    } finally {
+      await quitDiscarding(app, page)
     }
   })
 

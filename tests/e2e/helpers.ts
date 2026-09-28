@@ -1,4 +1,4 @@
-import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { _electron as electron, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -11,6 +11,15 @@ export interface Launched {
   app: ElectronApplication
   page: Page
   userData: string
+}
+
+/**
+ * Unfolds every folded "Advanced options" (or similar) section in `scope` (components/Advanced.tsx), so a test can
+ * reach the settings inside. Sections stay folded in a fresh profile.
+ */
+export async function showAdvanced(scope: Page | Locator): Promise<void> {
+  const folded = scope.locator('[data-advanced-toggle][aria-expanded="false"]')
+  for (let n = await folded.count(); n > 0; n = await folded.count()) await folded.first().click()
 }
 
 /** A throwaway copy of a fixture, so tests that save don't modify the shared fixtures. */

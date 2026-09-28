@@ -9,7 +9,7 @@ import { grayPng } from '../support/png'
 import { inkBox as inkBoxOf, similarity, toInk, type Ink } from '../support/textCompare'
 import { seePages } from '../unit/helpers/hfPdfjs'
 import { openWith } from '../unit/helpers/securityHelpers'
-import { axeViolations, copyFixture, fixture, gotoPage, launch, menuClick, quitDiscarding, clickTool } from './helpers'
+import { axeViolations, copyFixture, fixture, gotoPage, launch, menuClick, quitDiscarding, clickTool, showAdvanced } from './helpers'
 
 /**
  * Headers & footers, Bates numbers, watermarks and backgrounds in the real app. Every visual claim is checked on the
@@ -42,6 +42,7 @@ async function openDialog(app: ElectronApplication, page: Page, item: string): P
   await menuClick(app, 'Document', item)
   const d = dialog(page)
   await expect(d.getByTestId('hf-dialog')).toHaveAttribute('data-ready', 'true', { timeout: 30_000 })
+  await showAdvanced(d) // margins, pages, layer, visibility, presets...
   return d
 }
 
@@ -120,6 +121,7 @@ async function showPage(page: Page, n: number): Promise<void> {
 async function selectTab(d: Locator, name: string): Promise<void> {
   await d.getByRole('tab', { name }).click()
   await expect(d.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true')
+  await showAdvanced(d)
 }
 
 // ---------------------------------------------------------------- Arabic header: position and shaping

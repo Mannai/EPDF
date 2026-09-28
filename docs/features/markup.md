@@ -17,7 +17,7 @@ The tools are in the **Comment** group of the Tools ribbon. Each tool has its op
 
 | Tool | Shortcut | How |
 |---|---|---|
-| Select | `V` | Click an annotation. Drag its frame to move it, drag a handle to resize (text boxes, shapes, drawings, stamps). Arrow keys nudge (1 pt, `Shift` = 10 pt), `Alt`+arrows resize, `Delete` removes, `Enter` edits its text, `Esc` deselects. Colour / fill / opacity / width are in the ribbon and in the panel. |
+| Select | `V` | Click an annotation. Drag its frame to move it, drag a handle to resize (text boxes, shapes, drawings, stamps). Arrow keys nudge (1 pt, `Shift` = 10 pt), `Alt`+arrows resize, `Delete` removes (after asking), `Ctrl+C` / `Ctrl+V` copy and paste it (the copy lands a little down and right, selected), `Enter` edits its text, `Esc` deselects. Colour / fill / opacity / width are in the ribbon and in the panel. |
 | Highlight / Underline / Strikethrough | `H` / `U` / `K` | Select text on the page with the mouse: the mark is created when you let go. If text is already selected, pressing the shortcut marks it immediately. (Squiggly has no shortcut.) |
 | Sticky note | `N` | Click the page (or press `Enter` to place it near the top-left of what you see), type, `Enter` to add, `Shift+Enter` for a new line, `Esc` cancels. |
 | Text box | `T` | Drag a rectangle, type, `Ctrl+Enter` (or click away) to add. The box grows downwards if the text does not fit. |

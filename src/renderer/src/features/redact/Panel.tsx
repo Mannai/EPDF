@@ -1,5 +1,6 @@
 import type { PageViewport } from 'pdfjs-dist'
 import { useEffect, useId, useMemo, useState } from 'react'
+import { Advanced } from '../../components/Advanced'
 import { getLoaded } from '../../pdf/docCache'
 import { useTabs, type Tab } from '../../state/tabs'
 import { useWorkspace } from '../../state/workspace'
@@ -198,6 +199,16 @@ function ResultRow({ docId, r }: { docId: string; r: SearchResult }): JSX.Elemen
 
 const RESULT_CHUNK = 100
 
+/** What the folded search options hold that differs from the defaults. */
+function changed(f: SearchForm): string | undefined {
+  const on = [
+    f.mode !== 'preset' && f.caseSensitive && 'match case',
+    f.mode === 'literal' && f.wholeWord && 'whole word',
+    (f.from || f.to) && 'pages'
+  ].filter(Boolean)
+  return on.length ? on.join(', ') : undefined
+}
+
 function FindSection({ docId, tab }: { docId: string; tab: Tab }): JSX.Element {
   const [form, setForm] = useState<SearchForm>(DEFAULT_FORM)
   const d = useDocRedact(docId)
@@ -228,14 +239,6 @@ function FindSection({ docId, tab }: { docId: string; tab: Tab }): JSX.Element {
       {form.mode === 'literal' && (
         <>
           <input aria-label="Text to find" type="search" className="field w-full select-text" placeholder="Text to find" value={form.query} onChange={(e) => patch({ query: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && submit()} />
-          <div className="flex gap-3 text-xs">
-            <label className="flex items-center gap-1">
-              <input type="checkbox" checked={form.caseSensitive} onChange={(e) => patch({ caseSensitive: e.target.checked })} /> Match case
-            </label>
-            <label className="flex items-center gap-1">
-              <input type="checkbox" checked={form.wholeWord} onChange={(e) => patch({ wholeWord: e.target.checked })} /> Whole word
-            </label>
-          </div>
         </>
       )}
       {form.mode === 'preset' && (
@@ -254,24 +257,37 @@ function FindSection({ docId, tab }: { docId: string; tab: Tab }): JSX.Element {
       {form.mode === 'regex' && (
         <>
           <input aria-label="Regular expression" className="field w-full select-text font-mono" placeholder="e.g. \b[A-Z]{2}\d{6}\b" spellCheck={false} aria-invalid={!!problem} aria-describedby="redact-regex-msg" value={form.regex} onChange={(e) => patch({ regex: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && submit()} />
-          <label className="flex items-center gap-1 text-xs">
-            <input type="checkbox" checked={form.caseSensitive} onChange={(e) => patch({ caseSensitive: e.target.checked })} /> Match case
-          </label>
           <p id="redact-regex-msg" className={`text-xs ${problem && form.regex ? 'text-danger' : 'text-ink-muted'}`} data-testid="redact-regex-message">
             {problem && form.regex ? problem : 'Runs with a step limit, so a pattern that would hang is stopped.'}
           </p>
         </>
       )}
-      <div className="flex items-center gap-2 text-xs">
-        <label className="flex items-center gap-1">
-          Pages
-          <input type="number" min={1} max={tab.numPages || 1} aria-label="First page" className="field w-14 select-text px-1" placeholder="1" value={form.from || ''} onChange={(e) => patch({ from: Number(e.target.value) || 0 })} />
-        </label>
-        <label className="flex items-center gap-1">
-          to
-          <input type="number" min={1} max={tab.numPages || 1} aria-label="Last page" className="field w-14 select-text px-1" placeholder={String(tab.numPages || 1)} value={form.to || ''} onChange={(e) => patch({ to: Number(e.target.value) || 0 })} />
-        </label>
-      </div>
+      <Advanced id="redact-find" label="Search options" className="mt-1" summary={changed(form)}>
+        <div className="space-y-2">
+          {form.mode !== 'preset' && (
+            <div className="flex gap-3 text-xs">
+              <label className="flex items-center gap-1">
+                <input type="checkbox" checked={form.caseSensitive} onChange={(e) => patch({ caseSensitive: e.target.checked })} /> Match case
+              </label>
+              {form.mode === 'literal' && (
+                <label className="flex items-center gap-1">
+                  <input type="checkbox" checked={form.wholeWord} onChange={(e) => patch({ wholeWord: e.target.checked })} /> Whole word
+                </label>
+              )}
+            </div>
+          )}
+          <div className="flex items-center gap-2 text-xs">
+            <label className="flex items-center gap-1">
+              Pages
+              <input type="number" min={1} max={tab.numPages || 1} aria-label="First page" className="field w-14 select-text px-1" placeholder="1" value={form.from || ''} onChange={(e) => patch({ from: Number(e.target.value) || 0 })} />
+            </label>
+            <label className="flex items-center gap-1">
+              to
+              <input type="number" min={1} max={tab.numPages || 1} aria-label="Last page" className="field w-14 select-text px-1" placeholder={String(tab.numPages || 1)} value={form.to || ''} onChange={(e) => patch({ to: Number(e.target.value) || 0 })} />
+            </label>
+          </div>
+        </div>
+      </Advanced>
       <div className="flex gap-2">
         <button type="button" className="btn-primary flex-1" data-testid="redact-search" disabled={d.searching || (form.mode === 'literal' ? !form.query.trim() : !!problem)} onClick={submit}>
           {d.searching ? 'Searching…' : 'Search'}
@@ -362,9 +378,14 @@ export function RedactPanel({ tab }: { tab: Tab }): JSX.Element {
       )}
 
       <MarksList docId={docId} marks={d.marks} selectedId={d.selectedId} />
-      {selected && selected.kind === 'area' && selected.rects.length === 1 && <AreaFields key={selected.id} docId={docId} tab={tab} mode="edit" selected={selected} />}
-      <AreaFields docId={docId} tab={tab} mode="add" />
       <FindSection docId={docId} tab={tab} />
+      {/* Placing areas by exact numbers, for precise work; dragging on the page does the same. */}
+      <Advanced id="redact-areas" label="Areas by exact position">
+        <div className="space-y-2">
+          {selected && selected.kind === 'area' && selected.rects.length === 1 && <AreaFields key={selected.id} docId={docId} tab={tab} mode="edit" selected={selected} />}
+          <AreaFields docId={docId} tab={tab} mode="add" />
+        </div>
+      </Advanced>
       <p className="sr-only" role="status" aria-live="polite" data-testid="redact-announcer">
         {announcement}
       </p>

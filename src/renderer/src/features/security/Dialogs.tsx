@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react'
 import { isRestricted, type Permissions, type PrintPermission, type ProtectSettings } from '@shared/features/security'
+import { Advanced } from '../../components/Advanced'
 import { Modal } from '../../components/Modal'
 import { ALGORITHM_CHOICES } from './logic'
 import { useInfoDialog, usePasswordPrompt, useProtectDialog } from './store'
@@ -48,6 +49,16 @@ function PasswordPromptDialog(): JSX.Element | null {
       </form>
     </Modal>
   )
+}
+
+/** What the folded Advanced options hold: a password to edit, restrictions, another encryption type. */
+function protectChanges(s: ProtectSettings): string | undefined {
+  const on = [
+    s.ownerPassword && 'password to edit',
+    isRestricted(s.permissions) && 'restrictions',
+    s.algorithm !== ALGORITHM_CHOICES[0]!.value && (ALGORITHM_CHOICES.find((c) => c.value === s.algorithm)?.label ?? s.algorithm)
+  ].filter(Boolean)
+  return on.length ? `${on.join(', ')} set` : undefined
 }
 
 const PRINT_CHOICES: { value: PrintPermission; label: string }[] = [
@@ -107,6 +118,26 @@ function ProtectDialog(): JSX.Element | null {
             : `Choose how “${req.fileName}” is protected when you save it.`}
         </p>
 
+        <div className="mb-3 grid grid-cols-2 gap-x-3 gap-y-2">
+          <div>
+            <label className="mb-1 block text-sm font-medium" htmlFor={`${ids}-user`}>
+              Password to open
+            </label>
+            <input id={`${ids}-user`} type={pwType} autoComplete="off" className="field w-full select-text" value={s.userPassword} onChange={(e) => set({ userPassword: e.target.value })} />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium" htmlFor={`${ids}-user2`}>
+              Confirm password to open
+            </label>
+            <input id={`${ids}-user2`} type={pwType} autoComplete="off" className="field w-full select-text" value={userConfirm} onChange={(e) => setUserConfirm(e.target.value)} />
+          </div>
+          <label className="col-span-2 flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} /> Show passwords
+          </label>
+        </div>
+
+        {/* A password to edit, restrictions and the encryption type: for people who need them. */}
+        <Advanced id="protect" className="mb-3" forceOpen={errors.length > 0} summary={protectChanges(s)}>
         <div className="mb-3">
           <label className="mb-1 block text-sm font-medium" htmlFor={`${ids}-alg`}>
             Encryption
@@ -122,18 +153,6 @@ function ProtectDialog(): JSX.Element | null {
 
         <div className="mb-3 grid grid-cols-2 gap-x-3 gap-y-2">
           <div>
-            <label className="mb-1 block text-sm font-medium" htmlFor={`${ids}-user`}>
-              Password to open
-            </label>
-            <input id={`${ids}-user`} type={pwType} autoComplete="off" className="field w-full select-text" value={s.userPassword} onChange={(e) => set({ userPassword: e.target.value })} />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium" htmlFor={`${ids}-user2`}>
-              Confirm password to open
-            </label>
-            <input id={`${ids}-user2`} type={pwType} autoComplete="off" className="field w-full select-text" value={userConfirm} onChange={(e) => setUserConfirm(e.target.value)} />
-          </div>
-          <div>
             <label className="mb-1 block text-sm font-medium" htmlFor={`${ids}-owner`}>
               Password to edit
             </label>
@@ -145,9 +164,6 @@ function ProtectDialog(): JSX.Element | null {
             </label>
             <input id={`${ids}-owner2`} type={pwType} autoComplete="off" className="field w-full select-text" value={ownerConfirm} onChange={(e) => setOwnerConfirm(e.target.value)} />
           </div>
-          <label className="col-span-2 flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} /> Show passwords
-          </label>
           {same && (
             <p role="status" className="col-span-2 text-sm text-ink-muted">
               Both passwords are the same, so anyone who can open the document can also change its restrictions.
@@ -197,6 +213,7 @@ function ProtectDialog(): JSX.Element | null {
             )}
           </div>
         </fieldset>
+        </Advanced>
 
         <p className="mb-3 text-sm text-ink-muted">
           The password to open is what keeps the content private. Permissions are only honoured by programs that choose to respect them. Epdf cannot recover a forgotten password.

@@ -1,5 +1,6 @@
 import { useId, useRef } from 'react'
-import type { FontSettings, HeaderFooterSettings, OverlaySettings, PageSelection, Slot } from '@shared/features/headerfooter'
+import { defaultBackground, defaultHeaderFooter, defaultWatermark, type FontSettings, type HeaderFooterSettings, type OverlaySettings, type PageSelection, type Slot } from '@shared/features/headerfooter'
+import { Advanced } from '../../components/Advanced'
 import { Check, ColorField, ErrorText, NumberField, Section, SelectField } from './Fields'
 
 /** The settings forms of the page-marks dialog: headers/footers (also Bates) and watermarks/backgrounds. */
@@ -133,16 +134,6 @@ export function HeaderFooterForm({ value, onChange, bates, rangeError }: { value
         <FontFields value={value.font} onChange={(font) => set('font', font)} sizeMax={144} />
         <div className="mt-2 flex flex-wrap items-end gap-2">
           <SelectField
-            label="Text direction"
-            value={value.direction}
-            onChange={(d) => set('direction', d)}
-            options={[
-              ['auto', 'Automatic (from the text)'],
-              ['ltr', 'Left to right'],
-              ['rtl', 'Right to left']
-            ]}
-          />
-          <SelectField
             label="Page numbers"
             value={value.numberStyle}
             onChange={(v) => set('numberStyle', v)}
@@ -156,6 +147,28 @@ export function HeaderFooterForm({ value, onChange, bates, rangeError }: { value
           />
           <NumberField label="Start at" value={value.startNumber} min={0} max={1_000_000} integer className="w-20" onChange={(v) => set('startNumber', v)} />
         </div>
+      </Section>
+      {usesBates && (
+        <Section title="Bates number">
+          <div className="flex flex-wrap items-end gap-2">
+            <TextField label="Prefix" value={value.bates.prefix} onChange={(prefix) => set('bates', { ...value.bates, prefix })} />
+            <NumberField label="Digits" value={value.bates.digits} min={1} max={15} integer className="w-14" onChange={(digits) => set('bates', { ...value.bates, digits })} />
+            <NumberField label="Start number" value={value.bates.start} min={0} max={999_999_999_999} integer className="w-28" onChange={(start) => set('bates', { ...value.bates, start })} />
+            <TextField label="Suffix" value={value.bates.suffix} onChange={(suffix) => set('bates', { ...value.bates, suffix })} />
+          </div>
+        </Section>
+      )}
+      <Advanced id="headerfooter" forceOpen={!!rangeError} summary={changedSummary(headerFooterChanges(value, usesDate))}>
+        <SelectField
+          label="Text direction"
+          value={value.direction}
+          onChange={(d) => set('direction', d)}
+          options={[
+            ['auto', 'Automatic (from the text)'],
+            ['ltr', 'Left to right'],
+            ['rtl', 'Right to left']
+          ]}
+        />
         {usesDate && (
           <div className="mt-2 flex flex-wrap items-end gap-2">
             <SelectField
@@ -192,27 +205,32 @@ export function HeaderFooterForm({ value, onChange, bates, rangeError }: { value
             />
           </div>
         )}
-      </Section>
-      {usesBates && (
-        <Section title="Bates number">
-          <div className="flex flex-wrap items-end gap-2">
-            <TextField label="Prefix" value={value.bates.prefix} onChange={(prefix) => set('bates', { ...value.bates, prefix })} />
-            <NumberField label="Digits" value={value.bates.digits} min={1} max={15} integer className="w-14" onChange={(digits) => set('bates', { ...value.bates, digits })} />
-            <NumberField label="Start number" value={value.bates.start} min={0} max={999_999_999_999} integer className="w-28" onChange={(start) => set('bates', { ...value.bates, start })} />
-            <TextField label="Suffix" value={value.bates.suffix} onChange={(suffix) => set('bates', { ...value.bates, suffix })} />
+        <Section title="Margins (points from the edge of the visible page)">
+          <div className="flex flex-wrap gap-2">
+            {(['top', 'bottom', 'left', 'right'] as const).map((k) => (
+              <NumberField key={k} label={k[0]!.toUpperCase() + k.slice(1)} value={value.margins[k]} min={0} max={2000} className="w-16" onChange={(v) => set('margins', { ...value.margins, [k]: v })} />
+            ))}
           </div>
         </Section>
-      )}
-      <Section title="Margins (points from the edge of the visible page)">
-        <div className="flex flex-wrap gap-2">
-          {(['top', 'bottom', 'left', 'right'] as const).map((k) => (
-            <NumberField key={k} label={k[0]!.toUpperCase() + k.slice(1)} value={value.margins[k]} min={0} max={2000} className="w-16" onChange={(v) => set('margins', { ...value.margins, [k]: v })} />
-          ))}
-        </div>
-      </Section>
-      <PagesFields value={value.pages} onChange={(pages) => set('pages', pages)} error={rangeError} />
+        <PagesFields value={value.pages} onChange={(pages) => set('pages', pages)} error={rangeError} />
+      </Advanced>
     </div>
   )
+}
+
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
+/** "margins and pages changed": what the folded Advanced options hold that differs from the defaults. */
+export const changedSummary = (names: string[]): string | undefined =>
+  names.length === 0 ? undefined : `${names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0]} changed`
+
+function headerFooterChanges(v: HeaderFooterSettings, usesDate: boolean): string[] {
+  const d = defaultHeaderFooter()
+  const out: string[] = []
+  if (v.direction !== d.direction) out.push('direction')
+  if (usesDate && !same(v.date, d.date)) out.push('date format')
+  if (!same(v.margins, d.margins)) out.push('margins')
+  if (!same(v.pages, d.pages)) out.push('pages')
+  return out
 }
 
 function SlotRow({
@@ -313,18 +331,6 @@ export function OverlayForm({
           </label>
           <textarea id={textId} dir="auto" rows={2} className="field h-auto w-full py-1" value={src.text} onChange={(e) => set('source', { ...src, text: e.target.value })} />
           <FontFields value={src.font} onChange={(font) => set('source', { ...src, font })} sizeMax={500} />
-          <div className="mt-2">
-            <SelectField
-              label="Text direction"
-              value={src.direction}
-              onChange={(direction) => set('source', { ...src, direction })}
-              options={[
-                ['auto', 'Automatic (from the text)'],
-                ['ltr', 'Left to right'],
-                ['rtl', 'Right to left']
-              ]}
-            />
-          </div>
         </div>
       )}
       {(src.kind === 'image' || src.kind === 'pdf') && (
@@ -350,40 +356,56 @@ export function OverlayForm({
           {src.kind !== 'color' && (
             <>
               <SelectField
-                label="Scale"
-                value={value.scale.mode}
-                onChange={(mode) => set('scale', { ...value.scale, mode })}
+                label="Horizontal"
+                value={value.position.h}
+                onChange={(h) => set('position', { ...value.position, h })}
                 options={[
-                  ['relative', 'Relative to the page'],
-                  ['absolute', 'Of its own size']
+                  ['left', 'Left'],
+                  ['center', 'Center'],
+                  ['right', 'Right']
                 ]}
               />
-              <NumberField label="Percent" value={value.scale.percent} min={1} max={1000} step={5} suffix="%" className="w-16" onChange={(percent) => set('scale', { ...value.scale, percent })} />
+              <SelectField
+                label="Vertical"
+                value={value.position.v}
+                onChange={(v) => set('position', { ...value.position, v })}
+                options={[
+                  ['top', 'Top'],
+                  ['center', 'Center'],
+                  ['bottom', 'Bottom']
+                ]}
+              />
             </>
           )}
         </div>
+      </Section>
+      <Advanced id={group} forceOpen={!!rangeError || (!value.print && !value.screen)} summary={changedSummary(overlayChanges(group, value))}>
+        {src.kind === 'text' && (
+          <div className="mb-2">
+            <SelectField
+              label="Text direction"
+              value={src.direction}
+              onChange={(direction) => set('source', { ...src, direction })}
+              options={[
+                ['auto', 'Automatic (from the text)'],
+                ['ltr', 'Left to right'],
+                ['rtl', 'Right to left']
+              ]}
+            />
+          </div>
+        )}
         {src.kind !== 'color' && (
-          <div className="mt-2 flex flex-wrap items-end gap-2">
+          <div className="flex flex-wrap items-end gap-2">
             <SelectField
-              label="Horizontal"
-              value={value.position.h}
-              onChange={(h) => set('position', { ...value.position, h })}
+              label="Scale"
+              value={value.scale.mode}
+              onChange={(mode) => set('scale', { ...value.scale, mode })}
               options={[
-                ['left', 'Left'],
-                ['center', 'Center'],
-                ['right', 'Right']
+                ['relative', 'Relative to the page'],
+                ['absolute', 'Of its own size']
               ]}
             />
-            <SelectField
-              label="Vertical"
-              value={value.position.v}
-              onChange={(v) => set('position', { ...value.position, v })}
-              options={[
-                ['top', 'Top'],
-                ['center', 'Center'],
-                ['bottom', 'Bottom']
-              ]}
-            />
+            <NumberField label="Percent" value={value.scale.percent} min={1} max={1000} step={5} suffix="%" className="w-16" onChange={(percent) => set('scale', { ...value.scale, percent })} />
             <NumberField label="Move right" value={value.position.dx} min={-5000} max={5000} suffix="pt" className="w-16" onChange={(dx) => set('position', { ...value.position, dx })} />
             <NumberField label="Move up" value={value.position.dy} min={-5000} max={5000} suffix="pt" className="w-16" onChange={(dy) => set('position', { ...value.position, dy })} />
           </div>
@@ -406,10 +428,22 @@ export function OverlayForm({
           </div>
         </div>
         {!value.print && !value.screen && <ErrorText>Choose to show it on screen, when printing, or both.</ErrorText>}
-      </Section>
-      <PagesFields value={value.pages} onChange={(pages) => set('pages', pages)} error={rangeError} />
+        <PagesFields value={value.pages} onChange={(pages) => set('pages', pages)} error={rangeError} />
+      </Advanced>
     </div>
   )
+}
+
+function overlayChanges(group: 'watermark' | 'background', v: OverlaySettings): string[] {
+  const d = group === 'watermark' ? defaultWatermark() : defaultBackground()
+  const out: string[] = []
+  if (v.source.kind === 'text' && d.source.kind === 'text' && v.source.direction !== d.source.direction) out.push('direction')
+  if (!same(v.scale, d.scale)) out.push('scale')
+  if (v.position.dx !== d.position.dx || v.position.dy !== d.position.dy) out.push('offset')
+  if (v.layer !== d.layer) out.push('layer')
+  if (v.screen !== d.screen || v.print !== d.print) out.push('visibility')
+  if (!same(v.pages, d.pages)) out.push('pages')
+  return out
 }
 
 function RadioOption({ name, label, checked, onChange }: { name: string; label: string; checked: boolean; onChange(): void }): JSX.Element {

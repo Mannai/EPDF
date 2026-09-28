@@ -1,8 +1,21 @@
 import { useId } from 'react'
-import { MAX_LANGUAGES_PER_RUN, OCR_DPI_CHOICES, formatBytes, selectPages } from '@shared/features/ocr'
+import { DEFAULT_PREFS, MAX_LANGUAGES_PER_RUN, OCR_DPI_CHOICES, formatBytes, selectPages, type OcrPrefs } from '@shared/features/ocr'
+import { Advanced } from '../../components/Advanced'
 import { Modal } from '../../components/Modal'
 import { useJobs } from '../../state/jobs'
 import { blocker, scopeOf, useOcrUi } from './store'
+
+/** What the folded options hold that differs from the defaults. */
+function ocrChanges(p: OcrPrefs): string | undefined {
+  const on = [
+    p.dpi !== DEFAULT_PREFS.dpi && `${p.dpi} dpi`,
+    p.contrast !== DEFAULT_PREFS.contrast && (p.contrast ? 'contrast on' : 'contrast off'),
+    p.deskew !== DEFAULT_PREFS.deskew && (p.deskew ? 'straighten on' : 'straighten off'),
+    p.force && 'pages with text too',
+    p.orient && 'turned pages'
+  ].filter(Boolean)
+  return on.length ? on.join(', ') : undefined
+}
 
 /** "Detect turned pages": needs the optional page orientation data, downloaded (and removed) like a language. */
 function OrientationOption(): JSX.Element {
@@ -167,8 +180,9 @@ export function OcrDialog(): JSX.Element | null {
         )}
       </fieldset>
 
-      <fieldset className="mb-3">
-        <legend className="mb-1 text-sm font-medium">Options</legend>
+      <Advanced id="ocr" className="mb-3" summary={ocrChanges(s.prefs)}>
+        <fieldset>
+        <legend className="sr-only">Options</legend>
         <div className="mb-1 flex items-center gap-2">
           <label htmlFor={`${uid}-dpi`}>Resolution</label>
           <select id={`${uid}-dpi`} className="field" value={s.prefs.dpi} onChange={(e) => s.setPref('dpi', Number(e.target.value))}>
@@ -192,7 +206,8 @@ export function OcrDialog(): JSX.Element | null {
           Recognize pages that already contain text
         </label>
         {s.orientation && <OrientationOption />}
-      </fieldset>
+        </fieldset>
+      </Advanced>
 
       {why && !rangeError && (
         <p role="status" className="mb-2 text-sm text-ink-muted" data-testid="ocr-blocker">

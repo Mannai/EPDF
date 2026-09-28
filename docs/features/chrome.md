@@ -81,8 +81,33 @@ cannot click a native menu.
 - **Click-to-place tools preview** under the pointer what a click would add, at its real size and position
   (`data-testid="place-ghost"`): markup stamps (built-in and image), sticky notes, text boxes; Fill & sign check,
   cross, dot, date and Add text; signatures and initials; a picture being inserted with Edit images.
-- Fill & sign marks and text, and signatures, are still written into the page itself when placed (flattened), so
-  they are not editable as objects afterwards (a signature can be moved or deleted with Edit images).
+- Fill & sign marks and text, and signatures, stay editable annotations until saving locks them into the page (see
+  forms-signing.md).
+- **Ctrl+C / Ctrl+V** copy and paste the selected shape, stamp, text box, note, drawing or Fill & sign item
+  (`markup/pdf/clipboard.ts`): the copy, with its appearance, pictures and fonts, is kept in a document of its own, so it
+  can be pasted into any open document, on the current page. Each paste on the page it came from lands 12 pt further
+  down and right (kept on the page) and is selected; replies and pop-ups are not copied. With text selected, Ctrl+C
+  copies the text. Form fields have their own Copy / Paste / Duplicate (Edit fields).
+- **Page thumbnails**: click selects a page, Ctrl+click / Shift+click select several; **Delete / Backspace** asks (the
+  same question, with "Don't ask again") and deletes them. In the organizer the Delete key asks the same way.
+
+## The File menu on the start screen
+
+The title bar's File button shows the application menu. Items that need an open document carry the id prefix
+`doc:` (`NEEDS_DOCUMENT` in `main/menu/contributions.ts`; every `commandItem` unless `{ anyTime: true }`, every menu
+action), and with no document open they are greyed out, as is a submenu with nothing usable left. Create PDF, Combine,
+Scan, Library, Reduce Several Files, Signatures, New Window, Open and the settings stay available. E2E: main's
+`__epdfFileMenus` test hook records the menu instead of showing it.
+
+## Advanced options
+
+Busy dialogs keep the settings most people never change folded away under **Advanced options**
+(`components/Advanced.tsx`); nothing is removed. Opening it is remembered per dialog (browser storage, a convenience);
+while folded, it says what inside differs from the defaults ("pages changed"); a problem in a field inside opens it.
+Used in: Header and footer / Bates / Watermark / Background (direction, date format, margins, page range, scale,
+offsets, layer, screen/print; presets are their own folded section), the Redact panel (search options; areas by exact
+position), OCR (resolution, contrast, straightening, pages with text, orientation) and Protect with Password (password
+to edit, permissions, encryption type). E2E: `showAdvanced(scope)` in `tests/e2e/helpers.ts` unfolds them.
 
 ## Dialogs
 

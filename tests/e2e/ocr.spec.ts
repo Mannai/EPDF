@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path'
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef, decodePDFRawStream } from 'pdf-lib'
 import { flattenText, readPdf } from '../support/pdfText'
 import { allStreamText, openWith } from '../unit/helpers/securityHelpers'
-import { axeViolations, copyFixture, FIX, launch, menuClick, quitDiscarding } from './helpers'
+import { axeViolations, copyFixture, FIX, launch, menuClick, quitDiscarding, showAdvanced } from './helpers'
 
 const PAGE_TEXT: string[][] = JSON.parse(readFileSync(resolve('tests/fixtures/ocr-text.json'), 'utf8'))
 const ENG = resolve('resources/ocr/eng.traineddata')
@@ -37,6 +37,7 @@ async function openDialog(app: ElectronApplication, page: Page): Promise<ReturnT
   const d = dialog(page)
   await expect(d).toBeVisible()
   await expect(d.getByText('Loading…')).toHaveCount(0)
+  await showAdvanced(d) // resolution, contrast, straightening, pages with text
   return d
 }
 

@@ -20,8 +20,9 @@ A full-tab view (`registerView({ id: 'organize', hideToolbar: true })`) with a g
 * **Reorder**: drag with the mouse (drop indicator, ghost label, edge auto-scroll, multi-page drag keeps the pages'
   relative order, `Escape` cancels the drag) **or** with the keyboard: `Alt+Arrow` moves the selected pages one step (a row for
   Up/Down), `Alt+Home/End` to the start/end, or the *Move earlier / later* buttons.
-* **Actions** (each one undo step with a readable label such as "Undo Delete page 3"): rotate left/right, delete (asks first for
-  5+ pages; refuses to delete every page), duplicate (copy right after each selected page), insert blank pages (size of the
+* **Actions** (each one undo step with a readable label such as "Undo Delete page 3"): rotate left/right, delete (the Delete button asks
+  first for 5+ pages; the Delete / Backspace key always asks, here and on the sidebar's page thumbnails, where Ctrl+click
+  / Shift+click select several; refuses to delete every page), duplicate (copy right after each selected page), insert blank pages (size of the
   neighbouring page or A4/Letter/Legal/A3/A5, portrait/landscape, before/after a page), insert pages from another PDF,
   extract, split.
 * `Done` / `Escape` / `Enter` return to the viewer (on the focused page). Undo/Redo buttons are in the organizer's toolbar.
