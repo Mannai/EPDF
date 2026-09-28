@@ -14,9 +14,10 @@ What Epdf 1.0.6-beta.1 does not do yet, and what has not been verified. Each fea
 - **The beta is unsigned**, so Windows SmartScreen warns on download. The signing pipeline works with a test
   certificate; see [Code signing](DEVELOPMENT.md#code-signing).
 - **Auto-update** was tested end to end against a local server (update, relaunch, tampered download refused), but
-  not with a signed build. Since 1.0.8 the feed is the public GitHub releases of Mannai/epdf-releases; an in-app
-  update from one of those releases to the next has not been observed yet (1.0.8 is the first version that reads
-  it). Not tested: AppImage self-update, and updating an MSI install (the updater runs the NSIS installer).
+  not with a signed build. Since 1.0.9 the feed is the public GitHub releases of
+  [Mannai/EPDF](https://github.com/Mannai/EPDF/releases) (1.0.8 read Mannai/epdf-releases); an in-app update from
+  one GitHub release to the next has not been observed yet. Not tested: AppImage self-update, and updating an MSI
+  install (the updater runs the NSIS installer).
 - **Windows installers** were installed and uninstalled on Windows 11 (files, shortcuts, `.pdf` association,
   uninstall entry, Explorer entries, full cleanup; NSIS and MSI). Not tested: an all-users (admin) install, other
   Windows versions. The MSI has no Explorer right-click entries. The installer's Arabic/French/German/Spanish wording

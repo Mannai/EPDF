@@ -156,7 +156,7 @@ Converting Office documents in right-to-left languages is covered in [Office →
 
 Epdf is a beta for **Windows** (64-bit; tested on Windows 11) and **Linux** (64-bit; tested on Ubuntu 26.04). macOS is
 coming. Download it from [epdf.ing](https://epdf.ing); every release, with its notes, is also on
-[GitHub](https://github.com/Mannai/epdf-releases/releases).
+[GitHub](https://github.com/Mannai/EPDF/releases).
 
 | Download | For |
 |---|---|

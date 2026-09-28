@@ -121,15 +121,15 @@ nsis:
 msi:
   artifactName: Epdf-${version}.${ext}
 
-# Where the installed app looks for updates (Help > Check for Updates): the public releases of Mannai/epdf-releases
-# (installers only, separate from the source repository; a public feed needs no token in the app). A release is tagged
-# v<version>; its assets are the installers, their .blockmap files, latest.yml (Windows) and latest-linux.yml.
+# Where the installed app looks for updates (Help > Check for Updates): the public GitHub releases of Mannai/EPDF,
+# the same repository as the source (public, so the app needs no token). A release is tagged v<version>; its assets
+# are the installers, their .blockmap files, latest.yml (Windows) and latest-linux.yml.
 # Betas are GitHub pre-releases, and a beta build looks for pre-releases (allowPrerelease in features/updates).
 # See docs/DEVELOPMENT.md ("Updates").
 publish:
   - provider: github
     owner: Mannai
-    repo: epdf-releases
+    repo: EPDF
     releaseType: prerelease
 
 linux:

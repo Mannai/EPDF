@@ -26,7 +26,7 @@ export function autoAnswerPrompts(env: Record<string, string | undefined>, meta:
 }
 
 /** Public release channel: the update feed (electron-builder.yml `publish`) and the page a user downloads from. */
-export const RELEASES_REPO = { owner: 'Mannai', repo: 'epdf-releases' } as const
+export const RELEASES_REPO = { owner: 'Mannai', repo: 'EPDF' } as const
 
 /** The release page of one version (the tags are `v<version>`). */
 export function releasePageUrl(version: string): string {

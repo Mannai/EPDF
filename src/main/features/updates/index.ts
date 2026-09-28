@@ -19,8 +19,8 @@ import {
 /**
  * Updates (installed builds): Help ▸ Check for Updates… and an optional background check once a day.
  *
- * The feed is the `publish` entry in electron-builder.yml, the public GitHub releases of Mannai/epdf-releases (baked
- * into the installed app as resources/app-update.yml; public, so no token is involved). Nothing is downloaded without
+ * The feed is the `publish` entry in electron-builder.yml, the public GitHub releases of Mannai/EPDF (baked into
+ * the installed app as resources/app-update.yml; public, so no token is involved). Nothing is downloaded without
  * the user saying yes, and an update installs only when the app really quits. On a Linux .deb the app only says that a
  * new version is out and offers its download page. electron-updater is loaded on first use so it costs nothing at startup.
  */

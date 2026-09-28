@@ -189,9 +189,10 @@ during startup). It never downloads without asking, shows progress on the taskba
 quits**, so the usual "Save changes?" prompt can still stop it and no work is lost. Choosing *Restart* installs and
 starts the new version. Portable/unpacked runs report that updates are unavailable.
 
-- **Feed**: the `publish` entry in `electron-builder.yml`: the public GitHub releases of
-  [Mannai/epdf-releases](https://github.com/Mannai/epdf-releases/releases) (installers only). It is public, so the app
-  carries no token. To release, build on Windows and on Linux, then create a release tagged `v<version>` there
+- **Feed**: the `publish` entry in `electron-builder.yml`: the GitHub releases of this repository,
+  [Mannai/EPDF](https://github.com/Mannai/EPDF/releases) (since 1.0.9; 1.0.8 reads the releases of
+  Mannai/epdf-releases). It is public, so the app carries no token. To release, build on Windows and on Linux, then
+  create a release tagged `v<version>` there
   (a GitHub pre-release for a beta) and upload every file below. Later versions download only the changed blocks. The
   download is verified against the SHA-512 in the `.yml`; a corrupted or tampered installer is refused.
 

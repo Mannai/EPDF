@@ -57,8 +57,8 @@ describe('update policy', () => {
   })
 
   it('points at the public release channel', () => {
-    expect(RELEASES_REPO).toEqual({ owner: 'Mannai', repo: 'epdf-releases' })
-    expect(releasePageUrl('1.0.8-beta.1')).toBe('https://github.com/Mannai/epdf-releases/releases/tag/v1.0.8-beta.1')
+    expect(RELEASES_REPO).toEqual({ owner: 'Mannai', repo: 'EPDF' })
+    expect(releasePageUrl('1.0.9-beta.1')).toBe('https://github.com/Mannai/EPDF/releases/tag/v1.0.9-beta.1')
   })
 
   it('the build configuration publishes to the same public repo, with no token', () => {
@@ -66,7 +66,7 @@ describe('update policy', () => {
     const publish = /^publish:\n((?:[ \t-].*\n)+)/m.exec(yml)?.[1] ?? ''
     expect(publish).toMatch(/provider: github/)
     expect(publish).toMatch(/owner: Mannai/)
-    expect(publish).toMatch(/repo: epdf-releases/)
+    expect(publish).toMatch(/repo: EPDF$/m)
     expect(publish).toMatch(/releaseType: prerelease/)
     expect(publish).not.toMatch(/token|private: true/i)
   })
