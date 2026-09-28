@@ -252,6 +252,15 @@ async function multiLine(pdf: PDFDocument, text: string, box: Box, size: number,
   return { placed: [{ xo, x: box.x, y: box.y + box.h - xo.height }], size: s }
 }
 
+/** The first letter with a strong direction is right-to-left (Hebrew, Arabic, Syriac, Thaana, N'Ko...). */
+export function firstStrongIsRtl(s: string): boolean {
+  for (const ch of s) {
+    if (/[֐-ࣿיִ-﷿ﹰ-ﻼ]/u.test(ch) && /\p{L}/u.test(ch)) return true
+    if (/\p{L}/u.test(ch)) return false
+  }
+  return false
+}
+
 async function combed(pdf: PDFDocument, text: string, box: Box, size: number, cells: number, st: StyleIn): Promise<{ placed: Placed[]; size: number }> {
   const chars = graphemes(text.replace(/[\r\n]+/g, ''))
   const n = Math.max(1, cells)
@@ -270,6 +279,9 @@ async function combed(pdf: PDFDocument, text: string, box: Box, size: number, ce
   }
   const cache = new Map<string, TextXObject>()
   const placed: Placed[] = []
+  // Right-to-left text (its first strong letter is Arabic, Hebrew...) fills the cells from the right, one letter per
+  // cell in reading order; numbers-only values (IDs, dates) keep filling from the left.
+  const rtl = firstStrongIsRtl(chars.join(''))
   for (let i = 0; i < Math.min(chars.length, n); i++) {
     const c = chars[i]
     let xo = cache.get(c)
@@ -277,7 +289,8 @@ async function combed(pdf: PDFDocument, text: string, box: Box, size: number, ce
       xo = await makeTextXObject(pdf, c, { size: s, fontStack: st.fontStack, weight: st.weight, color: st.color })
       cache.set(c, xo)
     }
-    placed.push({ xo, x: box.x + cellW * i + (cellW - xo.width) / 2, y: box.y + (box.h - xo.height) / 2 })
+    const cell = rtl ? n - 1 - i : i
+    placed.push({ xo, x: box.x + cellW * cell + (cellW - xo.width) / 2, y: box.y + (box.h - xo.height) / 2 })
   }
   return { placed, size: s }
 }

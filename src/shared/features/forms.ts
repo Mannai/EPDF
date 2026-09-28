@@ -9,7 +9,9 @@ export const BUNDLED_FONT_FILES = {
   GreatVibes: 'GreatVibes-Regular.ttf',
   Allura: 'Allura-Regular.ttf',
   HomemadeApple: 'HomemadeApple-Regular.ttf',
-  Sacramento: 'Sacramento-Regular.ttf'
+  Sacramento: 'Sacramento-Regular.ttf',
+  /** Arabic handwriting (Ruqaa) for typed signatures; SIL OFL 1.1 (OFL-ArefRuqaa.txt). */
+  ArefRuqaa: 'ArefRuqaa-Regular.ttf'
 } as const
 
 export type BundledFontName = keyof typeof BUNDLED_FONT_FILES

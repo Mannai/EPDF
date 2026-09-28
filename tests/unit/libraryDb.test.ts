@@ -86,6 +86,24 @@ describe('content search (FTS5)', () => {
     expect(repo.search({ query: 'tea', scope: { kind: 'all' }, offset: 0, limit: 10 })).toMatchObject({ ok: true, total: 0 })
   })
 
+  it('Arabic: tashkeel, tatweel, alef / ya variants and Arabic-Indic digits are ignored, both ways (like the find bar)', () => {
+    addIndexed('ar.pdf', ['مَنْ جَدَّ وَجَدَ، وَمَنْ زَرَعَ حَصَدَ', 'صدر القـرار في ١٥ أيلول ٢٠٢٥ عن الأمم المتحدة', 'مستشفى الرحمة'])
+    for (const [q, page] of [
+      ['زرع', 1],
+      ['زَرَعَ', 1],
+      ['"ومن زرع حصد"', 1],
+      ['القرار', 2], // tatweel in the file
+      ['2025', 2], // Arabic-Indic digits in the file
+      ['الامم', 2], // plain alef for أ
+      ['مستشفي', 3], // ya for alef maqsura
+      ['الرَّحمة', 3] // tashkeel in the query
+    ] as const) {
+      const r = repo.search({ query: q, scope: { kind: 'all' }, offset: 0, limit: 10 })
+      expect(r.ok && r.hits.map((h) => h.page), q).toEqual([page])
+    }
+    expect(repo.search({ query: 'حصاد', scope: { kind: 'all' }, offset: 0, limit: 10 })).toMatchObject({ ok: true, total: 0 })
+  })
+
   it('supports phrases, AND, OR, NOT and exclusion', () => {
     addIndexed('a.pdf', ['annual report budget'])
     addIndexed('b.pdf', ['annual budget draft'])

@@ -1,7 +1,10 @@
 import type { IndexState } from '../library'
 
-/** Bump when text extraction improves: every file is re-indexed once. */
-export const INDEX_VERSION = 1
+/**
+ * Bump when text extraction improves: every file is re-indexed once.
+ * 2: Arabic tashkeel / letter variants folded in the index (library search ignores them, like the in-document search).
+ */
+export const INDEX_VERSION = 2
 
 /** What the scanner found on disk for one PDF. */
 export interface ScanEntry {

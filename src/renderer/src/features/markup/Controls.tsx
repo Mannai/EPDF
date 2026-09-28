@@ -174,6 +174,22 @@ export function CommitTextarea({
 
 const DEFAULT_COLOR = '#ffd633'
 
+/** The built-in stamps as <option>s, English and Arabic in their own groups. */
+export function StampChoices(): JSX.Element {
+  const group = (lang: 'en' | 'ar'): JSX.Element[] =>
+    STAMPS.filter((s) => (s.lang ?? 'en') === lang).map((s) => (
+      <option key={s.name} value={s.name} dir={lang === 'ar' ? 'rtl' : undefined}>
+        {stampLabel(s.name)}
+      </option>
+    ))
+  return (
+    <>
+      <optgroup label="English">{group('en')}</optgroup>
+      <optgroup label="العربية (Arabic)">{group('ar')}</optgroup>
+    </>
+  )
+}
+
 /** Editable properties of one existing annotation, limited to what can be changed without destroying it. */
 export function AnnotProperties({ docId, annot, variant }: { docId: string; annot: AnnotInfo; variant: 'panel' | 'ribbon' }): JSX.Element {
   const caps = capabilities(annot)
@@ -271,11 +287,7 @@ export function AnnotProperties({ docId, annot, variant }: { docId: string; anno
           <label className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-ink">
             <span>Stamp</span>
             <select className="field" value={annot.iconName} onChange={(e) => apply({ stamp: e.target.value }, 'Change stamp')}>
-              {STAMPS.map((s) => (
-                <option key={s.name} value={s.name}>
-                  {stampLabel(s.name)}
-                </option>
-              ))}
+              <StampChoices />
             </select>
           </label>
         )}

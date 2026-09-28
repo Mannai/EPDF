@@ -354,9 +354,16 @@ export const STAMP_HEIGHT = 44
 
 /** Natural (upright) size of a built-in stamp in points. */
 export async function stampSize(pdf: PDFDocument, def: StampDef): Promise<[number, number]> {
-  const bold = await stdFont(pdf, 'Helvetica-Bold')
-  const tw = bold.widthOfTextAtSize(def.label, 22)
+  const tw = isWinAnsiText(def.label) ? (await stdFont(pdf, 'Helvetica-Bold')).widthOfTextAtSize(def.label, 22) : await engineStampWidth(def.label, 22)
   return [Math.round(tw + (def.shape === 'arrow' ? 56 : 34)), STAMP_HEIGHT]
+}
+
+/** Stamp words in other scripts (the Arabic stamps): bold, through the text engine with its script fallback. */
+const STAMP_STACK = ['Helvetica']
+const engineStampOpts = (size: number, color: Color) => ({ size, fontStack: STAMP_STACK, weight: 700, color: textColor(color) })
+async function engineStampWidth(label: string, size: number): Promise<number> {
+  ensureTextEngine()
+  return (await measureText(label, engineStampOpts(size, [0, 0, 0]))).width
 }
 
 export async function buildBuiltInStamp(pdf: PDFDocument, a: AnnotInfo, def: StampDef, rotation: number): Promise<Built> {
@@ -368,7 +375,8 @@ export async function buildBuiltInStamp(pdf: PDFDocument, a: AnnotInfo, def: Sta
   const arrow = def.shape === 'arrow'
   const inner = arrow ? w - 30 : w - 16
   let size = Math.min(h * 0.5, 26)
-  while (size > 6 && font.widthOfTextAtSize(label, size) > inner) size -= 0.5
+  // (Standard-font words only; the engine branch below fits other scripts itself.)
+  if (isWinAnsiText(label)) while (size > 6 && font.widthOfTextAtSize(label, size) > inner) size -= 0.5
   if (arrow) {
     const tip = h / 2
     ops += `1 0.85 0.2 rg ${colorOp(color, true)} 1.6 w 1 j 1.5 1.5 m ${fmt(w - tip - 1)} 1.5 l ${fmt(w - 1.5)} ${fmt(h / 2)} l ${fmt(w - tip - 1)} ${fmt(h - 1.5)} l 1.5 ${fmt(h - 1.5)} l h B\n`
@@ -386,9 +394,23 @@ export async function buildBuiltInStamp(pdf: PDFDocument, a: AnnotInfo, def: Sta
       `${fmt(x0 + r)} ${fmt(y1)} l ${fmt(x0 + k)} ${fmt(y1)} ${fmt(x0)} ${fmt(y1 - k)} ${fmt(x0)} ${fmt(y1 - r)} c ` +
       `${fmt(x0)} ${fmt(y0 + r)} l ${fmt(x0)} ${fmt(y0 + k)} ${fmt(x0 + k)} ${fmt(y0)} ${fmt(x0 + r)} ${fmt(y0)} c h S\n`
   }
-  const tw = font.widthOfTextAtSize(label, size)
   const cx = arrow ? (w - h / 2) / 2 : w / 2
-  ops += `BT\n/HelvB ${fmt(size)} Tf\n${colorOp(arrow ? [0.1, 0.1, 0.15] : color, false)}\n1 0 0 1 ${fmt(cx - tw / 2)} ${fmt(h / 2 - size * 0.36)} Tm ${font.encodeText(label).toString()} Tj\nET\n`
+  const textRgb: Color = arrow ? [0.1, 0.1, 0.15] : color
+  if (!isWinAnsiText(label)) {
+    // Arabic (and any other script): the engine shapes the word; it is centred in the box as a nested form.
+    let es = Math.min(h * 0.5, 26)
+    while (es > 6 && (await engineStampWidth(label, es)) > inner) es -= 0.5
+    const xo = await makeTextXObject(pdf, label, engineStampOpts(es, textRgb))
+    ops += `q 1 0 0 1 ${fmt(cx - xo.width / 2)} ${fmt((h - xo.height) / 2)} cm /EpdfTx0 Do Q\n`
+    return {
+      ops,
+      bbox: [0, 0, w, h],
+      matrix: uprightMatrix(rotation, w, h),
+      resources: { ...gsResource(a.opacity), XObject: { EpdfTx0: xo.ref } }
+    }
+  }
+  const tw = font.widthOfTextAtSize(label, size)
+  ops += `BT\n/HelvB ${fmt(size)} Tf\n${colorOp(textRgb, false)}\n1 0 0 1 ${fmt(cx - tw / 2)} ${fmt(h / 2 - size * 0.36)} Tm ${font.encodeText(label).toString()} Tj\nET\n`
   return {
     ops,
     bbox: [0, 0, w, h],

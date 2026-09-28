@@ -191,8 +191,8 @@ documents.
   cannot parse them).
 - **Text layer**: spans are stretched per word with the browser's `sans-serif` font; highlight edges inside a word
   follow the browser's shaping, not the PDF's glyphs (search highlights use the exact glyph boxes).
-- **Library search** is logical-order now but still sensitive to tashkeel (the index tokenizer keeps harakat), and
-  existing index entries are only rebuilt when a file changes.
+- **Library search** is logical-order and ignores tashkeel and letter variants (the index text and the query get the
+  find bar's folding; index version 2 re-indexes existing libraries once).
 - **Docx bidi alignment** (`w:jc` in `w:bidi` paragraphs) follows Word's start/end reading of left/right; it was not
   checked in Microsoft Word.
 

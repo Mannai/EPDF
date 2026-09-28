@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import { canvasOfPixels, finalizeSignature, makeCanvas, pixelsOf, type SignatureImage } from './canvasUtil'
 import { DEFAULT_WHITE_THRESHOLD, fitWithin, removeNearWhite } from './imageProcessing'
 import { inkBounds, renderStrokes, simplifyStroke, type Pt, type Stroke } from './strokes'
-import { SCRIPT_FONTS, ensureScriptFont, renderTypedSignature } from './typed'
+import { SCRIPT_FONTS, ensureScriptFont, hasArabicLetters, renderTypedSignature } from './typed'
 
 /**
  * The three ways to make a signature. Each pad reports its current result (a transparent PNG, already
@@ -154,7 +154,16 @@ export function DrawPad({ onChange }: PadProps): JSX.Element {
 /** Type a name and pick one of the bundled script fonts. */
 export function TypePad({ onChange, initialText = '' }: PadProps & { initialText?: string }): JSX.Element {
   const [text, setText] = useState(initialText)
-  const [fontId, setFontId] = useState<BundledFontName>(SCRIPT_FONTS[0].id)
+  const [fontId, setFontId] = useState<BundledFontName>(hasArabicLetters(initialText) ? 'ArefRuqaa' : SCRIPT_FONTS[0].id)
+  // Typing an Arabic name switches to the Arabic handwriting font once, unless the user picked a style themselves.
+  const picked = useRef(false)
+  useEffect(() => {
+    if (picked.current) return
+    const arabic = hasArabicLetters(text)
+    const current = SCRIPT_FONTS.find((f) => f.id === fontId)
+    if (arabic && !current?.arabic) setFontId('ArefRuqaa')
+    else if (!arabic && current?.arabic && text.trim()) setFontId(SCRIPT_FONTS[0].id)
+  }, [text, fontId])
   const [inkId, setInkId] = useState('black')
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -194,7 +203,7 @@ export function TypePad({ onChange, initialText = '' }: PadProps & { initialText
       <label className="block text-xs" htmlFor="typed-signature-text">
         Type your name
       </label>
-      <input id="typed-signature-text" className="field mt-1 w-full" value={text} maxLength={60} onChange={(e) => setText(e.target.value)} autoComplete="off" />
+      <input id="typed-signature-text" className="field mt-1 w-full" dir="auto" value={text} maxLength={60} onChange={(e) => setText(e.target.value)} autoComplete="off" />
       {error && (
         <p role="alert" className="mt-2 text-danger">
           {error}
@@ -205,14 +214,24 @@ export function TypePad({ onChange, initialText = '' }: PadProps & { initialText
         <div className="mt-1 grid grid-cols-2 gap-2">
           {SCRIPT_FONTS.map((f) => (
             <label key={f.id} className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1 ${fontId === f.id ? 'border-accent bg-accent/10' : 'border-line'}`}>
-              <input type="radio" name="typed-font" value={f.id} checked={fontId === f.id} onChange={() => setFontId(f.id)} />
+              <input
+                type="radio"
+                name="typed-font"
+                value={f.id}
+                checked={fontId === f.id}
+                onChange={() => {
+                  picked.current = true
+                  setFontId(f.id)
+                }}
+              />
               <span className="sr-only">{f.label}</span>
               <span
                 aria-hidden="true"
+                dir="auto"
                 className="truncate rounded bg-white px-2 text-3xl leading-tight"
                 style={{ fontFamily: ready ? `"${f.family}"` : undefined, color: ink }}
               >
-                {text.trim() || 'Your name'}
+                {text.trim() || (f.arabic ? 'اسمك' : 'Your name')}
               </span>
             </label>
           ))}

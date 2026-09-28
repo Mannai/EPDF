@@ -23,6 +23,7 @@ import {
 import { get, getDict, getName, getNumbers, getString } from '../../src/renderer/src/features/markup/pdf/pdfobj'
 import { readAnnotations } from '../../src/renderer/src/features/markup/pdf/read'
 import { STAMPS } from '../../src/renderer/src/features/markup/pdf/stamps'
+import { appearanceTexts } from '../support/retrofit'
 import { viewRectToQuad } from '../../src/renderer/src/features/markup/pdf/quads'
 import {
   annotsOf,
@@ -314,10 +315,16 @@ describe('stamps', () => {
     const bb = apBBox(d)
     const r = getNumbers(d, 'Rect')!
     expect(bb).toEqual([0, 0, r[2] - r[0], r[3] - r[1]])
-    expect(apOps(d)).toMatch(/\/HelvB [\d.]+ Tf/)
-    expect(apOps(d)).toMatch(/<[0-9a-fA-F]+> Tj/)
-    const f = (get(apResources(d), 'Font') as PDFDict).lookup(PDFName.of('HelvB')) as PDFDict
-    expect(getName(f, 'BaseFont')).toBe('Helvetica-Bold')
+    if (STAMPS.find((s) => s.name === name)!.lang) {
+      // Arabic: the word is a nested text-engine form
+      expect(apOps(d)).toContain('/EpdfTx0 Do')
+      expect((get(apResources(d), 'XObject') as PDFDict).get(PDFName.of('EpdfTx0'))).toBeDefined()
+    } else {
+      expect(apOps(d)).toMatch(/\/HelvB [\d.]+ Tf/)
+      expect(apOps(d)).toMatch(/<[0-9a-fA-F]+> Tj/)
+      const f = (get(apResources(d), 'Font') as PDFDict).lookup(PDFName.of('HelvB')) as PDFDict
+      expect(getName(f, 'BaseFont')).toBe('Helvetica-Bold')
+    }
     // centred on the click
     expect((r[0] + r[2]) / 2).toBeCloseTo(300, 0)
     expect((r[1] + r[3]) / 2).toBeCloseTo(400, 0)
@@ -527,6 +534,25 @@ describe('editing annotations', () => {
     expect((r1[0] + r1[2]) / 2).toBeCloseTo((r0[0] + r0[2]) / 2, 0)
     expect((r1[1] + r1[3]) / 2).toBeCloseTo((r0[1] + r0[3]) / 2, 0)
     expect(apOps(d)).toContain(STAMPS.find((s) => s.name === 'Confidential')!.color.join(' '))
+  })
+
+  it('Arabic stamps: the word is shaped by the text engine (nested form), reads back logically, and can swap with English ones', async () => {
+    const pdf = await makePdf()
+    const id = await addStamp(pdf, 0, { ...who, name: 'EpdfArApproved', center: [300, 400] })
+    let [d] = annotsOf(await roundTrip(pdf))
+    expect(nameOf(d, 'Name')).toBe('EpdfArApproved')
+    expect(getString(d, 'Contents')).toBe('معتمد')
+    expect(apOps(d)).toContain('/EpdfTx0 Do')
+    const bytes = await pdf.save()
+    const [text] = await appearanceTexts(bytes)
+    expect(text.replace(/\s+/g, ' ').trim()).toBe('معتمد')
+    await updateAnnotation(pdf, id, { stamp: 'Approved' })
+    ;[d] = annotsOf(await roundTrip(pdf))
+    expect(getString(d, 'Contents')).toBe('APPROVED')
+    expect(apOps(d)).toContain('/HelvB')
+    await updateAnnotation(pdf, id, { stamp: 'EpdfArSignHere' })
+    ;[d] = annotsOf(await roundTrip(pdf))
+    expect(getString(d, 'Contents')).toBe('وقّع هنا')
   })
 
   it('changing the stamp keeps a comment the user wrote, and refuses image and foreign stamps', async () => {

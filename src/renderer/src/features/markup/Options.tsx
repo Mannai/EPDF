@@ -3,7 +3,7 @@ import { errorMessage, notify } from '../../state/notify'
 import { AnnotProperties, CheckField, ColorField, NumberField, RangeField } from './Controls'
 import { useDocAnnots } from './data'
 import { IconComments } from './icons'
-import { STAMPS, stampLabel } from './pdf/stamps'
+import { StampChoices } from './Controls'
 import { useMarkup, type CustomStamp, type TextMarkupKind } from './store'
 
 /** Ribbon controls shown while a markup tool is active. */
@@ -142,11 +142,7 @@ export function StampOptions(): JSX.Element {
           value={o.useCustom && o.custom ? '__custom' : o.name}
           onChange={(e) => (e.target.value === '__custom' ? patch('stamp', { useCustom: true }) : patch('stamp', { name: e.target.value, useCustom: false }))}
         >
-          {STAMPS.map((s) => (
-            <option key={s.name} value={s.name}>
-              {stampLabel(s.name)}
-            </option>
-          ))}
+          <StampChoices />
           {o.custom && <option value="__custom">Image: {o.custom.name}</option>}
         </select>
       </label>

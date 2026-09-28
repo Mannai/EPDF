@@ -7,6 +7,8 @@
  * CJK characters, i.e. substring search for CJK.
  */
 
+import { normalizeForSearch } from '../../text/search'
+
 const CJK_CLASS = '\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}'
 const CJK_RE = new RegExp(`[${CJK_CLASS}]`, 'gu')
 const CJK_SPACED_RE = new RegExp(`([${CJK_CLASS}]) (?=[${CJK_CLASS}])`, 'gu')
@@ -59,9 +61,16 @@ export function unspaceCjk(s: string): string {
  * control characters and our snippet markers removed, whitespace collapsed, CJK spaced for the tokenizer.
  */
 export function prepareIndexText(raw: string): string {
-  const folded = raw.normalize('NFKC').replace(INVISIBLE_RE, '').replace(CONTROL_RE, ' ')
+  const folded = foldIndexText(raw.normalize('NFKC').replace(INVISIBLE_RE, '').replace(CONTROL_RE, ' '))
   return spaceCjk(folded.replace(/\s+/g, ' ').trim())
 }
+
+/**
+ * The same folding the in-document search uses (Arabic tashkeel and tatweel dropped, alef / ya / Persian-Urdu letter
+ * variants and Arabic-Indic digits unified, Hebrew points dropped), applied to the indexed text and to every query
+ * term, so "زرع" finds "زَرَعَ" in the library too. Case is left to the FTS tokenizer.
+ */
+export const foldIndexText = (s: string): string => normalizeForSearch(s, { foldCase: false }).text
 
 export interface SnippetPart {
   text: string

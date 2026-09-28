@@ -1,4 +1,4 @@
-import { spaceCjk } from './text'
+import { foldIndexText, spaceCjk } from './text'
 
 /**
  * Turns what a person types into a safe FTS5 MATCH expression. The FTS5 query language is never exposed:
@@ -84,7 +84,8 @@ function tokenize(input: string): Tok[] {
 
 const quote = (text: string, prefix: boolean): string => {
   // Double quotes cannot reach here (they end a phrase), but never rely on that for safety.
-  const body = spaceCjk(text.normalize('NFKC'))
+  // Folded exactly like the indexed text (tashkeel, letter variants, digits).
+  const body = spaceCjk(foldIndexText(text.normalize('NFKC')))
     .replace(/["\u0000-\u001F]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()

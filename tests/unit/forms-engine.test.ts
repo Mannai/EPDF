@@ -181,6 +181,26 @@ describe('form fields: Arabic, Hebrew, mixed and other scripts through the text 
     expect((c.match(/ Do Q/g) ?? []).length).toBe(5)
   })
 
+  it('a comb field fills right to left for Arabic text (first letter in the rightmost cell); numbers still fill from the left', async () => {
+    const xs = async (value: string): Promise<number[]> => {
+      const pdf = await PDFDocument.load(base)
+      const f = pdf.getForm().getTextField('code')
+      f.setMaxLength(6)
+      f.enableCombing()
+      await applyFieldValue(pdf, 'code', value)
+      const re = await PDFDocument.load(await pdf.save())
+      const c = contentOf(widgetAP(re, 'code'))
+      return [...c.matchAll(/1 0 0 1 ([-\d.]+) [-\d.]+ cm \/\S+ Do Q/g)].map((m) => Number(m[1]))
+    }
+    const ar = await xs('سلام')
+    expect(ar).toHaveLength(4)
+    for (let i = 1; i < ar.length; i++) expect(ar[i]).toBeLessThan(ar[i - 1]) // س right-most, then leftwards
+    const digits = await xs('٢٠٢٦') // (Western digits take the plain Helvetica path, not the engine)
+    for (let i = 1; i < digits.length; i++) expect(digits[i]).toBeGreaterThan(digits[i - 1])
+    // The first Arabic letter sits in the last (6th) cell, the first digit in the first.
+    expect(ar[0]).toBeGreaterThan(digits[digits.length - 1])
+  })
+
   it('switching a field back to Latin text uses Helvetica again (no embedded font for it)', async () => {
     const first = await fill([['full_name', AR]])
     const second = await fill([['full_name', 'Ada Lovelace']], first.bytes)

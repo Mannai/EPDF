@@ -995,6 +995,16 @@ test.describe('visual signatures', () => {
       await dialog.getByRole('button', { name: 'Save signature' }).click()
       await expect(dialog.getByTestId('signature-list')).toContainText('Typed one')
 
+      // An Arabic name switches to the Arabic handwriting style by itself (the Latin script fonts have no Arabic).
+      await dialog.getByRole('tab', { name: 'Type' }).click()
+      await dialog.getByLabel('Type your name').fill('محمد السالم')
+      await expect(dialog.getByRole('radio', { name: 'Aref Ruqaa (Arabic)' })).toBeChecked()
+      await dialog.getByLabel('Name', { exact: true }).fill('Arabic one')
+      await dialog.getByRole('button', { name: 'Save signature' }).click()
+      await expect(dialog.getByTestId('signature-list')).toContainText('Arabic one')
+      const arabic = (await signatureList(page)).find((s) => s.name === 'Arabic one')!
+      expect(arabic.width).toBeGreaterThan(arabic.height) // a real line of handwriting, not an empty picture
+
       const pngPath = join(mkdtempSync(join(tmpdir(), 'epdf-sig-')), 'scan.png')
       writeFileSync(pngPath, makePng(300, 120))
       await dialog.getByRole('tab', { name: 'Import image' }).click()
@@ -1005,7 +1015,7 @@ test.describe('visual signatures', () => {
       await expect(dialog.getByTestId('signature-list')).toContainText('Imported one')
 
       const list = await signatureList(page)
-      expect(list.map((s) => s.name).sort()).toEqual(['Imported one', 'Typed one'])
+      expect(list.map((s) => s.name).sort()).toEqual(['Arabic one', 'Imported one', 'Typed one'])
       // The imported image really has transparent paper: corner pixels are clear, ink is opaque.
       const imported = list.find((s) => s.name === 'Imported one')!
       const alpha = await page.evaluate(async (png) => {

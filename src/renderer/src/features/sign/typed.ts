@@ -3,12 +3,17 @@ import { loadBundledFont } from '../forms/fontClient'
 import { finalizeSignature, makeCanvas, type SignatureImage } from './canvasUtil'
 
 /** The script fonts bundled for typed signatures (all SIL OFL 1.1 or Apache 2.0; see docs/features/forms-signing.md). */
-export const SCRIPT_FONTS: { id: BundledFontName; label: string; family: string }[] = [
+export const SCRIPT_FONTS: { id: BundledFontName; label: string; family: string; arabic?: boolean }[] = [
   { id: 'GreatVibes', label: 'Great Vibes', family: 'Epdf Great Vibes' },
   { id: 'Allura', label: 'Allura', family: 'Epdf Allura' },
   { id: 'HomemadeApple', label: 'Homemade Apple', family: 'Epdf Homemade Apple' },
-  { id: 'Sacramento', label: 'Sacramento', family: 'Epdf Sacramento' }
+  { id: 'Sacramento', label: 'Sacramento', family: 'Epdf Sacramento' },
+  // Ruqaa, the everyday Arabic handwriting (Latin letters too). The Latin script fonts have no Arabic letters.
+  { id: 'ArefRuqaa', label: 'Aref Ruqaa (Arabic)', family: 'Epdf Aref Ruqaa', arabic: true }
 ]
+
+/** The name has Arabic-script letters (Arabic, Persian, Urdu...): only an Arabic font writes it by hand. */
+export const hasArabicLetters = (s: string): boolean => /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/u.test(s)
 
 const loaded = new Map<string, Promise<void>>()
 

@@ -12,6 +12,8 @@ export interface StampDef {
   shape: 'box' | 'arrow'
   /** Text on a second, smaller line (optional). */
   sub?: string
+  /** Arabic stamps: the word is drawn by the text engine (shaped, right to left). */
+  lang?: 'ar'
 }
 
 const RED: Color = [0.75, 0.1, 0.1]
@@ -32,7 +34,20 @@ export const STAMPS: readonly StampDef[] = [
   { name: 'Completed', label: 'COMPLETED', color: GREEN, shape: 'box' },
   { name: 'Void', label: 'VOID', color: RED, shape: 'box' },
   { name: 'Received', label: 'RECEIVED', color: ORANGE, shape: 'box' },
-  { name: 'SignHere', label: 'SIGN HERE', color: [0.15, 0.15, 0.2], shape: 'arrow' }
+  { name: 'SignHere', label: 'SIGN HERE', color: [0.15, 0.15, 0.2], shape: 'arrow' },
+  // Arabic set (/Name EpdfAr…: not standard names, so no other reader substitutes its own English icon).
+  { name: 'EpdfArApproved', label: 'معتمد', color: GREEN, shape: 'box', lang: 'ar' },
+  { name: 'EpdfArNotApproved', label: 'غير معتمد', color: RED, shape: 'box', lang: 'ar' },
+  { name: 'EpdfArDraft', label: 'مسودة', color: GRAY, shape: 'box', lang: 'ar' },
+  { name: 'EpdfArConfidential', label: 'سري', color: RED, shape: 'box', lang: 'ar' },
+  { name: 'EpdfArFinal', label: 'نهائي', color: BLUE, shape: 'box', lang: 'ar' },
+  { name: 'EpdfArForComment', label: 'للتعليق', color: BLUE, shape: 'box', lang: 'ar' },
+  { name: 'EpdfArReviewed', label: 'تمت المراجعة', color: BLUE, shape: 'box', lang: 'ar' },
+  { name: 'EpdfArRejected', label: 'مرفوض', color: RED, shape: 'box', lang: 'ar' },
+  { name: 'EpdfArCompleted', label: 'مكتمل', color: GREEN, shape: 'box', lang: 'ar' },
+  { name: 'EpdfArVoid', label: 'ملغى', color: RED, shape: 'box', lang: 'ar' },
+  { name: 'EpdfArReceived', label: 'تم الاستلام', color: ORANGE, shape: 'box', lang: 'ar' },
+  { name: 'EpdfArSignHere', label: 'وقّع هنا', color: [0.15, 0.15, 0.2], shape: 'arrow', lang: 'ar' }
 ]
 
 export const stampByName = (name: string | undefined): StampDef | undefined => STAMPS.find((s) => s.name === name)
@@ -40,6 +55,7 @@ export const stampByName = (name: string | undefined): StampDef | undefined => S
 /** Human label for /Name (falls back to splitting camel case: "NotForPublicRelease" → "Not For Public Release"). */
 export function stampLabel(name: string | undefined): string {
   const def = stampByName(name)
+  if (def?.lang) return def.label
   if (def) return def.label.toLowerCase().replace(/(^| )(\w)/g, (_m, a: string, b: string) => a + b.toUpperCase())
   return (name ?? 'Stamp').replace(/([a-z])([A-Z])/g, '$1 $2')
 }
