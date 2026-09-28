@@ -97,7 +97,7 @@ test.describe('page text model in the app', () => {
         await page.keyboard.press('Control+C')
         await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain('2026-09-26 (Epdf)')
         expect(norm(await app.evaluate(({ clipboard }) => clipboard.readText()))).toBe(norm(date.text))
-      })
+      }, app)
     } finally {
       await quitDiscarding(app, page)
     }

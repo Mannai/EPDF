@@ -252,7 +252,7 @@ export async function clickTool(page: Page, tool: string): Promise<void> {
  * The system clipboard is shared by every test worker. Anything that copies and then reads it back runs inside this
  * cross-process lock (a directory in the temp folder), so parallel tests can't overwrite each other's clipboard.
  */
-export async function withSystemClipboard<T>(fn: () => Promise<T>): Promise<T> {
+export async function withSystemClipboard<T>(fn: () => Promise<T>, app?: ElectronApplication): Promise<T> {
   const { mkdirSync, rmSync, statSync } = await import('node:fs')
   const lock = join(tmpdir(), 'epdf-e2e-clipboard.lock')
   const started = Date.now()
@@ -272,6 +272,9 @@ export async function withSystemClipboard<T>(fn: () => Promise<T>): Promise<T> {
     }
   }
   try {
+    // Start from an empty clipboard owned by the app under test, so what is read back can only come from this copy
+    // (on X11 a clipboard left by an app that has quit made the read-back unreliable).
+    if (app) await app.evaluate(({ clipboard }) => clipboard.writeText(''))
     return await fn()
   } finally {
     rmSync(lock, { recursive: true, force: true })
