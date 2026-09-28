@@ -20,12 +20,27 @@ const u32 = (b: Uint8Array, o: number): number => ((b[o] << 24) | (b[o + 1] << 1
  * script. Emptying them changed how the letters that remain are hinted, so the trimmed font rendered a little
  * differently there; they are kept (a few dozen glyphs at most, only those the font has).
  */
-const HINT_REFERENCE =
-  'THEZOCQSHLUfijkdbhxzroescpqgjyoO0' + // Latin
-  'ΓΒΕΖΘΟΩβδζθλξοσςτφχψω' + // Greek
-  'БВЕЗОСЭПЧЪбвезосэпчъ' + // Cyrillic
-  'בדהחךכםסטץשתלק' + // Hebrew
-  'اإلكطظتثنبي' // Arabic
+const HINT_REFERENCE: { letters: string; ranges: [number, number][] }[] = [
+  // Latin: always (digits and punctuation are hinted with the Latin metrics)
+  { letters: 'THEZOCQSHLUfijkdbhxzroescpqgjyoO0', ranges: [] },
+  // the others only when the document shows that script: FreeType measures a script only when it draws it
+  { letters: 'ΓΒΕΖΘΟΩβδζθλξοσςτφχψω', ranges: [[0x0370, 0x03ff]] },
+  { letters: 'БВЕЗОСЭПЧЪбвезосэпчъ', ranges: [[0x0400, 0x04ff]] },
+  { letters: 'בדהחךכםסטץשתלק', ranges: [[0x0590, 0x05ff]] },
+  { letters: 'اإلكطظتثنبي', ranges: [[0x0600, 0x06ff], [0xfb50, 0xfdff], [0xfe70, 0xfeff]] }
+]
+
+/** The auto-hinter's reference glyphs for the scripts `used` belongs to. */
+function hintReferenceGlyphs(cmap: Uint8Array | undefined, used: Set<number>): number[] {
+  const out: number[] = []
+  for (const s of HINT_REFERENCE) {
+    const shown =
+      s.ranges.length === 0 ||
+      s.ranges.some(([a, b]) => glyphsForText(cmap, String.fromCodePoint(...Array.from({ length: b - a + 1 }, (_, i) => a + i))).some((g) => used.has(g)))
+    if (shown) out.push(...glyphsForText(cmap, s.letters))
+  }
+  return out
+}
 
 /** Glyph ids of `text`'s characters through the font's Unicode cmap (formats 4 and 12); characters it lacks are skipped. */
 export function glyphsForText(cmap: Uint8Array | undefined, text: string): number[] {
@@ -176,8 +191,9 @@ export function pruneTrueType(font: Uint8Array, keep: Iterable<number>): PruneRe
   const offsets: number[] = []
   for (let i = 0; i <= numGlyphs; i++) offsets.push(longLoca ? u32(loca, i * 4) : u16(loca, i * 2) * 2)
   for (let i = 0; i < numGlyphs; i++) if (offsets[i + 1] < offsets[i] || offsets[i + 1] > glyf.length) return null
-  const hintRefs = glyphsForText(tables.get('cmap'), HINT_REFERENCE).filter((g) => g < numGlyphs)
-  const wanted = closure(glyf, offsets, [0, ...keep, ...hintRefs], numGlyphs)
+  const used = new Set(keep)
+  const hintRefs = hintReferenceGlyphs(tables.get('cmap'), used).filter((g) => g < numGlyphs)
+  const wanted = closure(glyf, offsets, [0, ...used, ...hintRefs], numGlyphs)
   if (!wanted) return null
 
   // new glyf + loca (long format)

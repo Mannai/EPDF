@@ -61,6 +61,11 @@ describe('TrueType pruning', () => {
       const g = k.glyphForCodePoint(ch.codePointAt(0)!).id
       expect(JSON.stringify(p.getGlyph(g).path.commands), ch).toBe(JSON.stringify(k.getGlyph(g).path.commands))
     }
+    // the Greek references only when Greek is shown
+    const omega = k.glyphForCodePoint(0x3a9).id
+    expect(p.getGlyph(omega).path.commands.length).toBe(0)
+    const withGreek = kit.create(pruneTrueType(original, [...gids, k.glyphForCodePoint(0x3b1).id])!.bytes)
+    expect(withGreek.getGlyph(omega).path.commands.length).toBeGreaterThan(0)
   })
 
   it('maps characters to glyph ids through the cmap as fontkit does (Latin, Greek, Cyrillic, Hebrew, Arabic, missing)', () => {
