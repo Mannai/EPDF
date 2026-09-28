@@ -76,16 +76,23 @@ mac:
   target:
     - target: dmg
       arch: universal # one build for Apple Silicon + Intel
-    - target: zip # required by electron-updater on macOS (Phase 5)
+    - target: zip # writes latest-mac.yml, which the update check reads
       arch: universal
+  artifactName: Epdf-${version}-${arch}.${ext} # Epdf-<version>-universal.dmg / .zip
+  # There is no Apple Developer ID yet, so the app is signed ad hoc ("-"): it runs on Apple Silicon (which refuses
+  # unsigned code), but Gatekeeper does not know it, so users allow it once in System Settings (README, "Install") and
+  # it cannot update itself (Squirrel.Mac needs a Developer ID; see features/updates). With a Developer ID: remove
+  # this line, provide CSC_LINK / CSC_KEY_PASSWORD, drop disable-library-validation from the entitlements, and notarize.
+  identity: '-'
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  # Signing + notarization are driven by the environment; see README ("Code signing").
-  #   CSC_LINK / CSC_KEY_PASSWORD        Developer ID Application certificate (.p12)
-  #   APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID   notarization
-  notarize: false # flipped on in CI once the Apple credentials exist (see README)
+  extendInfo:
+    NSCameraUsageDescription: Epdf uses the camera only while you scan a document with it.
+  # Notarization (Developer ID only) is driven by the environment; see docs/DEVELOPMENT.md ("Code signing").
+  #   APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
+  notarize: false
   # The universal build merges two arch-specific bundles; the native addon ships prebuilds for both,
   # so the merge only needs to tolerate identical files.
   x64ArchFiles: '**/better-sqlite3/**'

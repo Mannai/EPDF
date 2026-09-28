@@ -70,6 +70,7 @@
     "esbuild@0.25.12": true,
     "esbuild@0.28.2": true,
     "electron@44.4.5": true,
-    "better-sqlite3@13.0.3": false
+    "better-sqlite3@13.0.3": false,
+    "fsevents@2.3.3": false
   }
 }

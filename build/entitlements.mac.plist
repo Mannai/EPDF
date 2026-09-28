@@ -7,5 +7,13 @@
     <true/>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
+    <!-- The Mac build is signed ad hoc (no Apple Developer ID yet). Under the hardened runtime, library validation
+         would then refuse Electron's own frameworks and the SQLite addon, so it is turned off. It can be removed
+         once the app is signed with a Developer ID (every part then carries the same Team ID). -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <!-- Scanning a document with the camera. macOS still asks the user first. -->
+    <key>com.apple.security.device.camera</key>
+    <true/>
   </dict>
 </plist>
