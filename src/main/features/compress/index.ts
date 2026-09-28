@@ -16,6 +16,6 @@ export function register(_ctx: MainContext): void {
   contributeMenu({
     menu: 'File',
     position: 'end',
-    items: () => [{ type: 'separator' }, commandItem('Reduce File Size…', 'compress.open'), commandItem('Reduce Several Files…', 'compress.batch')]
+    items: () => [{ type: 'separator' }, commandItem('Reduce File Size…', 'compress.open'), commandItem('Reduce Several Files…', 'compress.batch', undefined, { anyTime: true })]
   })
 }

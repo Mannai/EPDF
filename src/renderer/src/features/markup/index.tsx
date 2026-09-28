@@ -4,7 +4,7 @@ import { useWorkspace } from '../../state/workspace'
 import { isEditableTarget } from '../keys'
 import { registerCommand, registerContextItems, registerPageOverlay, registerPanel, registerTool } from '../api'
 import { CommentsPanel } from './CommentsPanel'
-import { createTextMarkup, deleteAnnotByKey } from './actions'
+import { copyAnnot, createTextMarkup, deleteAnnotByKey, hasCopiedItem, pasteAnnot } from './actions'
 import { useAnnots } from './data'
 import {
   COMMENTS_PANEL,
@@ -177,6 +177,27 @@ window.addEventListener('keydown', (e) => {
       e.preventDefault()
       void placeDefault(place)
     }
+  }
+})
+
+// Ctrl+C / Ctrl+V on a selected shape, stamp, text box, note, drawing or Fill & sign item copies and pastes it (the
+// copy is selected, a little below and to the right). With text selected, Ctrl+C copies the text as usual.
+window.addEventListener('keydown', (e) => {
+  if (e.defaultPrevented || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || isEditableTarget(e.target)) return
+  if (!inViewer(e.target) || document.querySelector('[role="dialog"][aria-modal="true"]')) return
+  const key = e.key.toLowerCase()
+  const tab = activeTab()
+  if (!tab || (key !== 'c' && key !== 'v')) return
+  if (key === 'c') {
+    const sel = useMarkup.getState().selection
+    if (!sel || sel.docId !== tab.docId || window.getSelection()?.toString()) return
+    const a = useAnnots.getState().byDoc[sel.docId]?.annots.find((x) => x.id === sel.id)
+    if (!a) return
+    e.preventDefault()
+    void copyAnnot(sel.docId, a)
+  } else if (hasCopiedItem()) {
+    e.preventDefault()
+    void pasteAnnot(tab.docId, tab.view.page - 1)
   }
 })
 

@@ -1,4 +1,5 @@
-import { EditError, editPdf } from '../../edit/session'
+import { PDFDocument } from 'pdf-lib'
+import { EditError, currentBytes, editPdf } from '../../edit/session'
 import { askConfirm } from '../../state/confirm'
 import { confirmDelete } from '../../state/confirmDelete'
 import { errorMessage, notify } from '../../state/notify'
@@ -8,6 +9,7 @@ import { hexToRgb } from './pdf/basics'
 import type { Pt, Rect } from './pdf/geometry'
 import { describeAnnot, subtypeLabel, type AnnotInfo, type ReviewState } from './pdf/model'
 import { listLocated } from './pdf/annots'
+import { copyAnnotation, pasteAnnotation, type AnnotClip } from './pdf/clipboard'
 import { normalizeRect } from './pdf/geometry'
 import { getNumbers } from './pdf/pdfobj'
 import {
@@ -198,6 +200,48 @@ export function selectPlaced(docId: string, id: string | undefined): void {
   if (!id || useMarkup.getState().keepTool) return
   useWorkspace.getState().setActiveTool(TOOL.select, docId)
   useMarkup.getState().select(docId, id)
+}
+
+// ---------------------------------------------------------------- copy and paste
+
+/** What Ctrl+C copied, and how often it was pasted (each paste on the same page lands a little further on). */
+let clip: { item: AnnotClip; docId: string; pageIndex: number; pastes: number } | null = null
+const PASTE_STEP = 12
+
+export const hasCopiedItem = (): boolean => !!clip
+export const forgetCopiedItem = (): void => {
+  clip = null
+}
+
+/** Ctrl+C on a selected item on a page. */
+export async function copyAnnot(docId: string, a: Pick<AnnotInfo, 'id' | 'pageIndex'>): Promise<boolean> {
+  try {
+    const bytes = await currentBytes(docId)
+    const pdf = await PDFDocument.load(bytes, { updateMetadata: false, throwOnInvalidObject: false })
+    clip = { item: await copyAnnotation(pdf, a.id), docId, pageIndex: a.pageIndex, pastes: 0 }
+    announce('Copied.')
+    return true
+  } catch (err) {
+    notify('error', `Couldn’t copy this item: ${errorMessage(err)}`)
+    return false
+  }
+}
+
+/**
+ * Ctrl+V: pastes the copied item onto `pageIndex` of `docId` and selects it. On the page it came from, each paste is
+ * offset down and to the right, so copies don't hide each other; on another page it keeps its position.
+ */
+export async function pasteAnnot(docId: string, pageIndex: number): Promise<string | undefined> {
+  const c = clip
+  if (!c) return undefined
+  const samePlace = c.docId === docId && c.pageIndex === pageIndex
+  const step = samePlace ? (c.pastes + 1) * PASTE_STEP : 0
+  const id = await run(docId, 'Paste', (pdf) => pasteAnnotation(pdf, pageIndex, c.item, step, -step))
+  if (!id) return undefined
+  if (samePlace) c.pastes++
+  useMarkup.getState().select(docId, id)
+  announce('Pasted.')
+  return id
 }
 
 // ---------------------------------------------------------------- editing existing annotations

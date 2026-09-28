@@ -28,7 +28,21 @@ export function setCommandSender(fn: (id: string) => void): void {
   sendCommandImpl = fn
 }
 
-/** A menu item that runs a renderer command registered with `registerCommand(id, ...)`. */
-export function commandItem(label: string, id: string, accelerator?: string): MenuItemConstructorOptions {
-  return { label, accelerator, click: () => sendCommandImpl(id) }
+/**
+ * Menu item ids starting with this need an open document: the File button's menu greys them out on the start
+ * screen (see features/chrome).
+ */
+export const NEEDS_DOCUMENT = 'doc:'
+
+/**
+ * A menu item that runs a renderer command registered with `registerCommand(id, ...)`. It works on the open document
+ * unless `anyTime` says it also works with none (Create PDF, Combine, Scan, Library...).
+ */
+export function commandItem(
+  label: string,
+  id: string,
+  accelerator?: string,
+  opts: { anyTime?: boolean } = {}
+): MenuItemConstructorOptions {
+  return { id: (opts.anyTime ? 'cmd:' : NEEDS_DOCUMENT) + id, label, accelerator, click: () => sendCommandImpl(id) }
 }

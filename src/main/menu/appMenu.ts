@@ -2,7 +2,7 @@ import { app, dialog, Menu, shell, type MenuItemConstructorOptions } from 'elect
 import { hardwareAccelerationEnabled, setHardwareAcceleration } from '../services/gpu'
 import type { MenuAction } from '../../shared/types'
 import type { Controller } from '../controller'
-import { commandItem, contributionsFor, setCommandSender, type MenuName } from './contributions'
+import { commandItem, contributionsFor, NEEDS_DOCUMENT, setCommandSender, type MenuName } from './contributions'
 
 const isMac = process.platform === 'darwin'
 
@@ -27,7 +27,9 @@ export function installMenus(c: Controller): void {
     if (w) c.windows.send(w, 'menu:action', action)
   }
   setCommandSender((id) => send({ type: 'command', id }))
+  // Every action item works on the open document (zoom, find, close tab...).
   const item = (label: string, action: MenuAction, accelerator?: string): Item => ({
+    id: NEEDS_DOCUMENT + action.type,
     label,
     accelerator,
     click: () => send(action)
@@ -107,8 +109,8 @@ export function installMenus(c: Controller): void {
         // Second, hidden Redo binding for the other platform convention.
         { ...commandItem('Redo', 'edit.redo', 'CmdOrCtrl+Shift+Z'), visible: false },
         { type: 'separator' },
-        { role: 'copy' },
-        { role: 'selectAll' },
+        { id: NEEDS_DOCUMENT + 'copy', role: 'copy' },
+        { id: NEEDS_DOCUMENT + 'selectAll', role: 'selectAll' },
         { type: 'separator' },
         item('&Find…', { type: 'find' }, 'CmdOrCtrl+F'),
         item('Find Next', { type: 'find-next' }, 'CmdOrCtrl+G'),

@@ -152,5 +152,5 @@ export function register(ctx: MainContext): void {
     return { path, name: path.split(/[\\/]/).pop() ?? path }
   })
 
-  contributeMenu({ menu: 'File', position: 'start', items: () => [commandItem('Scan to PDF…', 'scan.open')] })
+  contributeMenu({ menu: 'File', position: 'start', items: () => [commandItem('Scan to PDF…', 'scan.open', undefined, { anyTime: true })] })
 }

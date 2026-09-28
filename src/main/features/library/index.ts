@@ -289,6 +289,6 @@ export function register(ctx: MainContext): void {
   contributeMenu({
     menu: 'File',
     position: 'start',
-    items: () => [commandItem('Library…', 'library.open', 'CmdOrCtrl+Shift+L')]
+    items: () => [commandItem('Library…', 'library.open', 'CmdOrCtrl+Shift+L', { anyTime: true })]
   })
 }

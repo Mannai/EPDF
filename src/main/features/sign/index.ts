@@ -46,7 +46,7 @@ export function register(ctx: MainContext): void {
     menu: 'Tools',
     items: () => [
       { type: 'separator' },
-      commandItem('Signatures…', 'sign.manage'),
+      commandItem('Signatures…', 'sign.manage', undefined, { anyTime: true }),
       commandItem('Sign Document', 'sign.activate'),
       commandItem('Add Initials', 'sign.activateInitials')
     ]

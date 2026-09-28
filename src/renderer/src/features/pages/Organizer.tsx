@@ -20,7 +20,7 @@ import {
 import { useTabs, type Tab } from '../../state/tabs'
 import { useWorkspace } from '../../state/workspace'
 import { runCommand } from '../api'
-import { announce, applyPlan, deletePages, duplicatePages, movePages, rotatePages } from './actions'
+import { announce, applyPlan, deletePages, deletePagesByKey, duplicatePages, movePages, rotatePages } from './actions'
 import { MAX_THUMB, MIN_THUMB, loadThumbWidth, saveThumbWidth, useOrganizerSelection, usePageDialog } from './store'
 import { Thumb } from './Thumb'
 import { useCurrentDoc } from './useCurrentDoc'
@@ -352,8 +352,9 @@ export function Organizer({ tab }: { tab: Tab }): JSX.Element {
       setSel(next)
       announce(`Page ${cur.focus + 1} ${next.selected.includes(cur.focus) ? 'selected' : 'deselected'}. ${next.selected.length} selected.`)
     } else if (e.key === 'Delete' || e.key === 'Backspace') {
+      // By key it asks first (the toolbar's Delete button is already deliberate).
       e.preventDefault()
-      doDelete()
+      void run(() => deletePagesByKey(docId, n, targets()))
     } else if (e.key === 'Enter') {
       e.preventDefault()
       done(cur.focus + 1)

@@ -288,9 +288,9 @@ export function register(ctx: MainContext): void {
     menu: 'File',
     position: 'start',
     items: () => [
-      commandItem('Create PDF from File…', 'create.fromFiles'),
-      commandItem('Create PDF from Web Page…', 'create.fromWeb'),
-      commandItem('Combine Files…', 'combine.open')
+      commandItem('Create PDF from File…', 'create.fromFiles', undefined, { anyTime: true }),
+      commandItem('Create PDF from Web Page…', 'create.fromWeb', undefined, { anyTime: true }),
+      commandItem('Combine Files…', 'combine.open', undefined, { anyTime: true })
     ]
   })
 }

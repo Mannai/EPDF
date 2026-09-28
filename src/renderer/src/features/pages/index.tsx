@@ -3,7 +3,7 @@ import { useWorkspace } from '../../state/workspace'
 import { registerCommand, registerContextItems, registerDialog, registerView } from '../api'
 import { PageDialogs } from './Dialogs'
 import { Organizer } from './Organizer'
-import { deletePages, duplicatePages, extractPagesToFile, insertBlank, rotatePages } from './actions'
+import { deletePages, deletePagesByKey, duplicatePages, extractPagesToFile, insertBlank, rotatePages } from './actions'
 import { useOrganizerSelection, usePageDialog, type PageDialogKind } from './store'
 
 /**
@@ -54,6 +54,16 @@ async function rotateCommand(delta: 90 | -90): Promise<void> {
   const selected = useOrganizerSelection.getState().byDoc[t.docId]
   await rotatePages(t.docId, t.numPages, selected?.length ? selected : [t.view.page - 1], delta)
 }
+// Delete / Backspace on selected page thumbnails (viewer/Thumbnails.tsx): asks, then deletes those pages.
+registerCommand({
+  id: 'pages.deleteByKey',
+  label: 'Delete Selected Pages',
+  run: async (args) => {
+    const t = readyTab()
+    const pages = (args as { pages?: number[] } | undefined)?.pages
+    if (t && pages?.length) await deletePagesByKey(t.docId, t.numPages, pages)
+  }
+})
 registerCommand({ id: 'page.rotateCW', label: 'Rotate Page Clockwise', run: () => rotateCommand(90) })
 registerCommand({ id: 'page.rotateCCW', label: 'Rotate Page Counterclockwise', run: () => rotateCommand(-90) })
 

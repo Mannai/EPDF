@@ -1,9 +1,10 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { RenderingCancelledException } from 'pdfjs-dist'
 import type { RenderTask } from 'pdfjs-dist'
+import { clickSelect, EMPTY_SELECTION, type Mods, type Selection } from '@shared/features/pages/order'
 import { getLoaded, type LoadedDoc } from '../pdf/docCache'
 import { openContextMenu } from '../components/contextMenu'
-import { contextItemsFor } from '../features/api'
+import { contextItemsFor, getCommand } from '../features/api'
 import { useTabs, type Tab } from '../state/tabs'
 import { rowAt, type PageSize } from './layout'
 const THUMB_W = 128
@@ -17,13 +18,16 @@ interface Item {
   thumbH: number
 }
 
-function ThumbImpl({ loaded, pageIndex, height, current, onSelect }: {
+function ThumbImpl({ loaded, pageIndex, height, current, selected, onSelect }: {
   loaded: LoadedDoc
   pageIndex: number
   height: number
   current: boolean
-  onSelect(page: number): void
+  /** One of several pages picked with Ctrl / Shift+click. */
+  selected: boolean
+  onSelect(pageIndex: number, mods: Mods): void
 }): JSX.Element {
+  const marked = current || selected
   const host = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -82,22 +86,24 @@ function ThumbImpl({ loaded, pageIndex, height, current, onSelect }: {
   return (
     <button
       type="button"
-      onClick={() => onSelect(pageIndex + 1)}
+      onClick={(e) => onSelect(pageIndex, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey })}
       // Right-click: the same page menu as on the page itself (rotate, insert, duplicate, extract, delete...).
       onContextMenu={(e) =>
         void openContextMenu(e, contextItemsFor('page', { docId: loaded.docId, pageIndex, numPages: loaded.numPages, selectionText: '' }).filter((i) => !('label' in i) || !/^(Undo|Redo|Select all text)/.test(i.label)))
       }
       aria-label={`Go to page ${pageIndex + 1}`}
       aria-current={current ? 'page' : undefined}
+      aria-pressed={selected || undefined}
+      data-selected={marked || undefined}
       className={`flex w-full flex-col items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-        current ? 'bg-accent/15' : 'hover:bg-surface-raised'
+        marked ? 'bg-accent/15' : 'hover:bg-surface-raised'
       }`}
       style={{ height }}
     >
       <div
         ref={host}
         aria-hidden="true"
-        className={`bg-white shadow ${current ? 'ring-2 ring-accent' : 'ring-1 ring-line'}`}
+        className={`bg-white shadow ${marked ? 'ring-2 ring-accent' : 'ring-1 ring-line'}`}
         style={{ width: THUMB_W, height: height - LABEL_H }}
       />
       <span className="mt-1 text-xs text-ink-muted">{pageIndex + 1}</span>
@@ -114,6 +120,30 @@ export function Thumbnails({ tab }: { tab: Tab }): JSX.Element {
   const [top, setTop] = useState(0)
   const [version, setVersion] = useState(loaded?.sizesVersion ?? 0)
   const numPages = loaded?.numPages ?? 0
+  // Pages picked with Ctrl / Shift+click. With none (or one), the current page is the selection.
+  const [sel, setSel] = useState<Selection>(EMPTY_SELECTION)
+  const current = tab.view.page - 1
+  const picked = sel.selected.length > 1 ? sel.selected : [current]
+  useEffect(() => {
+    setSel((s) => (s.selected.length > 1 ? s : { selected: [current], anchor: current, focus: current }))
+  }, [current])
+  useEffect(() => setSel(EMPTY_SELECTION), [tab.docId, numPages])
+
+  const select = useCallback(
+    (index: number, mods: Mods): void => {
+      setSel((s) => clickSelect(s.anchor === null ? { selected: [current], anchor: current, focus: current } : s, index, mods, numPages))
+      if (!mods.ctrl && !mods.shift) goToPage(tab.docId, index + 1)
+    },
+    [current, numPages, goToPage, tab.docId]
+  )
+
+  // Delete / Backspace deletes the selected pages, after asking (features/pages).
+  const onKeyDown = (e: KeyboardEvent): void => {
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return
+    e.preventDefault()
+    e.stopPropagation()
+    void getCommand('pages.deleteByKey')?.run({ pages: picked })
+  }
 
   useLayoutEffect(() => {
     const el = scroller.current
@@ -171,6 +201,7 @@ export function Thumbnails({ tab }: { tab: Tab }): JSX.Element {
     <div
       ref={scroller}
       onScroll={(e) => setTop(e.currentTarget.scrollTop)}
+      onKeyDown={onKeyDown}
       className="h-full overflow-y-auto overflow-x-hidden"
       data-testid="thumbnails"
     >
@@ -179,7 +210,14 @@ export function Thumbnails({ tab }: { tab: Tab }): JSX.Element {
           const i = first + k
           return (
             <div key={i} style={{ position: 'absolute', top: it.top, left: 0, right: 0, padding: '0 10px' }}>
-              <Thumb loaded={loaded} pageIndex={i} height={it.height} current={tab.view.page === i + 1} onSelect={(p) => goToPage(tab.docId, p)} />
+              <Thumb
+                loaded={loaded}
+                pageIndex={i}
+                height={it.height}
+                current={tab.view.page === i + 1}
+                selected={picked.length > 1 && picked.includes(i)}
+                onSelect={select}
+              />
             </div>
           )
         })}

@@ -1,6 +1,7 @@
 import { PDFDocument } from 'pdf-lib'
 import { EditError, currentBytes, editPdf } from '../../edit/session'
 import { askConfirm } from '../../state/confirm'
+import { confirmDelete } from '../../state/confirmDelete'
 import { startJob } from '../../state/jobs'
 import { errorMessage, notify } from '../../state/notify'
 import { useTabs } from '../../state/tabs'
@@ -56,8 +57,16 @@ export async function rotatePages(docId: string, numPages: number, pages: number
   return ok
 }
 
-/** Deletes pages after asking when it is many. Refuses to remove every page. Returns the plan applied (or null). */
-export async function deletePages(docId: string, numPages: number, pages: number[]): Promise<PagePlan | null> {
+/**
+ * Deletes pages after asking when it is many (unless the caller `asked` already). Refuses to remove every page.
+ * Returns the plan applied (or null).
+ */
+export async function deletePages(
+  docId: string,
+  numPages: number,
+  pages: number[],
+  opts: { asked?: boolean } = {}
+): Promise<PagePlan | null> {
   const unique = [...new Set(pages)].filter((p) => p >= 0 && p < numPages)
   if (unique.length === 0) return null
   const plan = planDelete(numPages, unique)
@@ -65,7 +74,7 @@ export async function deletePages(docId: string, numPages: number, pages: number
     notify('error', 'A PDF needs at least one page, so not every page can be deleted.')
     return null
   }
-  if (unique.length >= 5) {
+  if (unique.length >= 5 && !opts.asked) {
     const answer = await askConfirm({
       title: `Delete ${unique.length} pages?`,
       message: `Pages ${formatPageList(unique)} will be removed from the document. You can undo this until you close it.`,
@@ -81,6 +90,22 @@ export async function deletePages(docId: string, numPages: number, pages: number
   if (!(await applyPlan(docId, label, plan))) return null
   announce(`Deleted ${plural(unique.length, 'page')}. ${plural(numPages - unique.length, 'page')} remain.`)
   return plan
+}
+
+/**
+ * Delete / Backspace on selected pages (page thumbnails, the organizer): asks first, like deleting anything else by
+ * key (see confirmDelete), then deletes.
+ */
+export async function deletePagesByKey(docId: string, numPages: number, pages: number[]): Promise<PagePlan | null> {
+  const unique = [...new Set(pages)].filter((p) => p >= 0 && p < numPages)
+  if (unique.length === 0) return null
+  if (!planDelete(numPages, unique)) {
+    notify('error', 'A PDF needs at least one page, so not every page can be deleted.')
+    return null
+  }
+  const what = unique.length === 1 ? `page ${unique[0] + 1}` : `${unique.length} pages`
+  if (!(await confirmDelete(what))) return null
+  return deletePages(docId, numPages, unique, { asked: true })
 }
 
 export async function duplicatePages(docId: string, numPages: number, pages: number[]): Promise<PagePlan | null> {

@@ -67,7 +67,8 @@ export function RibbonTabs({ tab }: { tab: Tab | null }): JSX.Element {
 
   const openFileMenu = (): void => {
     const r = fileRef.current?.getBoundingClientRect()
-    if (r) void window.epdf.call('chrome:menu', { x: r.left, y: r.bottom + 2 })
+    // Without an open document, the items that need one are greyed out.
+    if (r) void window.epdf.call('chrome:menu', { x: r.left, y: r.bottom + 2, hasDocument: ready })
   }
   /** The user picks a task: a tool or panel of the task being left doesn't come along. */
   const pick = (t: ResolvedTask): void => {
