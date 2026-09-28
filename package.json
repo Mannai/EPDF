@@ -1,6 +1,6 @@
 {
   "name": "epdf",
-  "version": "1.0.7-beta.1",
+  "version": "1.0.8-beta.1",
   "description": "Epdf - desktop PDF application",
   "main": "./out/main/index.js",
   "author": "Meshal AlMannai",
