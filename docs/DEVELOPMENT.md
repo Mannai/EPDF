@@ -131,9 +131,14 @@ without `--no-sandbox`, and its setuid sandbox helper needs `sudo chown root nod
 
 ```bash
 sudo apt install xvfb xauth gnome-keyring dbus-x11 libgtk-3-0t64 libnss3 libasound2t64 libgbm1 libsecret-1-0
-dbus-run-session -- bash -c 'printf "" | gnome-keyring-daemon --unlock --components=secrets >/dev/null;
+mkdir -p ~/.local/share/keyrings && printf login > ~/.local/share/keyrings/default
+dbus-run-session -- bash -c 'printf test-password | gnome-keyring-daemon --unlock --components=secrets >/dev/null;
+  eval "$(printf test-password | gnome-keyring-daemon --start --components=secrets)";
   XDG_CURRENT_DESKTOP=GNOME xvfb-run -a -s "-screen 0 1920x1080x24" npx playwright test'
 ```
+
+(The login keyring needs a password: with an empty one the keyring tries to show a prompt, which a virtual display
+can't, and saving signatures is refused as it should be.)
 
 The optional cross-checks find `qpdf` and `soffice` in `/usr/bin` (see `tests/support/tools.ts`); exact layout
 comparisons with LibreOffice need the documents' Microsoft fonts, so without them only alignment sides and column
