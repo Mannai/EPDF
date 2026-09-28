@@ -134,8 +134,11 @@ sudo apt install xvfb xauth gnome-keyring dbus-x11 libgtk-3-0t64 libnss3 libasou
 mkdir -p ~/.local/share/keyrings && printf login > ~/.local/share/keyrings/default
 dbus-run-session -- bash -c 'printf test-password | gnome-keyring-daemon --unlock --components=secrets >/dev/null;
   eval "$(printf test-password | gnome-keyring-daemon --start --components=secrets)";
-  XDG_CURRENT_DESKTOP=GNOME xvfb-run -a -s "-screen 0 1920x1080x24" npx playwright test'
+  XDG_CURRENT_DESKTOP=GNOME EPDF_PASSWORD_STORE=gnome-libsecret xvfb-run -a -s "-screen 0 1920x1080x24" npx playwright test'
 ```
+
+`EPDF_PASSWORD_STORE` is needed because Playwright starts Electron with `--password-store=basic`; the app lets the
+variable name a real keyring (gnome-libsecret, kwallet, kwallet5, kwallet6) and nothing else.
 
 (The login keyring needs a password: with an empty one the keyring tries to show a prompt, which a virtual display
 can't, and saving signatures is refused as it should be.)

@@ -22,6 +22,13 @@ if (process.env['EPDF_FAKE_MEDIA']) {
   app.commandLine.appendSwitch('use-fake-ui-for-media-stream')
 }
 
+// Linux: which desktop keyring protects saved signatures. Only real keyrings can be named (the insecure `basic`
+// store is refused by the signature store anyway). Needed under Playwright, which forces `--password-store=basic`.
+const keyring = process.env['EPDF_PASSWORD_STORE']
+if (process.platform === 'linux' && keyring && ['gnome-libsecret', 'kwallet', 'kwallet5', 'kwallet6'].includes(keyring)) {
+  app.commandLine.appendSwitch('password-store', keyring)
+}
+
 // Tests (and multi-profile use) can point the app at an isolated profile directory.
 if (process.env['EPDF_USER_DATA']) app.setPath('userData', process.env['EPDF_USER_DATA'])
 
