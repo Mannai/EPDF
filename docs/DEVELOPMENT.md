@@ -140,6 +140,13 @@ dbus-run-session -- bash -c 'printf test-password | gnome-keyring-daemon --unloc
 `EPDF_PASSWORD_STORE` is needed because Playwright starts Electron with `--password-store=basic`; the app lets the
 variable name a real keyring (gnome-libsecret, kwallet, kwallet5, kwallet6) and nothing else.
 
+On the WSL2 test machine (software rendering, CPU shared with Windows) use `EPDF_E2E_WORKERS=2`: under more parallel
+load Chromium drops the last steps of synthetic mouse drags. Linux runs retry a failed test once (`retries` in
+`playwright.config.ts`, override with `EPDF_E2E_RETRIES`); such tests are reported as flaky, not hidden. Last full run
+there: 446 of 448 passed first time (12 skipped: optional real-data tests); the two others, a mouse-drag reorder in
+Combine and the Arabic copy check in `pagetext.spec.ts`, pass when repeated. The packaged-app specs pass against the
+installed .deb (`EPDF_PACKAGED_EXE=/opt/Epdf/epdf`).
+
 (The login keyring needs a password: with an empty one the keyring tries to show a prompt, which a virtual display
 can't, and saving signatures is refused as it should be.)
 
