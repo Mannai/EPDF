@@ -57,6 +57,9 @@ export class WindowManager {
       title: 'Epdf',
       backgroundColor: nativeTheme.shouldUseDarkColors ? '#1c1e22' : '#eef1f5',
       ...(customTitleBar ? { titleBarStyle: 'hidden' as const, titleBarOverlay: chromeOverlay(nativeTheme.shouldUseDarkColors) } : {}),
+      // Linux keeps the desktop's own window frame; its menu bar would repeat the ribbon's File button, so it stays
+      // hidden until Alt is pressed (accelerators work either way).
+      autoHideMenuBar: process.platform === 'linux',
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
         contextIsolation: true,

@@ -127,7 +127,7 @@ describe('safeStorageCipher', () => {
         calls.push('dec')
         return b.toString().slice(2, -1)
       }
-    }))
+    }), 'win32')
     expect(c.isAvailable()).toBe(false)
     available = true
     expect(c.isAvailable()).toBe(true)
@@ -140,6 +140,20 @@ describe('safeStorageCipher', () => {
       throw new Error('not ready')
     })
     expect(c.isAvailable()).toBe(false)
+  })
+
+  it('Linux: a real keyring counts; the basic_text fallback (a key built into Chromium) does not', () => {
+    const store = (backend?: string) => ({
+      isEncryptionAvailable: () => true,
+      encryptString: (s: string) => Buffer.from(s),
+      decryptString: (b: Buffer) => b.toString(),
+      ...(backend ? { getSelectedStorageBackend: () => backend } : {})
+    })
+    expect(safeStorageCipher(() => store('gnome_libsecret'), 'linux').isAvailable()).toBe(true)
+    expect(safeStorageCipher(() => store('kwallet6'), 'linux').isAvailable()).toBe(true)
+    expect(safeStorageCipher(() => store('basic_text'), 'linux').isAvailable()).toBe(false)
+    expect(safeStorageCipher(() => store(), 'linux').isAvailable()).toBe(false) // backend unknown: not trusted
+    expect(safeStorageCipher(() => store(), 'darwin').isAvailable()).toBe(true) // the question only exists on Linux
   })
 })
 
