@@ -8,6 +8,7 @@ import { allCorpus, docxDocument, T, type CorpusDoc, type ExpectedPara } from '.
 import { actualTexts, contentOf } from '../support/pdfContent'
 import { flattenText, readPdf } from '../support/pdfText'
 import { HAVE_SOFFICE, libreOfficePdf } from '../support/soffice'
+import { systemHasFonts } from '../support/tools'
 
 /**
  * The Arabic Office corpus (tests/support/arabicCorpus.ts), converted by Epdf's built-in converter:
@@ -28,6 +29,11 @@ const fontsDir = resolve('resources/fonts')
 const OUT = resolve('test-results/office-rtl')
 /** Tolerance for aligned edges vs LibreOffice: cell padding and indent rounding differ by up to ~4 pt between the two. */
 const EDGE_TOL = 6
+/**
+ * Exact edges and line counts are compared with LibreOffice only when it has the corpus's fonts; with substitutes its
+ * widths differ (Linux without Microsoft's fonts: up to ~18 pt on a bullet indent), so they are only reported.
+ */
+const LO_FAIR = systemHasFonts(['Arial', 'Times New Roman'])
 /** A line is "centred" when its left and right gaps differ by less than this (points). */
 const CENTER_TOL = 6
 
@@ -187,15 +193,22 @@ describe.skipIf(!HAVE_SOFFICE)('Arabic Office corpus compared with LibreOffice',
         const A = la[la.length - 1]!
         const B = lb[lb.length - 1]!
         if (p.side) {
+          // LibreOffice is the reference only where it follows the documented behaviour (Word's): some versions
+          // (26.2 on Linux) put a right-to-left paragraph with jc="left" on the left. Epdf is held to the documented
+          // side in the test above either way.
+          if (p.where !== 'tab' && sideOf(B, areaB) !== p.side) {
+            report.push(`LibreOffice puts “${p.text.slice(0, 30)}…” on the ${sideOf(B, areaB)}, not the ${p.side}: not compared`)
+            continue
+          }
           if (p.where !== 'tab') expect(sideOf(A, areaA), `Epdf side of “${p.text}”`).toBe(sideOf(B, areaB))
           const edge = p.side === 'right' ? [A.width - A.x1, B.width - B.x1] : p.side === 'left' ? [A.x0, B.x0] : [(A.x0 + A.x1) / 2, (B.x0 + B.x1) / 2]
           report.push(`${p.side.padEnd(6)} edge Epdf=${edge[0]!.toFixed(1)} LO=${edge[1]!.toFixed(1)} | ${p.text.slice(0, 40)}`)
-          expect(Math.abs(edge[0]! - edge[1]!), `edge of “${p.text}”`).toBeLessThan(EDGE_TOL)
+          if (LO_FAIR) expect(Math.abs(edge[0]! - edge[1]!), `edge of “${p.text}”`).toBeLessThan(EDGE_TOL)
           compared++
         }
         if (!p.oneLine && p.where === undefined) {
           report.push(`lines Epdf=${la.length} LO=${lb.length} | ${p.text.slice(0, 40)}`)
-          expect(Math.abs(la.length - lb.length), `line count of “${p.text.slice(0, 30)}…”`).toBeLessThanOrEqual(1)
+          if (LO_FAIR) expect(Math.abs(la.length - lb.length), `line count of “${p.text.slice(0, 30)}…”`).toBeLessThanOrEqual(1)
         }
       }
       if (doc.columns) {

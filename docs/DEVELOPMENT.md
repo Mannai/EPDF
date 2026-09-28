@@ -99,9 +99,60 @@ npm run dist:mac     # universal .dmg (Apple Silicon + Intel) and .zip
 A universal build must be produced on macOS. The macOS build is configured but has **not been run yet**; expect to
 check it on a Mac or a `macos-latest` CI runner.
 
-### Linux (optional)
+### Linux (run on Linux)
 
-`npx electron-builder --linux` produces an AppImage and a deb.
+```bash
+npm run dist:linux   # dist/Epdf-<version>-amd64.deb and dist/Epdf-<version>-x86_64.AppImage
+```
+
+| Artifact | For | Notes |
+|---|---|---|
+| `Epdf-<version>-amd64.deb` | Debian, Ubuntu and derivatives | `sudo apt install ./Epdf-<version>-amd64.deb`. Installs `/opt/Epdf`, the `epdf` command, a desktop entry (`epdf.desktop`, with a New Window action) and the `.pdf` association. |
+| `Epdf-<version>-x86_64.AppImage` | Any other distribution | `chmod +x` and run; needs FUSE 2 (`libfuse2`). No desktop entry unless a tool such as AppImageLauncher adds one. |
+
+Linux packages have no installer screens, so Epdf asks for the End User License Agreement on first start (per
+agreement version, stored in the profile). `EPDF_ACCEPT_EULA=1` accepts it for automated deployments and tests.
+
+What differs on Linux:
+- **Window**: the desktop's own title bar; the menu bar is hidden until Alt is pressed (the ribbon's File button
+  shows the same menu). Windows draws its own title bar instead.
+- **Saved signatures** are encrypted with the desktop keyring (GNOME Keyring, KWallet) through Electron's
+  safeStorage. Without a keyring Electron falls back to a key built into Chromium (`basic_text`), which Epdf does not
+  accept, so signatures can't be saved until a keyring is running.
+- **Help ▸ Set as Default PDF App** asks, then runs `xdg-mime default epdf.desktop application/pdf`.
+- **Scanners** are not supported (webcam and phone scanning are); **HEIC** pictures need `heif-convert`
+  (libheif-examples) or ImageMagick; Explorer-style "Convert to PDF" file-manager entries are Windows-only.
+
+**Testing on Linux.** Developed and verified on Ubuntu 26.04 under WSL2 with Node 22 and npm 11 (npm 9 tries to compile
+better-sqlite3; npm 11 uses its prebuilt binary). Run the tests as a normal user: Chromium refuses to start as root
+without `--no-sandbox`, and its setuid sandbox helper needs `sudo chown root node_modules/electron/dist/chrome-sandbox
+&& sudo chmod 4755 node_modules/electron/dist/chrome-sandbox` where unprivileged user namespaces are restricted
+(Ubuntu). End-to-end tests need a display and a keyring:
+
+```bash
+sudo apt install xvfb xauth gnome-keyring dbus-x11 libgtk-3-0t64 libnss3 libasound2t64 libgbm1 libsecret-1-0
+mkdir -p ~/.local/share/keyrings && printf login > ~/.local/share/keyrings/default
+dbus-run-session -- bash -c 'printf test-password | gnome-keyring-daemon --unlock --components=secrets >/dev/null;
+  eval "$(printf test-password | gnome-keyring-daemon --start --components=secrets)";
+  XDG_CURRENT_DESKTOP=GNOME EPDF_PASSWORD_STORE=gnome-libsecret xvfb-run -a -s "-screen 0 1920x1080x24" npx playwright test'
+```
+
+`EPDF_PASSWORD_STORE` is needed because Playwright starts Electron with `--password-store=basic`; the app lets the
+variable name a real keyring (gnome-libsecret, kwallet, kwallet5, kwallet6) and nothing else.
+
+On the WSL2 test machine (software rendering, CPU shared with Windows) use `EPDF_E2E_WORKERS=2`: under more parallel
+load Chromium drops the last steps of synthetic mouse drags. Linux runs retry a failed test once (`retries` in
+`playwright.config.ts`, override with `EPDF_E2E_RETRIES`); such tests are reported as flaky, not hidden. Last full run
+there: 446 of 448 passed first time (12 skipped: optional real-data tests); the two others, a mouse-drag reorder in
+Combine and the Arabic copy check in `pagetext.spec.ts`, pass when repeated. The packaged-app specs pass against the
+installed .deb (`EPDF_PACKAGED_EXE=/opt/Epdf/epdf`).
+
+(The login keyring needs a password: with an empty one the keyring tries to show a prompt, which a virtual display
+can't, and saving signatures is refused as it should be.)
+
+The optional cross-checks find `qpdf` and `soffice` in `/usr/bin` (see `tests/support/tools.ts`); exact layout
+comparisons with LibreOffice need the documents' Microsoft fonts, so without them only alignment sides and column
+order are compared.
 
 ### Code signing
 

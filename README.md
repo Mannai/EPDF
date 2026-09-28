@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/version-1.0.6--beta.1-2563eb" alt="Version 1.0.6-beta.1">
-  <img src="https://img.shields.io/badge/platform-Windows-2563eb" alt="Platform: Windows">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-2563eb" alt="Platform: Windows and Linux">
   <img src="https://img.shields.io/badge/works-offline-16a34a" alt="Works offline">
   <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-PolyForm%20Strict%201.0.0-6b7280" alt="License: PolyForm Strict 1.0.0"></a>
 </p>
@@ -154,15 +154,19 @@ Converting Office documents in right-to-left languages is covered in [Office →
 
 ## Install
 
-Epdf 1.0.6-beta.1 is a beta for **Windows** (64-bit; tested on Windows 11). macOS and Linux are coming.
+Epdf is a beta for **Windows** (64-bit; tested on Windows 11) and **Linux** (64-bit; tested on Ubuntu 26.04). macOS is
+coming.
 
-| Installer | For |
+| Download | For |
 |---|---|
-| `Epdf-Setup-<version>.exe` | Most people. Installs for your account only (no admin rights), adds Start menu and desktop shortcuts, and offers Epdf under **Open with** for PDFs. Available in English, Arabic, French, German and Spanish. |
-| `Epdf <version>.msi` | IT departments: silent deployment with `msiexec /i "Epdf <version>.msi" /qn`. |
+| `Epdf-Setup-<version>.exe` | Windows, most people. Installs for your account only (no admin rights), adds Start menu and desktop shortcuts, and offers Epdf under **Open with** for PDFs. Available in English, Arabic, French, German and Spanish. |
+| `Epdf-<version>.msi` | Windows, IT departments: silent deployment with `msiexec /i "Epdf-<version>.msi" /qn`. |
+| `Epdf-<version>-amd64.deb` | Ubuntu, Debian and their relatives: `sudo apt install ./Epdf-<version>-amd64.deb`. |
+| `Epdf-<version>-x86_64.AppImage` | Other Linux distributions: make it executable and run it. |
 
 The beta is not code-signed yet, so Windows SmartScreen shows a warning the first time; choose **More info ▸ Run
-anyway**. To build the installers yourself, see [Packaging](docs/DEVELOPMENT.md#packaging).
+anyway**. On Linux, Epdf asks you to accept the license agreement the first time it starts. To build the installers
+yourself, see [Packaging](docs/DEVELOPMENT.md#packaging).
 
 ## Documentation
 

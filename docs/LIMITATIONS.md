@@ -5,9 +5,12 @@ What Epdf 1.0.6-beta.1 does not do yet, and what has not been verified. Each fea
 
 ## Platforms and distribution
 
-- **Windows only for now.** The macOS and Linux builds are configured but were never run: the universal `.dmg`, Dock
-  menu, `open-file` handling, the macOS/Linux HEIC decoders and the key-storage backends used for signatures are
-  written but untested.
+- **Windows and Linux.** The Linux build (.deb and AppImage, x64) was developed and tested on Ubuntu 26.04 under WSL2
+  only: other distributions, desktops (KDE, XFCE...), Wayland sessions and ARM were not tried. On Linux, scanners
+  are not supported (webcam and phone are), HEIC pictures need `heif-convert` or ImageMagick, saving signatures needs
+  a desktop keyring, and there are no file-manager "Convert to PDF" entries.
+- **macOS** is configured but was never built or run: the universal `.dmg`, Dock menu, `open-file` handling, the
+  macOS HEIC decoder and key storage are written but untested.
 - **The beta is unsigned**, so Windows SmartScreen warns on download. The signing pipeline works with a test
   certificate; see [Code signing](DEVELOPMENT.md#code-signing).
 - **Auto-update** was tested end to end against a local server (update, relaunch, tampered download refused), but

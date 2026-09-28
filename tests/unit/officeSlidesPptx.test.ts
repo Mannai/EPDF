@@ -8,6 +8,7 @@ import { convertOffice } from '../../src/main/features/create/office'
 import { bodyPlaceholder, buildPptx, picture, run, shape, solidFill, textBox, titlePlaceholder, xfrm } from '../support/pptxBuilder'
 import { makePng, solid } from '../support/images'
 import { flattenText, readPdf } from '../support/pdfText'
+import { SOFFICE } from '../support/tools'
 
 const fontsDir = resolve('resources/fonts')
 const convert = (bytes: Uint8Array, name = 'deck.pptx', extra: Partial<Parameters<typeof convertOffice>[1]> = {}) => convertOffice({ name, bytes }, { fontsDir, ...extra })
@@ -255,7 +256,6 @@ describe('pptx: slides, text and inheritance', () => {
   })
 })
 
-const SOFFICE = 'C:\\Program Files\\LibreOffice\\program\\soffice.exe'
 
 describe.skipIf(!existsSync(SOFFICE))('pptx: comparison with real LibreOffice', () => {
   it('produces the same page count, page size and text (at similar positions) as LibreOffice for a realistic slide', async () => {

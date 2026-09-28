@@ -22,6 +22,34 @@ export async function showAdvanced(scope: Page | Locator): Promise<void> {
   for (let n = await folded.count(); n > 0; n = await folded.count()) await folded.first().click()
 }
 
+/**
+ * Waits until page `n`'s text layer has stopped moving (same first-span position, same layer element, over several
+ * reads), so a drag doesn't start while the viewer is still fitting the zoom or swapping in a new layer. Slower
+ * renderers (software rendering on a virtual display, Linux CI) take longer to settle than a fixed pause allows.
+ */
+export async function waitForSteadyTextLayer(page: Page, n = 1): Promise<void> {
+  await page.locator(`[data-page="${n}"] .textLayer span`).first().waitFor()
+  await page.evaluate(async (pageNo) => {
+    const probe = (): string => {
+      const layer = document.querySelector(`[data-page="${pageNo}"] .textLayer`)
+      const span = layer?.querySelector('span')
+      const r = span?.getBoundingClientRect()
+      if (!layer || !r) return ''
+      ;(layer as HTMLElement & { __probeId?: number }).__probeId ??= Math.random()
+      return `${(layer as HTMLElement & { __probeId?: number }).__probeId}:${r.x.toFixed(1)},${r.y.toFixed(1)},${r.width.toFixed(1)}`
+    }
+    let last = ''
+    let same = 0
+    const start = Date.now()
+    while (same < 4 && Date.now() - start < 15_000) {
+      await new Promise((r) => setTimeout(r, 150))
+      const now = probe()
+      same = now && now === last ? same + 1 : 0
+      last = now
+    }
+  }, n)
+}
+
 /** A throwaway copy of a fixture, so tests that save don't modify the shared fixtures. */
 export function copyFixture(name: string, as = name): string {
   const dir = mkdtempSync(join(tmpdir(), 'epdf-doc-'))
@@ -224,7 +252,7 @@ export async function clickTool(page: Page, tool: string): Promise<void> {
  * The system clipboard is shared by every test worker. Anything that copies and then reads it back runs inside this
  * cross-process lock (a directory in the temp folder), so parallel tests can't overwrite each other's clipboard.
  */
-export async function withSystemClipboard<T>(fn: () => Promise<T>): Promise<T> {
+export async function withSystemClipboard<T>(fn: () => Promise<T>, app?: ElectronApplication): Promise<T> {
   const { mkdirSync, rmSync, statSync } = await import('node:fs')
   const lock = join(tmpdir(), 'epdf-e2e-clipboard.lock')
   const started = Date.now()
@@ -244,6 +272,9 @@ export async function withSystemClipboard<T>(fn: () => Promise<T>): Promise<T> {
     }
   }
   try {
+    // Start from a marker owned by the app under test, so what is read back can only come from this copy (on X11 a
+    // clipboard left by an app that has quit made the read-back unreliable; an empty string doesn't take ownership).
+    if (app) await app.evaluate(({ clipboard }) => clipboard.writeText('epdf-e2e-clipboard-marker'))
     return await fn()
   } finally {
     rmSync(lock, { recursive: true, force: true })

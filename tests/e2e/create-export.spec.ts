@@ -16,9 +16,9 @@ import { buildPptx, textBox as pptxTextBox } from '../support/pptxBuilder'
 import { odtPackage, p as odtP } from '../support/odt'
 import { buildOds, tcell, trow } from '../support/odsBuilder'
 import { buildOdp, frame as odpFrame, para as odpPara } from '../support/odpBuilder'
+import { SOFFICE as REAL_SOFFICE } from '../support/tools'
 
 const STUB_SOFFICE = resolve('tests/fixtures/stub-soffice.mjs')
-const REAL_SOFFICE = 'C:\\Program Files\\LibreOffice\\program\\soffice.exe'
 
 let work: string
 test.beforeAll(() => {

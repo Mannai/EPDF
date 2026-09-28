@@ -7,6 +7,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_OPTIONS, redactDocument } from '../../src/renderer/src/features/redact/logic/redact'
 import { flattenText, readPdf } from '../support/pdfText'
+import { QPDF } from '../support/tools'
 
 /**
  * An INDEPENDENT check of the redaction guarantee. It builds its own documents and verifies the result with
@@ -18,7 +19,6 @@ import { flattenText, readPdf } from '../support/pdfText'
  */
 
 const SECRET = 'HUNTER2SECRET'
-const QPDF = process.env['EPDF_TOOL_QPDF'] || 'C:\\Program Files\\qpdf 12.4.1\\bin\\qpdf.exe'
 const haveQpdf = existsSync(QPDF)
 
 const hex = (s: string): string => Buffer.from(s, 'latin1').toString('hex')

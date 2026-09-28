@@ -126,6 +126,33 @@ publish:
   url: https://updates.epdf.example/win
 
 linux:
-  target: [AppImage, deb]
+  target:
+    - target: deb
+      arch: [x64]
+    - target: AppImage
+      arch: [x64]
   category: Office
-  mimeTypes: [application/pdf]
+  # (application/pdf comes from fileAssociations above; listing it here too repeated it in the desktop entry)
+  icon: build/icons # 16...1024 px, so menus, docks and file managers get a sharp icon at every size
+  executableName: epdf # lowercase command and desktop entry id (epdf.desktop), as Linux expects
+  maintainer: Meshal AlMannai <support@epdf.ing>
+  vendor: Meshal AlMannai
+  synopsis: Every PDF tool in one offline app
+  description: >-
+    View, edit, sign, redact, OCR and compare PDFs in any language, right-to-left included. Fully offline.
+  artifactName: Epdf-${version}-${arch}.${ext}
+  desktop:
+    entry:
+      Name: Epdf
+      GenericName: PDF Editor
+      Comment: View, edit, sign, redact, OCR and compare PDFs
+      Keywords: PDF;Editor;Viewer;Sign;Redact;OCR;Arabic;
+      StartupWMClass: Epdf
+      Actions: NewWindow;
+    desktopActions:
+      NewWindow:
+        Name: New Window
+        Exec: epdf --new-window
+# The .deb needs the libraries Electron uses; libsecret keeps saved signatures in the desktop keyring.
+deb:
+  depends: [libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libuuid1, libsecret-1-0, libasound2 | libasound2t64]

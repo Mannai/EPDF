@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -10,8 +10,8 @@ import { pathToFileURL } from 'node:url'
  * throw-away profile per run, temp files removed.
  */
 
-export const SOFFICE = process.env['EPDF_TOOL_SOFFICE'] || 'C:\\Program Files\\LibreOffice\\program\\soffice.exe'
-export const HAVE_SOFFICE = existsSync(SOFFICE)
+export { HAVE_SOFFICE, SOFFICE } from './tools'
+import { SOFFICE } from './tools'
 const LOCK = join(tmpdir(), 'epdf-soffice.lock')
 
 async function withLock<T>(fn: () => Promise<T>): Promise<T> {

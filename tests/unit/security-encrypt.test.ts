@@ -8,8 +8,8 @@ import { ALL_PERMISSIONS, permissionsToP, type Algorithm, type Permissions } fro
 import { protectBytes, inspectEncryption } from '../../src/renderer/src/features/security/crypto/document'
 import { authenticate, permsMatch } from '../../src/renderer/src/features/security/crypto/handler'
 import { expectFixturePlaintext, fixtureBytes, openWith } from './helpers/securityHelpers'
+import { QPDF } from '../support/tools'
 
-const QPDF = process.env.QPDF ?? 'C:\\Program Files\\qpdf 12.4.1\\bin\\qpdf.exe'
 const haveQpdf = existsSync(QPDF)
 
 const tmp = mkdtempSync(join(tmpdir(), 'epdf-sec-'))

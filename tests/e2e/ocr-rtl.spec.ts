@@ -131,7 +131,7 @@ test.describe('OCR of right-to-left scans: the recognized layer in the viewer', 
         await page.keyboard.press('Control+C')
         await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain('دينار بحريني')
         expect(norm(await app.evaluate(({ clipboard }) => clipboard.readText()))).toBe('نود إفادتكم بأن المبلغ المستحق هو 1250 دينار بحريني.')
-      })
+      }, app)
 
       // the find bar: a word, a phrase with a number, and without the hamza (alef variants are folded)
       await page.getByRole('button', { name: 'Find in document' }).click()

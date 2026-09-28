@@ -1,4 +1,4 @@
-import { app, nativeTheme } from 'electron'
+import { app, dialog, nativeTheme } from 'electron'
 import { join } from 'node:path'
 import { Controller, pdfPathsFromArgv } from './controller'
 import { openRepos } from './db'
@@ -9,6 +9,8 @@ import { registerIpcHandlers } from './ipc/handlers'
 import { createJobs } from './jobs'
 import { installMenus } from './menu/appMenu'
 import { installSecurity } from './security'
+import { openBundledText } from './services/bundledText'
+import { askForEula, EULA_PROMPT, eulaNeedsAcceptance } from './services/eula'
 import { applyHardwareAccelerationChoice } from './services/gpu'
 import { registerAppProtocol, registerSchemePrivileges } from './services/protocol'
 
@@ -18,6 +20,13 @@ registerSchemePrivileges()
 if (process.env['EPDF_FAKE_MEDIA']) {
   app.commandLine.appendSwitch('use-fake-device-for-media-stream')
   app.commandLine.appendSwitch('use-fake-ui-for-media-stream')
+}
+
+// Linux: which desktop keyring protects saved signatures. Only real keyrings can be named (the insecure `basic`
+// store is refused by the signature store anyway). Needed under Playwright, which forces `--password-store=basic`.
+const keyring = process.env['EPDF_PASSWORD_STORE']
+if (process.platform === 'linux' && keyring && ['gnome-libsecret', 'kwallet', 'kwallet5', 'kwallet6'].includes(keyring)) {
+  app.commandLine.appendSwitch('password-store', keyring)
 }
 
 // Tests (and multi-profile use) can point the app at an isolated profile directory.
@@ -47,6 +56,22 @@ async function start(): Promise<void> {
   app.setAppUserModelId('com.epdf.app')
 
   const repos = openRepos(join(app.getPath('userData'), 'epdf.db'))
+  // The license agreement, where no installer asked for it (Linux, macOS): nothing opens until it is accepted.
+  if (eulaNeedsAcceptance(process.platform, repos.settings.getFlag('eulaAccepted'))) {
+    const ok = await askForEula({
+      ask: async () => {
+        const { response } = await dialog.showMessageBox({ type: 'info', title: 'Epdf', ...EULA_PROMPT, buttons: [...EULA_PROMPT.buttons], defaultId: 0, cancelId: 2, noLink: true })
+        return (['agree', 'read', 'quit'] as const)[response] ?? 'quit'
+      },
+      openAgreement: () => openBundledText('EULA'),
+      remember: (v) => repos.settings.setFlag('eulaAccepted', v)
+    })
+    if (!ok) {
+      repos.db.close()
+      app.exit(0)
+      return
+    }
+  }
   const c = new Controller(repos, app.getPath('userData'))
   controller = c
   c.applyTheme()

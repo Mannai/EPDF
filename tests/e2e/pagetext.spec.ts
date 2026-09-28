@@ -4,7 +4,7 @@ import { copyFileSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PDFDocument } from 'pdf-lib'
-import { canvasHasInk, fixture, launch, menuClick, quitDiscarding, withSystemClipboard } from './helpers'
+import { canvasHasInk, fixture, launch, menuClick, quitDiscarding, waitForSteadyTextLayer, withSystemClipboard } from './helpers'
 
 /**
  * The page text model in the real app (Electron + the sandboxed renderer + its Web Worker): right-to-left pages from
@@ -39,6 +39,7 @@ async function openModelPage(name: string): Promise<{ app: ElectronApplication; 
   const l = await launch({ files: [copy(name)] })
   await expect.poll(() => canvasHasInk(l.page, '[data-page="1"] canvas'), { timeout: 30_000 }).toBe(true)
   await l.page.locator('[data-page="1"] .textLayer[data-pagetext="model"]').waitFor({ timeout: 30_000 })
+  await waitForSteadyTextLayer(l.page)
   return l
 }
 
@@ -64,6 +65,7 @@ const selection = (page: Page): Promise<string> => page.evaluate(() => getSelect
 
 async function dragAcross(page: Page, li: number, rtl: boolean): Promise<void> {
   await page.locator(`[data-page="1"] .textLayer span[data-line="${li}"]`).first().scrollIntoViewIfNeeded()
+  await waitForSteadyTextLayer(page) // the scroll, and any redraw it starts, has finished
   const b = await lineBox(page, li)
   const y = (b.top + b.bottom) / 2
   const [x0, x1] = rtl ? [b.right - 1, b.left + 1] : [b.left + 1, b.right - 1]
@@ -84,16 +86,19 @@ test.describe('page text model in the app', () => {
         const item = byId(id)
         const li = lines.findIndex((t) => norm(t) === norm(item.text))
         await dragAcross(page, li, item.dir === 'rtl')
-        expect(norm(await selection(page)), id).toBe(norm(item.text))
+        // the model layer settles the selection just after mouse-up; what counts is where it settles
+        await expect.poll(async () => norm(await selection(page)), { message: id, timeout: 5000 }).toBe(norm(item.text))
       }
       // Copy: the clipboard receives the same logical string
       const date = byId('ar-date')
       await dragAcross(page, lines.findIndex((t) => norm(t) === norm(date.text)), true)
+      // Copy once the selection is complete, as a reader would see it (the model layer settles it just after mouse-up).
+      await expect.poll(async () => norm(await selection(page))).toBe(norm(date.text))
       await withSystemClipboard(async () => {
         await page.keyboard.press('Control+C')
         await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain('2026-09-26 (Epdf)')
         expect(norm(await app.evaluate(({ clipboard }) => clipboard.readText()))).toBe(norm(date.text))
-      })
+      }, app)
     } finally {
       await quitDiscarding(app, page)
     }

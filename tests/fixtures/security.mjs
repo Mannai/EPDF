@@ -10,7 +10,7 @@ import { PDFDocument, PDFHexString, PDFName, PDFString, StandardFonts, rgb } fro
 
 const out = resolve('tests/fixtures/security')
 mkdirSync(out, { recursive: true })
-const QPDF = process.env.QPDF ?? 'C:\\Program Files\\qpdf 12.4.1\\bin\\qpdf.exe'
+const QPDF = process.env.QPDF ?? (process.platform === 'win32' ? 'C:\\Program Files\\qpdf 12.4.1\\bin\\qpdf.exe' : '/usr/bin/qpdf')
 
 /** The plaintext source every fixture is derived from. Its content is asserted by the tests. */
 export async function buildSource() {

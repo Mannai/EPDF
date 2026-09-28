@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { canvasHasInk, currentPage, fixture, gotoPage, launch } from './helpers'
+import { canvasHasInk, currentPage, fixture, gotoPage, launch, waitForSteadyTextLayer } from './helpers'
 
 test.describe('viewer: steady selection across paragraphs', () => {
   // Regression: while a drag moved steadily down through paragraphs, the selection flickered between including the
@@ -31,6 +31,7 @@ test.describe('viewer: steady selection across paragraphs', () => {
       const first = page.locator('[data-page="1"] .textLayer span', { hasText: 'P1L1' }).first()
       const last = page.locator('[data-page="1"] .textLayer span', { hasText: 'P3L2' }).first()
       await expect(first).toBeVisible()
+      await waitForSteadyTextLayer(page)
       const a = (await first.boundingBox())!
       const b = (await last.boundingBox())!
       await page.mouse.move(a.x + 1, a.y + a.height / 2)

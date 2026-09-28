@@ -4,6 +4,7 @@ import type { DocHandle, DocViewState, OpenedDoc, Settings } from '../shared/typ
 import type { Repos } from './db'
 import { DocRegistry, InvalidPdfError } from './services/docRegistry'
 import { FileService } from './services/fileService'
+import { LINUX_MANUAL_STEPS, applicationDirs, findDesktopEntry, setDefaultPdfEntry } from './services/linuxDefaultApp'
 import { WindowManager, type ManagedWindow } from './windows/WindowManager'
 
 export const isPdfPath = (p: string): boolean => extname(p).toLowerCase() === '.pdf'
@@ -161,11 +162,42 @@ export class Controller {
   setDefaultPdfApp(): void {
     if (process.platform === 'win32') {
       void shell.openExternal('ms-settings:defaultapps')
+    } else if (process.platform === 'linux') {
+      void this.setDefaultPdfAppLinux()
     } else {
       void dialog.showMessageBox({
         message: 'Set Epdf as the default PDF app',
         detail:
           'In Finder, select any PDF, choose File ▸ Get Info, pick Epdf under “Open with”, then click “Change All…”.'
+      })
+    }
+  }
+
+  /** Linux: asks, then sets Epdf's desktop entry as the default for PDFs with xdg-mime. */
+  private async setDefaultPdfAppLinux(): Promise<void> {
+    const entry = findDesktopEntry(process.execPath, applicationDirs())
+    if (!entry) {
+      await dialog.showMessageBox({ message: 'Set Epdf as the default PDF app', detail: LINUX_MANUAL_STEPS })
+      return
+    }
+    const { response } = await dialog.showMessageBox({
+      type: 'question',
+      message: 'Make Epdf the default app for PDF files?',
+      detail: 'Double-clicking a PDF will open it in Epdf. You can change this again in your system settings.',
+      buttons: ['Make Default', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true
+    })
+    if (response !== 0) return
+    try {
+      await setDefaultPdfEntry(entry)
+      await dialog.showMessageBox({ message: 'Epdf is now the default app for PDF files.' })
+    } catch (err) {
+      await dialog.showMessageBox({
+        type: 'warning',
+        message: 'Epdf could not be made the default PDF app',
+        detail: `${err instanceof Error ? err.message : String(err)}\n\n${LINUX_MANUAL_STEPS}`
       })
     }
   }

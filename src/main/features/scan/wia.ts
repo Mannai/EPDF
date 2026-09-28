@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { win32 } from 'node:path'
 import type { ScanAcquireRequest } from '../../../shared/features/scan'
 import type { HelperSpec } from './helper'
 
@@ -176,7 +176,8 @@ export type WiaCommand =
 
 /** The `powershell.exe` in System32 (an absolute path, so a PATH entry cannot substitute another program). */
 export function powershellPath(env: NodeJS.ProcessEnv = process.env): string {
-  return join(env['SystemRoot'] ?? env['windir'] ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+  // A Windows path whatever platform builds it (the command only ever runs on Windows).
+  return win32.join(env['SystemRoot'] ?? env['windir'] ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
 }
 
 /** `-EncodedCommand` payload: base64 of the UTF-16LE script text. */

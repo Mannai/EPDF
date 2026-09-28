@@ -60,9 +60,11 @@ describe('web address validation', () => {
 
 describe('command-line verbs', () => {
   it('extracts --convert-to-pdf and its files, removing them from argv in place', () => {
-    const argv = ['epdf.exe', '.', '--convert-to-pdf', 'C:\\a b\\one.docx', 'two.png', '--new-window']
-    const v = extractVerb(argv, 'C:\\work')
-    expect(v).toEqual({ verb: 'convert', files: ['C:\\a b\\one.docx', resolve('C:\\work', 'two.png')] })
+    // An absolute path for this platform stays as it is; a relative one is resolved against the working directory.
+    const [abs, cwd] = process.platform === 'win32' ? ['C:\\a b\\one.docx', 'C:\\work'] : ['/a b/one.docx', '/work']
+    const argv = ['epdf.exe', '.', '--convert-to-pdf', abs, 'two.png', '--new-window']
+    const v = extractVerb(argv, cwd)
+    expect(v).toEqual({ verb: 'convert', files: [abs, resolve(cwd, 'two.png')] })
     expect(argv).toEqual(['epdf.exe', '.', '--new-window'])
   })
   it('extracts --combine, is case-insensitive and stops at the next option', () => {

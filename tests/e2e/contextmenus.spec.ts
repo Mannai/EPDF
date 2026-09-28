@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path'
 import { PDFArray, PDFDocument, PDFName } from 'pdf-lib'
 import { makeTextPdf } from '../support/libraryFixtures'
 import { writeLbFixtures } from '../fixtures/lbFixtures'
-import { FIX, clickTool, contextMenu, copyFixture, launch, menuClick, menuLabels, quitDiscarding, showToolTask } from './helpers'
+import { FIX, clickTool, contextMenu, copyFixture, launch, menuClick, menuLabels, quitDiscarding, showToolTask, waitForSteadyTextLayer } from './helpers'
 
 /**
  * Right-click menus everywhere: they are native Windows menus, which Playwright cannot click, so main's test hook
@@ -32,7 +32,7 @@ const dot = (page: Page) => page.getByTestId('unsaved-dot')
 async function settle(page: Page, n = 1): Promise<void> {
   await expect(page.locator(`[data-page="${n}"] canvas`)).toBeVisible()
   await expect(page.locator(`[data-page="${n}"] .textLayer span`).first()).toBeVisible()
-  await page.waitForTimeout(500)
+  await waitForSteadyTextLayer(page, n)
 }
 
 /** Drags across one text-layer span, like a reader selecting a line. Returns the span's box. */

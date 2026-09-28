@@ -6,7 +6,9 @@ const exe = (name: string): string => (process.platform === 'win32' ? `${name}.e
 
 const isExecutable = (p: string): boolean => {
   try {
-    accessSync(p, process.platform === 'win32' ? constants.F_OK : constants.X_OK)
+    // A .js/.mjs/.cjs tool (tests, power users) is run with Electron's own Node, so it needs no execute bit.
+    const script = /\.(c|m)?js$/i.test(p)
+    accessSync(p, process.platform === 'win32' || script ? constants.F_OK : constants.X_OK)
     return true
   } catch {
     return false
@@ -20,8 +22,9 @@ const isExecutable = (p: string): boolean => {
  *      (`extraResources` in electron-builder.yml copies `resources/bin/<platform>-<arch>` to `<resources>/bin`)
  *   3. the system PATH
  * Returns null if the tool is not available; callers must show a clear "X is not installed" message.
+ * `searchPath: false` skips step 3 (tests that must not find a copy installed on the machine).
  */
-export function resolveTool(name: string): string | null {
+export function resolveTool(name: string, opts: { searchPath?: boolean } = {}): string | null {
   const fromEnv = process.env[`EPDF_TOOL_${name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`]
   if (fromEnv && isExecutable(fromEnv)) return fromEnv
 
@@ -31,6 +34,7 @@ export function resolveTool(name: string): string | null {
   const bundled = join(bundledDir, exe(name))
   if (isExecutable(bundled)) return bundled
 
+  if (opts.searchPath === false) return null
   for (const dir of (process.env['PATH'] ?? '').split(delimiter)) {
     if (!dir) continue
     const candidate = join(dir, exe(name))

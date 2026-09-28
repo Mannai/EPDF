@@ -16,6 +16,7 @@ import { applyTextEdit, pageBlocks, type TextEditResult } from '../../src/render
 import corpus from '../fixtures/pagetext/corpus.json'
 import { PRESENTATION_IDS, presentationForms } from '../fixtures/pagetext/engine'
 import { norm, pageModel } from '../support/retrofit'
+import { SOFFICE } from '../support/tools'
 
 /**
  * Editing EXISTING right-to-left and complex-script text in place (docs/features/edit-content.md, "Right-to-left and
@@ -382,7 +383,6 @@ describe('fonts', () => {
 // Live producers on this machine (skipped without them): headless Edge (Chromium/Skia with Windows fonts) and LibreOffice.
 
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
-const SOFFICE = process.env.EPDF_TOOL_SOFFICE || 'C:\\Program Files\\LibreOffice\\program\\soffice.exe'
 
 const LIVE_LINES: { font: string; text: string; next: string; color?: string }[] = [
   { font: 'Segoe UI', text: 'مرحبا بالعالم، هذا سطر للتجربة', next: 'مرحبا بالعالم، هذا سطر معدل' },

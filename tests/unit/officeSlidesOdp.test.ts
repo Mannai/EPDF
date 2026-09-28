@@ -10,6 +10,7 @@ import { buildOdp, customShape, frame, graphicStyle, para, span } from '../suppo
 import { makePng, solid } from '../support/images'
 import { flattenText, readPdf } from '../support/pdfText'
 import { bodyPlaceholder, buildPptx, picture, shape, solidFill, textBox, titlePlaceholder } from '../support/pptxBuilder'
+import { SOFFICE } from '../support/tools'
 
 const fontsDir = resolve('resources/fonts')
 const CM = 72 / 2.54
@@ -274,7 +275,6 @@ describe('odp: shapes, pictures, tables', () => {
 // Optional: compare with real LibreOffice output (skipped when LibreOffice is not installed).
 // ---------------------------------------------------------------------------------------------------
 
-const SOFFICE = 'C:\\Program Files\\LibreOffice\\program\\soffice.exe'
 
 describe.skipIf(!existsSync(SOFFICE))('odp: real LibreOffice files', () => {
   it('converts an ODP written by LibreOffice (from a PPTX) to the same text and page size as the PPTX', async () => {
