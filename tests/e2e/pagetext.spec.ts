@@ -65,6 +65,7 @@ const selection = (page: Page): Promise<string> => page.evaluate(() => getSelect
 
 async function dragAcross(page: Page, li: number, rtl: boolean): Promise<void> {
   await page.locator(`[data-page="1"] .textLayer span[data-line="${li}"]`).first().scrollIntoViewIfNeeded()
+  await waitForSteadyTextLayer(page) // the scroll, and any redraw it starts, has finished
   const b = await lineBox(page, li)
   const y = (b.top + b.bottom) / 2
   const [x0, x1] = rtl ? [b.right - 1, b.left + 1] : [b.left + 1, b.right - 1]
