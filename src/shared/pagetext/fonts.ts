@@ -178,6 +178,19 @@ function programUnicode(sfnt: Sfnt | undefined, gid: number | undefined): string
 
 const clean = (s: string | undefined): string => (s ? normalizeGlyphText(s) : '')
 
+/**
+ * Some producers (Word 2010 with Traditional Arabic, for one) map real letter and ligature glyphs to U+0020 in
+ * /ToUnicode, which loses letters and invents word breaks. When /ToUnicode says "space" for a glyph that draws ink and
+ * the font program names a real character for it, the font program wins.
+ */
+function overrideFalseSpace(t: string | undefined, sfnt: Sfnt | undefined, gid: number | undefined): string | undefined {
+  if (t === undefined || t === '' || !/^\s+$/u.test(t) || !sfnt || gid === undefined || gid === 0) return t
+  const bb = sfnt.bbox(gid)
+  if (!bb || bb[2] <= bb[0] || bb[3] <= bb[1]) return t
+  const p = programUnicode(sfnt, gid)
+  return p && !/^\s*$/u.test(normalizeGlyphText(p)) ? p : t
+}
+
 // ---------------------------------------------------------------------------------------------------------
 // simple fonts (Type1, TrueType, Type3, MMType1)
 
@@ -269,7 +282,7 @@ function loadSimple(d: PDFDict): TextFont {
     if (r) return r
     const gid = gidOf(code)
     let t: string | undefined
-    if (toUni) t = cmapUnicode(toUni, code, 1) ?? cmapUnicode(toUni, code, 2)
+    if (toUni) t = overrideFalseSpace(cmapUnicode(toUni, code, 1) ?? cmapUnicode(toUni, code, 2), sfnt, gid)
     if (t === undefined || t === '') t = table[code] || undefined
     if (t === undefined && names[code]) t = unicodeForGlyphName(names[code]!)
     if (t === undefined) t = programUnicode(sfnt, gid)
@@ -418,7 +431,7 @@ function loadType0(d: PDFDict): TextFont {
     let r = memo.get(k)
     if (r) return r
     let t: string | undefined
-    if (toUni) t = cmapUnicode(toUni, code, n)
+    if (toUni) t = overrideFalseSpace(cmapUnicode(toUni, code, n), sfnt, gid)
     if ((t === undefined || t === '') && unicodeCMap) t = n === 2 ? String.fromCharCode(code) : undefined
     if (t === undefined || t === '') t = programUnicode(sfnt, gid)
     const text = clean(t)

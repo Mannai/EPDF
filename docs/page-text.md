@@ -127,6 +127,19 @@ CSS-rotated text, plus Chromium's own box of every word), the text engine (lines
 PDF.js on the same fixtures finds, verbatim, 3/16 LibreOffice lines, 2/16 Chromium lines, 14/16 engine lines and
 0/6 legacy presentation-form lines; the model reads all of them.
 
+**Real-world files** (checked by hand 2026-09-28: UN documents from Word 365, Word 2010 and bioPDF, WHO reports from
+Acrobat Distiller and PaperPort scans, an Internet Archive book with a mupdf OCR layer; kept outside the repo in
+`Documents\Epdf-Arabic-RealWorld`). Two producer quirks found and handled, with synthetic regression tests in
+`pagetext-fonts.test.ts` ("producer quirks"):
+- **Word 365** writes the space after a right-to-left word over the word's last letter: a space glyph lying mostly on
+  top of a letter is not a word break (was "المتحد ة", now "المتحدة").
+- **Word 2010 (Traditional Arabic)** maps some letter and ligature glyphs to U+0020 in `/ToUnicode`: when it says
+  "space" for a glyph that draws ink and the font program names a letter, the font program wins ("الخم عشرة" → "الخمس
+  عشرة", "الذ سيجر عل" → "الذي سيجري على").
+Not fixable from the file (every reader loses them): Word 2010 also maps a few ligatures to one wrong letter
+("والاايات" for "والغايات", "رن" for "نحن"), and bioPDF maps the ligatures لمج / مج of Traditional Arabic to a single
+letter ("اموعة" for "المجموعة"); PDF.js reads the same wrong text.
+
 <a id="performance"></a>
 ## Performance
 

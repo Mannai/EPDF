@@ -137,6 +137,44 @@ describe('simple fonts without /ToUnicode', () => {
   })
 })
 
+describe('producer quirks seen in real documents', () => {
+  it('a /ToUnicode "space" for a glyph that draws a letter is read from the font program (Word 2010, Traditional Arabic)', async () => {
+    const pdf = await makeDoc().pdf
+    const page = pdf.addPage([300, 200])
+    const ttf = new Uint8Array(readFileSync('resources/textfonts/NotoNaskhArabic-Regular.ttf'))
+    const s = readSfnt(ttf)!
+    const beh = s.lookup(3, 1, 0x0628)!
+    const space = s.lookup(3, 1, 0x0020)!
+    const hex = (n: number): string => n.toString(16).padStart(4, '0').toUpperCase()
+    // The producer's /ToUnicode maps both the space glyph and the beh glyph to U+0020.
+    const tu = stream(pdf, {}, `/CIDInit /ProcSet findresource begin 12 dict begin begincmap 1 begincodespacerange <0000> <FFFF> endcodespacerange 2 beginbfchar <${hex(beh)}> <0020> <${hex(space)}> <0020> endbfchar endcmap end end`)
+    const file = stream(pdf, { Length1: ttf.length }, ttf)
+    const fd = pdf.context.register(pdf.context.obj({ Type: 'FontDescriptor', FontName: 'Naskh', Flags: 4, FontBBox: [0, -500, 1000, 1000], ItalicAngle: 0, Ascent: 900, Descent: -400, CapHeight: 700, StemV: 80, FontFile2: file }))
+    addFont(pdf, page, 'F1', {
+      Type: 'Font',
+      Subtype: 'Type0',
+      BaseFont: 'Naskh',
+      Encoding: 'Identity-H',
+      ToUnicode: tu,
+      DescendantFonts: [pdf.context.obj({ Type: 'Font', Subtype: 'CIDFontType2', BaseFont: 'Naskh', CIDSystemInfo: { Registry: 'Adobe', Ordering: 'Identity', Supplement: 0 }, FontDescriptor: fd, CIDToGIDMap: 'Identity', DW: 600 })]
+    })
+    // beh, space, beh (drawn left to right as visual order)
+    setContent(pdf, page, `BT /F1 20 Tf 50 100 Td <${hex(beh)}${hex(space)}${hex(beh)}> Tj ET`)
+    const m = await model(pdf)
+    expect(m.text).toBe('ب ب')
+  })
+
+  it('a space glyph drawn over the last letter of a word is not a word break (Word 365)', async () => {
+    const pdf = await makeDoc().pdf
+    const page = pdf.addPage([300, 200])
+    addFont(pdf, page, 'F1', { Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica', Encoding: 'WinAnsiEncoding' })
+    // "Hello" at 20 pt: the "o" spans x 134.44..145.56. A space glyph (5.56 pt) drawn at x 133 lies mostly over it.
+    setContent(pdf, page, 'BT /F1 20 Tf 100 100 Td (Hello) Tj ET BT /F1 20 Tf 133 100 Td ( ) Tj ET BT /F1 20 Tf 160 100 Td (world) Tj ET')
+    const m = await model(pdf)
+    expect(m.text).toBe('Hello world')
+  })
+})
+
 describe('CID fonts', () => {
   const cidFont = (pdf: PDFDocument, encoding: string, toUnicode?: PDFRef): Record<string, unknown> => ({
     Type: 'Font',

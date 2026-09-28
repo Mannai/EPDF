@@ -531,6 +531,40 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
       units.push({ text, boxes: [piece(a)], charBox: null, seq: g.seq, synthetic: false, font: g.font })
       k++
     }
+    // A space glyph lying mostly on top of a letter draws no gap: it is not a word break. (Word 365 writes the space
+    // after a right-to-left word at the word's left edge, over its last letter: "المتحد ة" otherwise.)
+    const extent = (u: Unit): [number, number] => {
+      let s0 = Infinity
+      let s1 = -Infinity
+      for (const b of u.boxes) {
+        if (b.s0 < s0) s0 = b.s0
+        if (b.s1 > s1) s1 = b.s1
+      }
+      return [s0, s1]
+    }
+    const hidden = new Set<Unit>()
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i]
+      if (u.synthetic || u.glyphTexts || !isSpaceText(u.text)) continue
+      const [a0, a1] = extent(u)
+      const w = a1 - a0
+      if (!(w > 0)) continue
+      for (const j of [i - 1, i + 1]) {
+        const v = units[j]
+        if (!v || isSpaceText(v.text) || v.text === '') continue
+        const [b0, b1] = extent(v)
+        if (Math.min(a1, b1) - Math.max(a0, b0) > 0.5 * w) {
+          hidden.add(u)
+          break
+        }
+      }
+    }
+    if (hidden.size) {
+      const keep = units.filter((u) => !hidden.has(u))
+      units.length = 0
+      units.push(...keep)
+    }
+
     // spaces
     const out: Unit[] = []
     for (const u of units) {
