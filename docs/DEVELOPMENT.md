@@ -133,10 +133,10 @@ What differs on macOS:
   PDFs opened from Finder (double-click, Open With, a drop on the Dock icon) arrive as `open-file`, also while Epdf is
   still starting.
 - **License agreement**: asked on first start (the disk image has no installer screens), as on Linux.
-- **Saved signatures** are encrypted with a key kept in the login Keychain ("Epdf Safe Storage"). An ad hoc signed
-  new version counts as a different app for the Keychain, so after an update macOS is expected to ask once whether
-  Epdf may use that key (**Always Allow**; not yet observed); with **Deny**, saved signatures can't be read until
-  access is allowed.
+- **Saved signatures** are encrypted with a key kept in the login Keychain ("epdf Safe Storage", named after the
+  package). An ad hoc signed new version is a different program for the Keychain, so macOS may ask once whether Epdf
+  may use that key (**Always Allow**); with **Deny**, saved signatures can't be read until access is allowed. (On the
+  test Mac a freshly built copy read the key made by an earlier one without asking.)
 - **Updates**: macOS installs updates only for an app signed with a Developer ID, so Epdf only says that a new
   version is out and offers its release page, like the Linux .deb.
 - **Scanners** are not supported (a scanner helper for macOS does not exist yet); the camera and phone work.
