@@ -1,4 +1,6 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 
 /**
  * Where the optional cross-checking tools are (tests only; the product never needs them): an environment variable,
@@ -24,3 +26,21 @@ export const QPDF = first([
 
 export const HAVE_SOFFICE = existsSync(SOFFICE)
 export const HAVE_QPDF = existsSync(QPDF)
+
+/**
+ * Whether these font families are installed on this system (not just substituted). LibreOffice is a fair layout
+ * reference only with a document's own fonts: with substitutes (Liberation, DejaVu) its line widths and indents differ.
+ */
+export function systemHasFonts(families: string[]): boolean {
+  if (process.platform === 'win32') {
+    const files: Record<string, string> = { Arial: 'arial.ttf', 'Times New Roman': 'times.ttf', Calibri: 'calibri.ttf', 'Segoe UI': 'segoeui.ttf' }
+    const dir = join(process.env['SystemRoot'] ?? 'C:\\Windows', 'Fonts')
+    return families.every((f) => !!files[f] && existsSync(join(dir, files[f]!)))
+  }
+  try {
+    const installed = new Set(execFileSync('fc-list', [':', 'family'], { encoding: 'utf8' }).split('\n').flatMap((l) => l.split(',')).map((s) => s.trim()))
+    return families.every((f) => installed.has(f))
+  } catch {
+    return false
+  }
+}
