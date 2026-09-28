@@ -183,7 +183,10 @@ test('Add text: Arabic typed in the box is drawn on the page, right-aligned, rea
     await area.fill(AR)
     await area.press('Control+Enter')
     await expect(page.getByRole('button', { name: 'Undo Add text' })).toBeEnabled()
-    await save(page)
+    // Fill & sign text is an editable item until saving locks it into the page: lock it, so it is page text.
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Lock filled-in items into the page?' }).getByRole('button', { name: 'Lock into page', exact: true }).click()
+    await expect(dot(page)).toHaveCount(0)
     // after reopening, the app's own text layer (page text model) has the logical string
     await menuClick(app, 'File', 'Reload from Disk')
     await expect(page.locator('[data-page="1"] .textLayer')).toContainText('مرحبا', { timeout: 20_000 })
