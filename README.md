@@ -25,11 +25,9 @@
   <a href="docs/DEVELOPMENT.md">Build from source</a>
 </p>
 
-<p align="center">
-  <a href="docs/media/epdf-demo.mp4">
-    <img src="docs/media/demo-poster.jpg" width="880" alt="Watch the 36-second tour of Epdf">
-  </a>
-</p>
+https://github.com/user-attachments/assets/6bed8ec8-e083-4c2e-bff6-a8d946d9f43b
+
+<p align="center"><sub>A 36-second tour of Epdf. Video not playing? <a href="docs/media/epdf-demo.mp4">Download it</a>.</sub></p>
 
 ---
 
