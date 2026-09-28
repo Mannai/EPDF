@@ -20,10 +20,19 @@ const WIDE: [number, number][] = [
   [0xff00, 0xff60], [0xffe0, 0xffe6], [0x20000, 0x3ffff]
 ]
 
+/**
+ * Characters drawn without an advance of their own: combining marks (Arabic harakat, Hebrew points, Latin accents,
+ * Indic signs are Mn/Me) and zero-width format characters (ZWNJ, ZWJ, bidi marks). They sit on the letter before
+ * them, like in any font, so readers attach them to that letter instead of seeing a separate character.
+ */
+export const isZeroWidth = (cp: number): boolean =>
+  (cp >= 0x200b && cp <= 0x200f) || cp === 0x2060 || cp === 0xfeff || cp === 0x061c || /\p{Mn}|\p{Me}/u.test(String.fromCodePoint(cp))
+
 /** Advance width (1000 units per em) used for a character. */
 export function advanceOf(cp: number): number {
   if (cp >= 0x20 && cp <= 0x7e) return ASCII[cp - 0x20]
   if (cp === 0xa0) return 278
+  if (isZeroWidth(cp)) return 0
   if (inRanges(cp, WIDE)) return 1000
   if (cp >= 0x0600 && cp <= 0x06ff) return 500 // Arabic
   if (cp >= 0x0900 && cp <= 0x097f) return 550 // Devanagari
@@ -52,38 +61,22 @@ export function cleanWordText(text: string): string {
   return out
 }
 
-const isRtl = (cp: number): boolean =>
-  (cp >= 0x0590 && cp <= 0x08ff) || (cp >= 0xfb1d && cp <= 0xfdff) || (cp >= 0xfe70 && cp <= 0xfeff) || (cp >= 0x10800 && cp <= 0x10fff) || (cp >= 0x1e800 && cp <= 0x1efff)
-const isNumberish = (cp: number): boolean => (cp >= 0x30 && cp <= 0x39) || (cp >= 0x660 && cp <= 0x669) || (cp >= 0x6f0 && cp <= 0x6f9)
-
 /**
- * Right-to-left words (Arabic, Hebrew, ...) are stored in visual order, the way real producers write them and
- * the way readers expect to find them: PDF.js, Acrobat and Chrome run the Unicode bidi algorithm over each text
- * run, which turns visual order back into logical order. Tesseract reports logical order. Runs of RTL letters
- * are reversed; digits and Latin letters inside the word keep their internal order.
+ * Advances (1000 units per em) of the extra space glyphs: a ladder in steps of 20 %, from 0.1 em to 65 em (the most
+ * a TrueType advance can hold). A gap on a tilted line is filled with the widest one that fits (see textLayer.ts).
  */
-export function toVisualOrder(text: string): string {
-  const chars = [...text]
-  if (!chars.some((c) => isRtl(c.codePointAt(0)!))) return text
-  const runs: { rtl: boolean; chars: string[] }[] = []
-  for (const ch of chars) {
-    const cp = ch.codePointAt(0)!
-    // digits and marks continue whatever run they are in; they are LTR inside an RTL word
-    const rtl = isRtl(cp) && !isNumberish(cp)
-    const cont = /\p{M}/u.test(ch)
-    const last = runs[runs.length - 1]
-    if (last && (cont || last.rtl === rtl)) last.chars.push(ch)
-    else runs.push({ rtl, chars: [ch] })
-  }
-  return runs
-    .reverse()
-    .map((r) => (r.rtl ? r.chars.reverse().join('') : r.chars.join('')))
-    .join('')
-}
+export const SPACE_LADDER: readonly number[] = (() => {
+  const out: number[] = []
+  for (let w = 100; w <= 65535; w *= 1.2) out.push(Math.round(w))
+  return out
+})()
 
 export class Charset {
   private cidOf = new Map<number, number>()
   private cps: number[] = []
+  /** Advance of CIDs that do not use the width of their character (the sized spaces). */
+  private custom = new Map<number, number>()
+  private ladder: number[] | null = null
 
   constructor() {
     this.add(0x20) // the space that separates words is always CID 1
@@ -92,12 +85,37 @@ export class Charset {
   add(cp: number): number {
     let cid = this.cidOf.get(cp)
     if (cid === undefined) {
-      if (this.cps.length >= 65534) throw new Error('Too many distinct characters for one OCR font')
-      cid = this.cps.length + 1
+      cid = this.push(cp)
       this.cidOf.set(cp, cid)
-      this.cps.push(cp)
     }
     return cid
+  }
+
+  private push(cp: number): number {
+    if (this.cps.length >= 65534) throw new Error('Too many distinct characters for one OCR font')
+    this.cps.push(cp)
+    return this.cps.length
+  }
+
+  /** Registers the sized spaces (extra glyphs that all read as U+0020, with the advances of SPACE_LADDER). */
+  addSpaceLadder(): void {
+    if (this.ladder) return
+    this.ladder = SPACE_LADDER.map((w) => {
+      const cid = this.push(0x20)
+      this.custom.set(cid, w)
+      return cid
+    })
+  }
+
+  /**
+   * The widest sized space not wider than `units` (1000 per em), or the narrowest one; null before `addSpaceLadder`.
+   * Returns its hex code and advance.
+   */
+  sizedSpace(units: number): { hex: string; advance: number } | null {
+    if (!this.ladder) return null
+    let k = 0
+    while (k + 1 < SPACE_LADDER.length && SPACE_LADDER[k + 1] <= units) k++
+    return { hex: this.ladder[k].toString(16).padStart(4, '0'), advance: SPACE_LADDER[k] }
   }
 
   addText(text: string): void {
@@ -120,7 +138,7 @@ export class Charset {
   }
 
   widths(): number[] {
-    return this.cps.map(advanceOf)
+    return this.cps.map((cp, i) => this.custom.get(i + 1) ?? advanceOf(cp))
   }
 
   /** Total advance of `text` at 1000 units/em. */

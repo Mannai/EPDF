@@ -2,7 +2,7 @@ import { PDFDocument } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import type { OcrLine, OcrWord } from '../../src/shared/features/ocr'
 import { applyOcrLayers, geometryMismatch, visibleBox, type PageOcr } from '../../src/renderer/src/features/ocr/pdf/apply'
-import { advanceOf, buildToUnicode, Charset, cleanWordText, toVisualOrder, utf16Hex } from '../../src/renderer/src/features/ocr/pdf/charset'
+import { advanceOf, buildToUnicode, Charset, cleanWordText, SPACE_LADDER, utf16Hex } from '../../src/renderer/src/features/ocr/pdf/charset'
 import { buildGlyphlessFont } from '../../src/renderer/src/features/ocr/pdf/glyphlessFont'
 import {
   baselineSlope,
@@ -18,7 +18,18 @@ import {
   type PlacedLine,
   type Rotation
 } from '../../src/renderer/src/features/ocr/pdf/layout'
-import { buildLayerStream, collectChars, LAYER_MARKER, lineScaling, naturalWidth, tiltedScaling } from '../../src/renderer/src/features/ocr/pdf/textLayer'
+import {
+  buildLayerStream,
+  collectChars,
+  LAYER_MARKER,
+  lineScaling,
+  MIN_WORD_GAP,
+  naturalWidth,
+  TILTED_FIT,
+  tiltedScaling,
+  TZ_MAX,
+  TZ_MIN
+} from '../../src/renderer/src/features/ocr/pdf/textLayer'
 import { createScan1, createScanCropped, createScanRotated } from '../fixtures/ocr.mjs'
 
 const word = (text: string, x0: number, y0: number, x1: number, y1: number, conf = 95): OcrWord => ({ text, x0, y0, x1, y1, conf })
@@ -193,12 +204,28 @@ describe('charset and ToUnicode', () => {
     expect(cleanWordText('  \n ')).toBe('')
   })
 
-  it('stores right-to-left words in visual order (readers run the bidi algorithm to get logical order back)', () => {
-    expect(toVisualOrder('Hello')).toBe('Hello')
-    expect(toVisualOrder('שלום')).toBe('םולש')
-    // digits and Latin letters inside an RTL word keep their own order; the runs swap places
-    expect(toVisualOrder('שלום123')).toBe('123םולש')
-    expect(toVisualOrder('abcשלום')).toBe('םולשabc')
+  it('combining marks and zero-width format characters have no advance of their own', () => {
+    for (const c of ['َ', 'ّ', 'ָ', '́', '्', '‌', '‍', '‏']) expect(advanceOf(c.codePointAt(0)!), `U+${c.codePointAt(0)!.toString(16)}`).toBe(0)
+    expect(advanceOf('ب'.codePointAt(0)!)).toBeGreaterThan(0)
+  })
+
+  it('sized spaces: extra glyphs that all read as a space, with a ladder of advances', () => {
+    const cs = new Charset()
+    cs.addText('ab')
+    expect(cs.sizedSpace(500)).toBeNull() // not registered yet
+    cs.addSpaceLadder()
+    cs.addSpaceLadder() // once
+    expect(cs.size).toBe(3 + SPACE_LADDER.length)
+    const s = cs.sizedSpace(1000)!
+    expect(s.advance).toBeLessThanOrEqual(1000)
+    expect(s.advance).toBeGreaterThan(1000 / 1.21)
+    expect(cs.sizedSpace(1)!.advance).toBe(SPACE_LADDER[0]) // the narrowest when nothing fits
+    expect(cs.sizedSpace(1e9)!.advance).toBe(SPACE_LADDER.at(-1)) // at most 65535 units
+    expect(SPACE_LADDER.at(-1)!).toBeLessThanOrEqual(65535)
+    const cid = parseInt(s.hex, 16)
+    expect(cs.codePoints[cid - 1]).toBe(0x20)
+    expect(cs.widths()[cid - 1]).toBe(s.advance)
+    expect(buildToUnicode(cs)).toContain(`<${s.hex.toUpperCase()}> <0020>`)
   })
 
   it('builds a ToUnicode CMap that maps every CID, including characters beyond the BMP', () => {
@@ -290,12 +317,14 @@ describe('text layer content stream', () => {
     expect(s).toContain('38 0 Td') // the second word is 38 units further along the line
     expect(s).toContain('/F1 10 Tf')
     // natural width of "Hello" at 10pt with Helvetica-like advances: (722+556+222+222+556)/1000*10 = 22.78 -> Tz = 3000/22.78
-    const tz = Number(/([\d.]+) Tz/.exec(s)![1])
-    near(tz, (100 * 30) / 22.78, 0.01)
-    // "Hello" is followed by a space (another word follows on the line), "world" is not
-    expect(s).toContain(cs.hex('Hello '))
+    const tzs = [...s.matchAll(/([\d.]+) Tz/g)].map((m) => Number(m[1]))
+    near(tzs[0], (100 * 30) / 22.78, 0.01)
+    // "Hello" is followed by a space that exactly fills the gap to "world" (38 - 30 = 8 units; a space is 2.78 at 10pt)
+    expect(s).toContain(`${cs.hex('Hello')} Tj\n${tzs[1]} Tz\n${cs.hex(' ')} Tj`)
+    near(tzs[1], (100 * 8) / 2.78, 0.01)
     expect(s).toContain(cs.hex('world'))
     expect(s).not.toContain(cs.hex('world '))
+    expect(s.trimEnd().split('\n').at(-3)).toBe(`${cs.hex('world')} Tj`) // nothing after the last word
     // balanced graphics state and text objects
     expect(s.match(/^q$/gm)).toHaveLength(1)
     expect(s.match(/^Q$/gm)).toHaveLength(1)
@@ -320,8 +349,7 @@ describe('text layer content stream', () => {
     const cs = new Charset()
     const lines = collectChars([ln([w('WWWW', 0, 1), w('ii', 5, 9999)])], cs)
     expect(lines[0].words.map((x) => x.text)).toEqual(['WWWW', 'ii'])
-    const tzs = [...buildLayerStream('F1', cs, lines).matchAll(/([\d.]+) Tz/g)].map((m) => Number(m[1]))
-    expect(tzs).toEqual([20, 500])
+    expect(lineScaling(cs, lines[0], 100)).toEqual([TZ_MIN, TZ_MAX])
   })
 
   it('upright lines fit every word to its own box; tilted lines all share ONE scaling (per page)', () => {
@@ -331,14 +359,48 @@ describe('text layer content stream', () => {
     const tilted = collectChars([ln(words, { tilted: true }), ln(words, { tilted: true, y: 650 })], cs)
     expect(new Set(lineScaling(cs, upright[0], 100)).size).toBe(3)
     const shared = tiltedScaling(cs, tilted)
-    // the mean: total width over total natural width
-    const natural = words.reduce((sum, x) => sum + naturalWidth(cs, x.text, 10), 0)
-    near(shared, (100 * 92) / natural, 1e-9)
+    // not the mean (one oversized box would stretch every word): a low percentile, so most words fit their box
+    const ratios = [...words, ...words].map((x) => (100 * x.width) / naturalWidth(cs, x.text, 10)).sort((a, b) => a - b)
+    near(shared, ratios[Math.floor((1 - TILTED_FIT) * ratios.length)], 1e-9)
     expect(lineScaling(cs, tilted[0], shared)).toEqual([shared, shared, shared])
     // PDF.js takes words or lines with different Tz for separate lines when they are tilted, so only one Tz is written
-    expect(buildLayerStream('F1', cs, tilted).match(/ Tz$/gm)).toHaveLength(1)
-    expect(buildLayerStream('F1', cs, upright).match(/ Tz$/gm)).toHaveLength(3)
-    expect(tiltedScaling(cs, upright)).toBe(100) // no tilted lines: nothing to average
+    const tiltedStream = buildLayerStream('F1', cs, tilted)
+    expect(tiltedStream.match(/ Tz$/gm)).toHaveLength(1)
+    // ... and the spaces are sized space glyphs instead
+    expect(tiltedStream).not.toContain(`${cs.hex(' ').slice(1, -1)}> Tj`)
+    // upright: three word scalings and two space scalings
+    expect(buildLayerStream('F1', cs, upright).match(/ Tz$/gm)).toHaveLength(5)
+    expect(tiltedScaling(cs, upright)).toBe(100) // no tilted lines: nothing to measure
+  })
+
+  it('words of a line never overlap, however Tesseract boxed them, and the space never reaches into the next word', () => {
+    const cs = new Charset()
+    // "b" starts inside "a"'s box (Arabic final letters reach under the next word); "c" is squeezed to nothing
+    const lines = collectChars([ln([w('aaaa', 0, 40), w('bbbb', 30, 30), w('c', 61, 1), w('dd', 61.5, 10)])], cs)
+    const ws = lines[0].words
+    for (let i = 0; i + 1 < ws.length; i++) {
+      expect(ws[i].offset + ws[i].width, `word ${i}`).toBeLessThanOrEqual(ws[i + 1].offset - MIN_WORD_GAP * 10 + 1e-9)
+      expect(ws[i].width).toBeGreaterThan(0)
+    }
+    // what is drawn: each glyph origin after the previous one along the line
+    const stream = buildLayerStream('F1', cs, lines)
+    let pen = 0
+    let origin = 0
+    let tz = 100
+    let last = -Infinity
+    for (const op of stream.split('\n')) {
+      let m: RegExpExecArray | null
+      if ((m = /^([-\d.]+) 0 Td$/.exec(op))) origin = pen = origin + Number(m[1])
+      else if ((m = /^([\d.]+) Tz$/.exec(op))) tz = Number(m[1])
+      else if ((m = /^<([0-9a-f]+)> Tj$/.exec(op))) {
+        for (let k = 0; k < m[1].length; k += 4) {
+          const cid = parseInt(m[1].slice(k, k + 4), 16)
+          expect(pen).toBeGreaterThanOrEqual(last - 1e-6)
+          last = pen
+          pen += (cs.widths()[cid - 1] / 1000) * 10 * (tz / 100)
+        }
+      }
+    }
   })
 })
 

@@ -2,7 +2,7 @@ import { PDFArray, PDFDict, PDFName, PDFRef, PDFStream, PDFString, type PDFDocum
 import { MIN_WORD_CONFIDENCE, type OcrLine } from '@shared/features/ocr'
 import { Charset, buildToUnicode } from './charset'
 import { buildGlyphlessFont } from './glyphlessFont'
-import { normalizeRotation, placeLine, type LayoutOptions, type PageGeometry, type PlacedLine } from './layout'
+import { normalizeRotation, pageSlopes, placeLine, type LayoutOptions, type PageGeometry, type PlacedLine } from './layout'
 import { LAYER_MARKER, buildLayerStream, collectChars } from './textLayer'
 
 /** The recognized text of one page, with the geometry of the picture it was recognized in. */
@@ -47,6 +47,89 @@ export function geometryMismatch(page: PDFPage, g: PageGeometry): string | null 
   if (normalizeRotation(page.getRotation().angle) !== g.rotate) return 'the page was rotated after it was scanned for text'
   if (box.some((v, i) => Math.abs(v - g.view[i]) > 0.75)) return 'the page size changed after it was scanned for text'
   return null
+}
+
+/** Below this confidence a word must look like a word (letters or digits, not a speck) to be kept. */
+export const DOUBTFUL_CONFIDENCE = 60
+
+const HAS_LETTER_OR_DIGIT = /[\p{L}\p{N}]/u
+const ONLY_MARKS = /^[\p{M}\p{Cf}]+$/u
+
+/**
+ * The words of a line that go into the text layer. Besides the confidence threshold, recognition noise is dropped:
+ * a "word" of combining marks only (a speck read as a vowel sign: it cannot stand alone), and, when Tesseract is
+ * unsure, a word without any letter or digit, or one far smaller than the line's letters (dust, dots of other
+ * lines). These appear on real scans of Arabic in particular, where dots and specks look alike.
+ */
+export function keptWords(line: OcrLine, minConfidence = MIN_WORD_CONFIDENCE): OcrLine['words'] {
+  const heights = line.words.map((w) => w.y1 - w.y0).sort((a, b) => a - b)
+  const median = heights[heights.length >> 1] ?? 0
+  const kept = line.words.filter((w) => {
+    if (w.conf < minConfidence) return false
+    const text = w.text.trim()
+    if (!text || ONLY_MARKS.test(text)) return false
+    if (w.conf >= DOUBTFUL_CONFIDENCE) return true
+    if (!HAS_LETTER_OR_DIGIT.test(text)) return false
+    return !(median > 0 && w.y1 - w.y0 < 0.2 * median)
+  })
+  return dropMarginSpecks(kept, line.rowHeight > 0 ? line.rowHeight : median)
+}
+
+/** A "word" of at most this many characters, without letters, can be a speck read as a digit or a dot. */
+const SPECK_CHARS = 3
+const SPECK = /^[\p{N}\p{P}\p{S}]+$/u
+
+/**
+ * Specks in the margin: Tesseract adds dust beside a line to the line as "0", "1", "." or "'", often with a fair
+ * confidence. A short word without letters at either end of a line, much further from the rest than the words are
+ * from each other (more than 2.5 line heights and 4 times the usual gap), is dropped. Real numbers inside text and
+ * numbers set apart in a table column (usually long, or confidently read) stay.
+ */
+export function dropMarginSpecks(words: OcrLine['words'], em: number): OcrLine['words'] {
+  if (words.length < 3 || !(em > 0)) return words
+  const byX = [...words].sort((a, b) => a.x0 - b.x0)
+  const gaps: number[] = []
+  for (let i = 1; i < byX.length; i++) gaps.push(Math.max(0, byX[i].x0 - byX[i - 1].x1))
+  const sorted = [...gaps].sort((a, b) => a - b)
+  const usual = sorted[sorted.length >> 1] ?? 0
+  const far = (gap: number): boolean => gap > 2.5 * em && gap > 4 * usual
+  const speck = (w: OcrLine['words'][number]): boolean => {
+    const t = w.text.trim()
+    return [...t].length <= SPECK_CHARS && SPECK.test(t) && w.conf < 95
+  }
+  // a few specks together (dust rarely comes alone) beyond one wide gap, at either end
+  const MAX_SPECKS = 3
+  let a = 0
+  for (let k = 1; k <= MAX_SPECKS && k < byX.length - 1; k++) {
+    if (!speck(byX[k - 1])) break
+    if (far(byX[k].x0 - byX[k - 1].x1)) a = k
+  }
+  let z = byX.length
+  for (let k = 1; k <= MAX_SPECKS && byX.length - k > a + 1; k++) {
+    if (!speck(byX[byX.length - k])) break
+    if (far(byX[byX.length - k].x0 - byX[byX.length - k - 1].x1)) z = byX.length - k
+  }
+  if (a === 0 && z === byX.length) return words
+  const keep = new Set(byX.slice(a, z))
+  return words.filter((w) => keep.has(w))
+}
+
+/** Lines whose size is within this factor of the page's body size are written at the body size. */
+export const BODY_SIZE_RANGE: [number, number] = [0.7, 1.45]
+
+/**
+ * Gives the lines of the page's body text one font size. Tesseract's line height varies a lot from line to line
+ * (Arabic lines with and without dots and descenders, a speck on the line), and readers - the page text model
+ * included - keep lines of clearly different sizes in separate paragraphs, which scrambles the reading order of a
+ * plain letter. The body size is the median over lines of three or more words; lines far from it (headings, small
+ * print) keep their own size.
+ */
+export function harmonizeSizes(lines: PlacedLine[]): void {
+  const body = lines.filter((l) => l.words.length >= 3).map((l) => l.fontSize)
+  const sizes = (body.length ? body : lines.map((l) => l.fontSize)).sort((a, b) => a - b)
+  if (!sizes.length) return
+  const median = sizes[sizes.length >> 1]
+  for (const l of lines) if (l.fontSize >= BODY_SIZE_RANGE[0] * median && l.fontSize <= BODY_SIZE_RANGE[1] * median) l.fontSize = median
 }
 
 /** Embeds the glyphless Type0 font for `charset`; returns its reference. */
@@ -125,9 +208,11 @@ export function applyOcrLayers(pdf: PDFDocument, results: PageOcr[], minConfiden
       continue
     }
     const lines: PlacedLine[] = []
-    for (const line of r.lines) {
-      const kept = line.words.filter((w) => w.conf >= minConfidence)
-      const placed = placeLine(r.geometry, line, kept, { deskew: r.deskew })
+    const keptPerLine = r.lines.map((line) => keptWords(line, minConfidence))
+    const slopes = pageSlopes(r.lines, keptPerLine)
+    for (const [li, line] of r.lines.entries()) {
+      const kept = keptPerLine[li]
+      const placed = placeLine(r.geometry, line, kept, { deskew: r.deskew, slope: slopes[li] })
       if (!placed) continue
       lines.push(placed)
       for (const w of kept) {
@@ -135,6 +220,7 @@ export function applyOcrLayers(pdf: PDFDocument, results: PageOcr[], minConfiden
         words++
       }
     }
+    harmonizeSizes(lines)
     const usable = collectChars(lines, charset)
     if (usable.length) prepared.push({ page, pageIndex: r.pageIndex, lines: usable })
   }

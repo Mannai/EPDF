@@ -50,7 +50,9 @@ with an in-thread fallback when no worker is available (Node tests).
    `"`, CTM, Form XObjects, `gs` fonts) records every glyph: Unicode text, origin, advance, box, font, render mode,
    stream order. Marked content: `/ActualText` from inline dictionaries and `/Properties` resources (UTF-16/UTF-8/
    PDFDocEncoding), nested spans (the outermost wins), spans enclosing a form; `/ReversedChars`. Tolerant: an
-   unreadable stream keeps what parsed before the error.
+   unreadable stream keeps what parsed before the error. Glyphs drawn with a mirrored text matrix (`-1 0 0 1 x y Tm`:
+   upright glyphs advancing leftwards, as the Internet Archive's mupdf-made OCR layers write right-to-left lines in
+   logical order) are recorded from their far end, advancing the ordinary way, so such lines are ordered like any other.
 2. **Unicode** (`fonts.ts`, `glyphnames.ts`, `sfnt.ts`): `/ToUnicode` first, then the encoding (base encodings,
    `/Differences` glyph names with an extended glyph list: AGL, `afii57xxx`, `alefarabic`, `beh-ar.init`,
    `lam_alef-ar`, `uniXXXX`), Unicode CMaps (`Uni*-UCS2/UTF16`), then the embedded font program (its Unicode cmap in

@@ -11,6 +11,8 @@ import type { OcrPageResult } from '../../../shared/features/ocr'
 interface Waiting {
   index: number
   image: Uint8Array
+  /** A second picture of a page already recognized (does not count towards `total`). */
+  retry: boolean
   resolve(r: OcrPageResult): void
   reject(e: Error): void
 }
@@ -27,8 +29,15 @@ export class OcrSession {
 
   constructor(
     readonly languages: string[],
-    readonly total: number
+    readonly total: number,
+    /** Second pictures of pages may follow the last page: only `end()` finishes the run. */
+    readonly mayRetry = false,
+    /** The run may ask for page orientation (the orientation data was verified at the start). */
+    readonly orient = false
   ) {}
+
+  /** The run's orientation detector, started on first use (see index.ts). */
+  detector: Promise<import('./orientation').OrientationDetector> | null = null
 
   get hasQueued(): boolean {
     return this.queue.length > 0
@@ -39,11 +48,11 @@ export class OcrSession {
   }
 
   /** Queues a page picture. Resolves with its recognition result. */
-  add(index: number, image: Uint8Array): Promise<OcrPageResult> {
+  add(index: number, image: Uint8Array, retry = false): Promise<OcrPageResult> {
     if (this.closed) return Promise.reject(this.closed)
     if (this.ended) return Promise.reject(new Error('This recognition run has ended.'))
     return new Promise((resolve, reject) => {
-      const w: Waiting = { index, image, resolve, reject }
+      const w: Waiting = { index, image, retry, resolve, reject }
       this.pending.add(w)
       const taker = this.takers.shift()
       if (taker) taker(w)
@@ -68,12 +77,28 @@ export class OcrSession {
   end(): void {
     this.ended = true
     this.flush(new Error('This recognition run has ended.'))
+    this.dispose()
   }
 
   /** Abnormal end: every waiting `add` rejects with `err`. */
   fail(err: Error): void {
     this.closed ??= err
     this.flush(err)
+    this.dispose()
+  }
+
+  private cleanups: (() => Promise<void>)[] = []
+
+  /** Runs `fn` (once) when the run ends, however it ends; at once if it already has. */
+  onClose(fn: () => Promise<void>): void {
+    if (this.isClosed) void fn().catch(() => undefined)
+    else this.cleanups.push(fn)
+  }
+
+  private dispose(): void {
+    const fns = this.cleanups
+    this.cleanups = []
+    for (const fn of fns) void fn().catch(() => undefined)
   }
 
   private flush(err: Error): void {
@@ -89,7 +114,7 @@ export class OcrSession {
 export class SessionRegistry {
   private sessions = new Map<string, { session: OcrSession; created: number }>()
 
-  create(languages: string[], total: number): OcrSession {
+  create(languages: string[], total: number, mayRetry = false, orient = false): OcrSession {
     const now = Date.now()
     for (const [id, s] of this.sessions) {
       if (now - s.created > 3600_000) {
@@ -97,7 +122,7 @@ export class SessionRegistry {
         this.sessions.delete(id)
       }
     }
-    const session = new OcrSession(languages, total)
+    const session = new OcrSession(languages, total, mayRetry, orient)
     this.sessions.set(session.id, { session, created: now })
     return session
   }
