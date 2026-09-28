@@ -41,7 +41,7 @@ export interface DiscoverOptions {
   exists?: (p: string) => boolean
 }
 
-/** Where LibreOffice is, or null. `EPDF_DISABLE_SOFFICE_DISCOVERY=1` restricts the search to the standard tool lookup (tests). */
+/** Where LibreOffice is, or null. `EPDF_DISABLE_SOFFICE_DISCOVERY=1` skips the well-known install folders (tests; the caller also skips PATH then). */
 export function discoverSoffice(o: DiscoverOptions): string | null {
   const env = o.env ?? process.env
   const found = o.resolveTool('soffice')

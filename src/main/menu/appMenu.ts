@@ -1,5 +1,5 @@
-import { join } from 'node:path'
 import { app, dialog, Menu, shell, type MenuItemConstructorOptions } from 'electron'
+import { openBundledText } from '../services/bundledText'
 import { hardwareAccelerationEnabled, setHardwareAcceleration } from '../services/gpu'
 import type { MenuAction } from '../../shared/types'
 import type { Controller } from '../controller'
@@ -8,14 +8,6 @@ import { commandItem, contributionsFor, NEEDS_DOCUMENT, setCommandSender, type M
 const isMac = process.platform === 'darwin'
 
 type Item = MenuItemConstructorOptions
-
-/** Opens a text file that ships next to the app (see extraResources); unpackaged runs use the build output. */
-async function openBundledText(name: 'LICENSE' | 'EULA' | 'THIRD-PARTY-NOTICES'): Promise<void> {
-  const dev = { LICENSE: 'LICENSE.md', EULA: 'build/license.txt', 'THIRD-PARTY-NOTICES': `out/${name}.txt` }
-  const file = app.isPackaged ? join(process.resourcesPath, `${name}.txt`) : join(app.getAppPath(), dev[name])
-  const error = await shell.openPath(file)
-  if (error) dialog.showErrorBox('Epdf', `Could not open ${name}.\n\n${error}`)
-}
 
 /** Wraps a menu's built-in items with whatever features contributed to its start and end. */
 function withContributions(menu: MenuName, base: Item[]): Item[] {

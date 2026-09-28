@@ -50,7 +50,9 @@ export function register(ctx: MainContext): void {
   const registry = new SourceRegistry()
   const prefs = new CreatePrefsStore(app.getPath('userData'))
   const fontsDir = app.isPackaged ? join(process.resourcesPath, 'fonts') : join(app.getAppPath(), 'resources', 'fonts')
-  const findSoffice = (): string | null => discoverSoffice({ resolveTool })
+  // With EPDF_DISABLE_SOFFICE_DISCOVERY=1 (tests) only EPDF_TOOL_SOFFICE and a bundled copy count, not one on PATH.
+  const findSoffice = (): string | null =>
+    discoverSoffice({ resolveTool: (n) => resolveTool(n, { searchPath: process.env['EPDF_DISABLE_SOFFICE_DISCOVERY'] !== '1' }) })
   const paper = defaultPaper() === 'Letter' ? { width: 612, height: 792 } : { width: 595.28, height: 841.89 }
 
   const deps: PipelineDeps = {
