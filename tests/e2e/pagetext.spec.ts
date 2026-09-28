@@ -4,7 +4,7 @@ import { copyFileSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PDFDocument } from 'pdf-lib'
-import { canvasHasInk, fixture, launch, menuClick, quitDiscarding, withSystemClipboard } from './helpers'
+import { canvasHasInk, fixture, launch, menuClick, quitDiscarding, waitForSteadyTextLayer, withSystemClipboard } from './helpers'
 
 /**
  * The page text model in the real app (Electron + the sandboxed renderer + its Web Worker): right-to-left pages from
@@ -39,6 +39,7 @@ async function openModelPage(name: string): Promise<{ app: ElectronApplication; 
   const l = await launch({ files: [copy(name)] })
   await expect.poll(() => canvasHasInk(l.page, '[data-page="1"] canvas'), { timeout: 30_000 }).toBe(true)
   await l.page.locator('[data-page="1"] .textLayer[data-pagetext="model"]').waitFor({ timeout: 30_000 })
+  await waitForSteadyTextLayer(l.page)
   return l
 }
 

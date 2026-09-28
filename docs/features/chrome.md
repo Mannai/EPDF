@@ -19,7 +19,8 @@ tokens in `tokens/tokens.css`, `tokens/components.css`, `tokens/tailwind.config.
 draws minimise / maximise / close (snap layouts, hover and the system menu stay native). The overlay colours follow the
 theme (`chromeOverlay`, re-applied on `nativeTheme` updates by `src/main/features/chrome`). Empty parts of the title bar
 drag the window (`.app-drag`); controls inside it opt out. macOS and Linux keep their native title bar, and the same rows
-render under it.
+render under it. On Linux the native menu bar would repeat the File button, so windows use `autoHideMenuBar`: it shows
+while Alt is held, and accelerators work either way.
 
 A hidden title bar has no menu bar, but the application menu is still installed, so every accelerator and every feature's
 `contributeMenu` item keeps working. **File** calls the `chrome:menu` channel, which pops the menu up under the button:
