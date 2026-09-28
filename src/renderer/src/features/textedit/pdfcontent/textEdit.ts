@@ -2,7 +2,9 @@ import { Encodings } from '@pdf-lib/standard-fonts'
 import fontkit from '@pdf-lib/fontkit'
 import { PDFDict, PDFDocument, PDFName, StandardFonts, type PDFFont } from 'pdf-lib'
 import { analyzePage, addrKey, type PageAnalysis, type RunGlyph, type StreamSlot, type TextRun } from './analyze'
-import { buildBlocks, findBlock, type Atom, type TextBlock } from './blocks'
+import { buildBlocks, findBlock, type Atom, type BlockSet, type TextBlock } from './blocks'
+import { withLogicalBlocks } from './logical'
+import { TEXT_STATE_RESET, replaceLogicalBlock } from './logicalEdit'
 import { ensureTextEngine, hasRtl, measureText, renameContentResources, textContent, uncoveredChars } from '@shared/text'
 import { hasComplexScript } from '@shared/pagetext'
 import { arr, latin1ToBytes, mkOp, num, name as nameObj, parseContent, str, withArgs, type Op, type PdfObj } from './content'
@@ -46,6 +48,15 @@ export interface TextEditResult {
   /** Set when nothing needed to change. */
   noop?: boolean
   warnings: string[]
+  /** Logical (right-to-left / complex-script) blocks: the font family that draws the new text. */
+  family?: string
+  /** Logical blocks drawn with a bundled font: why the document's own font could not be used. */
+  why?: string
+}
+
+/** The page's editable blocks: the editor's own, with logical blocks for right-to-left and complex-script lines. */
+export function pageBlocks(pdf: PDFDocument, analysis: PageAnalysis): BlockSet {
+  return withLogicalBlocks(pdf, analysis, buildBlocks(analysis))
 }
 
 const refuse = (m: string): EditRefusedError => new EditRefusedError(m)
@@ -61,7 +72,7 @@ const hexToRgb = (h: string): [number, number, number] | null => {
 // ActualText
 
 /** Marked-content properties like /ActualText would keep the OLD text extractable: drop them from edited runs. */
-function stripActualText(plans: PlanSet, analysis: PageAnalysis, runs: TextRun[]): void {
+export function stripActualText(plans: PlanSet, analysis: PageAnalysis, runs: TextRun[]): void {
   const done = new Set<string>()
   for (const run of runs) {
     for (const m of run.marked) {
@@ -240,7 +251,7 @@ function dependsOnAdvance(analysis: PageAnalysis, run: TextRun, removed: Set<str
   return false
 }
 
-function neutralOps(analysis: PageAnalysis, run: TextRun, op: Op, removed: Set<string>): Op[] {
+export function neutralOps(analysis: PageAnalysis, run: TextRun, op: Op, removed: Set<string>): Op[] {
   const out: Op[] = []
   if (op.op === "'") out.push(mkOp('T*'))
   else if (op.op === '"') out.push(mkOp('Tw', op.args[0]), mkOp('Tc', op.args[1]), mkOp('T*'))
@@ -356,7 +367,8 @@ async function engineReplacement(
   const family = [...count].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'the bundled fonts'
   // Re-made as new operations (each on its own line) so they serialise cleanly after the editor's own.
   const ops = parsed.ops.map((o) => mkOp(o.op, ...o.args))
-  return { ops: [mkOp('q'), mkOp('cm', ...cm.map(num)), ...ops, mkOp('Q')], family }
+  // (text state survives BT/ET: the page's Tc/Tw/Tz/Ts/Tr would otherwise apply to the engine's text too)
+  return { ops: [mkOp('q'), mkOp('cm', ...cm.map(num)), ...TEXT_STATE_RESET(), ...ops, mkOp('Q')], family }
 }
 
 interface ReplaceOutcome {
@@ -542,7 +554,7 @@ export async function applyTextEdit(
   } catch (e) {
     throw refuse(`This page's content could not be read safely, so nothing was changed (${e instanceof Error ? e.message : String(e)}).`)
   }
-  const block = findBlock(buildBlocks(analysis), req.blockId)
+  const block = findBlock(pageBlocks(pdf, analysis), req.blockId)
   if (!block) throw refuse('That text is no longer on the page. Select it again.')
   if (block.text !== req.oldText) throw refuse('The text changed since you selected it. Select it again.')
   if (!block.editable) throw refuse(`This text can’t be edited: ${block.reason}.`)
@@ -554,6 +566,19 @@ export async function applyTextEdit(
 
   const warnings: string[] = []
   let result: TextEditResult | undefined
+  if (block.logical) {
+    if (newText.trim() === '') {
+      // Deleting the whole line: remove its glyphs, draw nothing.
+      await replaceLogicalBlock(pdf, analysis, block, '', {}, { stripActualText, neutralOps })
+      commitSources(pdf, analysis)
+      return { strategy: 'in-place', message: 'Text deleted', warnings }
+    }
+    const out = await replaceLogicalBlock(pdf, analysis, block, newText, { size: req.size, color: req.color ? hexToRgb(req.color) : null }, { stripActualText, neutralOps })
+    commitSources(pdf, analysis)
+    return out.strategy === 'document-font'
+      ? { strategy: 'document-font', message: 'Edited using the document’s own font', warnings, family: out.family }
+      : { strategy: 'fallback-font', message: `Font not available in this PDF — used ${out.family}`, warnings, family: out.family, why: out.why }
+  }
   if (!restyle) {
     const plan = planInPlace(analysis, block, newText)
     if (plan) {

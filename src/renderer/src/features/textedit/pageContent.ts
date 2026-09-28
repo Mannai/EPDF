@@ -2,7 +2,8 @@ import { PDFDocument } from 'pdf-lib'
 import { currentBytes } from '../../edit/session'
 import { useTabs } from '../../state/tabs'
 import { analyzePage, type PageAnalysis } from './pdfcontent/analyze'
-import { buildBlocks, type BlockSet } from './pdfcontent/blocks'
+import type { BlockSet } from './pdfcontent/blocks'
+import { pageBlocks } from './pdfcontent/textEdit'
 
 /**
  * Reads what is on a page (text blocks, images) from the document's current bytes, for the editing overlays.
@@ -49,7 +50,7 @@ export async function loadPageContent(docId: string, pageIndex: number): Promise
         const pdf = await entry.doc
         await yieldToUi()
         const analysis = analyzePage(pdf, pageIndex)
-        return { ok: true, content: { analysis, blocks: buildBlocks(analysis) } }
+        return { ok: true, content: { analysis, blocks: pageBlocks(pdf, analysis) } }
       } catch (err) {
         return { ok: false, message: friendly(err) }
       }

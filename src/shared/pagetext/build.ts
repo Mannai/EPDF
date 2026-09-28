@@ -298,6 +298,11 @@ function fixPreBase(order: number[], units: Unit[]): number[] {
 export interface BuildOptions {
   /** Keep text in render mode 3/7 (invisible, e.g. OCR layers). Default true: it is selectable in every reader. */
   includeHidden?: boolean
+  /**
+   * Also report which output line every glyph of the interpretation ended up in (`PageTextModel.glyphLine`): base glyphs
+   * and the marks attached to them. Used by the text editor to find the content-stream glyphs of a logical line.
+   */
+  glyphLines?: boolean
 }
 
 export function buildPageText(pdf: PDFDocument, pageIndex: number, opts: BuildOptions = {}): PageTextModel {
@@ -698,6 +703,7 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
   const quads = new Float32Array(totalPieces * 8)
   let qn = 0
   const outLines: PageTextLine[] = []
+  const glyphLine = opts.glyphLines ? new Int32Array(glyphs.length).fill(-1) : undefined
   let blockIndex = -1
   let lastBlock = -1
   for (const bid of orderedBlocks) {
@@ -734,6 +740,12 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
         }
       }
       text += l.text
+      if (glyphLine) {
+        for (const a of l.anchors) {
+          glyphLine[a.g] = outLines.length
+          for (const mi of a.marks) glyphLine[mi] = outLines.length
+        }
+      }
       const fi = ip.fonts.get(l.font)
       outLines.push({
         start,
@@ -766,7 +778,8 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
     charQuad: Int32Array.from(charQuad),
     quads: qn === quads.length ? quads : quads.slice(0, qn),
     stats,
-    warnings: ip.warnings
+    warnings: ip.warnings,
+    ...(glyphLine ? { glyphLine } : {})
   }
 }
 

@@ -5,6 +5,9 @@ import { EditRefusedError } from './pdfcontent/write'
 import { applyTextEdit, type TextEditResult } from './pdfcontent/textEdit'
 import { isTextEditChanged, useTextEdit } from './state'
 
+/** Documents (and fonts) for which the reason for a bundled font was already shown. */
+const explained = new Set<string>()
+
 /**
  * Commits the open inline edit as one undo step ("Edit text"). On refusal or failure the document is left
  * unchanged and the editor stays open so the user can adjust the text.
@@ -35,7 +38,19 @@ export async function commitTextEdit(): Promise<void> {
       )
     })
     if (useTextEdit.getState().editing === ed) useTextEdit.getState().end()
-    if (result) notify(result.strategy === 'fallback-font' ? 'info' : 'success', result.message)
+    if (result) {
+      const r = result
+      if (r.why && r.family) {
+        // Existing right-to-left / complex-script text redrawn with a bundled font: explain why once per document
+        // and font, then only say which font drew it.
+        const key = `${ed.docId}\u0000${r.family}`
+        if (explained.has(key)) notify('success', `Edited — drawn with ${r.family}`)
+        else {
+          explained.add(key)
+          notify('info', `${r.message} (${r.why})`)
+        }
+      } else notify(r.strategy === 'fallback-font' ? 'info' : 'success', r.message)
+    }
   } catch (err) {
     const message = err instanceof EditRefusedError || err instanceof EditError ? err.message : `Couldn’t edit the text: ${errorMessage(err)}`
     notify('error', message)

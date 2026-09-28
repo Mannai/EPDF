@@ -54,7 +54,8 @@ function beginEditing(docId: string, pageIndex: number, b: TextBlock): void {
     bbox: b.bbox,
     firstLine: first.bbox,
     leading: b.leading,
-    lineCount: b.lines.length
+    lineCount: b.lines.length,
+    ...(b.logical ? { dir: b.logical.dir } : {})
   })
 }
 
@@ -162,9 +163,11 @@ function Editor({ ed, viewport, scale }: { ed: TextEditing; viewport: PageViewpo
     el.setSelectionRange(el.value.length, el.value.length)
   }, [])
 
+  // Right-to-left text grows to the left from the block's right edge, like the text it edits.
+  const rtl = ed.dir === 'rtl'
   const style: React.CSSProperties & { fieldSizing?: string } = {
     position: 'absolute',
-    left: box.left - 3,
+    ...(rtl ? { right: viewport.width - (box.left + box.width) - 3, textAlign: 'right' as const } : { left: box.left - 3 }),
     top: first.top + first.height / 2 - lineH / 2 - 1,
     minWidth: box.width + 8,
     width: 'max-content',
@@ -194,6 +197,7 @@ function Editor({ ed, viewport, scale }: { ed: TextEditing; viewport: PageViewpo
       aria-describedby="textedit-hint"
       className="pointer-events-auto"
       rows={rows}
+      dir={ed.dir ?? 'auto'}
       wrap="off"
       spellCheck={false}
       value={ed.text}

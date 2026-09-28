@@ -22,6 +22,8 @@ src/renderer/src/features/textedit/
     fonts.ts           decode strings to Unicode, glyph widths, "can this font encode this character?"
     analyze.ts         graphics + text state tracker; text runs, images, Form XObjects, resource inheritance
     blocks.ts          groups runs into line blocks and paragraph blocks (stable ids, editable flag + reason)
+    logical.ts         logical (reading-order) blocks for right-to-left / complex-script lines, from the page text model
+    logicalEdit.ts     replacing such a block: glyph removal + text engine, font choice (see "Right-to-left ..." below)
     textEdit.ts        the two commit strategies (below)
     imageEdit.ts       move / resize / delete / replace / add images
     write.ts           edit plans, resource additions, write-back of modified streams
@@ -98,6 +100,56 @@ src/shared/features/imageedit.ts       type of the channel's result
 Unexpected situations abort the edit and leave the document unchanged with a clear message (malformed streams,
 text objects without `ET`, shared forms, stale selections, unsupported characters, unreadable images).
 
+### Right-to-left and complex-script text (editing existing Arabic, Persian, Urdu, Hebrew, Indic ...)
+
+The editor's own line builder above reads text in content-stream order, which for these scripts is the *visual*
+order, often split into dozens of runs, with vowel marks on displaced baselines and letters whose Unicode value only
+the font program or an `/ActualText` span knows. Such lines are therefore read with the **page text model**
+(`src/shared/pagetext`, `docs/page-text.md`) and edited as the text a person reads:
+
+1. **Finding the line** (`logical.ts`). On a page with right-to-left / complex-script text (or `/ActualText`, or
+   glyphs without Unicode), the model is built from the same pdf-lib document with `glyphLines: true`, which reports
+   the logical line every glyph (and every mark attached to a base glyph) belongs to. Each editor glyph (a code at a
+   known byte offset of a `Tj`/`TJ`/`'`/`"` operand) is matched to the model's glyph drawn at the same origin
+   (0.12 pt, stream order breaks ties). Glyphs the model did not place (letter pieces drawn separately, undecodable
+   glyphs, orphan marks, fake-bold copies) go with the rest of their `/ActualText` span, else to the nearest baseline.
+   Every model line containing a right-to-left or complex-script character becomes a **logical line block**; lines
+   sharing a text operation with one join them. The editor's own blocks containing any of those operations are
+   replaced, so nothing is offered twice. Consecutive logical lines of one model block with the same direction and
+   size, a regular line pitch and a common edge form a **logical paragraph** (alignment detected: right, left, centre
+   or justified). Blocks carry the logical text, the direction, the glyphs they cover per operation, the dominant
+   font, size, colour, render mode and baseline.
+2. **Editing.** The inline editor shows the logical text with `dir="rtl"` (or `ltr` for a left-to-right line with an
+   Arabic word), right-aligned and anchored at the block's right edge for right-to-left text.
+3. **Committing** (`logicalEdit.ts`, one `editPdf` step "Edit text"):
+   * the block's glyphs are **removed from the content stream**: an operation that only draws the block is replaced by
+     the `[-n] TJ` that keeps the position for what follows (or dropped); an operation that also draws other text
+     (a table row drawn with one `TJ`) loses just those glyphs, the others keep their exact place (redaction's
+     `rewriteShow`); `/ActualText` / `/Alt` / `/E` around them are removed so no reader can extract the old words;
+   * the new text is drawn by the **text engine** (HarfBuzz shaping, bidi, `/ToUnicode` + `/ActualText`) in a
+     `q cm … Q` group after the last text object involved: same baseline, font size, colour (Gray/RGB/CMYK kept as
+     such; other colour spaces as RGB), render mode; a right-to-left line keeps its **right edge** (it grows to the
+     left), a left-to-right one its left edge; a paragraph is **re-wrapped** in its old width with its alignment and
+     its exact old line pitch (the engine's own CSS-like line boxes would drift when fonts are mixed, so baselines are
+     placed at the pitch); the ribbon's font size and colour apply as for other edits; an empty text deletes the line;
+   * **font**: the document's own embedded font program is reused when it can shape the new text by itself (TrueType
+     or OpenType program, licence bits allow editable embedding and subsetting, every character has a glyph with an
+     outline, a GSUB table for scripts that need substitution, and a dual-joining letter really takes its joined form).
+     Producer subsets (LibreOffice, Chromium/Edge/Skia, pdf-lib, Epdf's own engine) keep only the glyphs used and drop
+     the shaping tables, so in practice this happens with fully embedded fonts. Otherwise the closest **bundled** fonts
+     are used, per piece of text: letters of the script get the document font's family when Epdf has it (Noto Naskh /
+     Sans Arabic, Noto Sans Hebrew, Arial -> Liberation Sans, Times New Roman -> Liberation Serif), else **Noto Naskh
+     Arabic** for Naskh-like fonts (Arial, Times New Roman, Traditional/Simplified Arabic, Amiri, ...) or **Noto Sans
+     Arabic** for sans fonts (Tahoma, Segoe UI, Dubai, ...), Noto Nastaliq Urdu for Nastaliq fonts; digits, Latin and
+     punctuation get the family of the line's Latin text when Epdf has it, else Liberation Sans / Serif by style. The
+     first such edit in a document says so once — *"Font not available in this PDF — used Noto Naskh Arabic (the
+     document’s font only contains the letters the document used)"*; later ones only *"Edited — drawn with …"*.
+
+Refused (outlined dashed, with the reason): lines on rotated pages or rotated text, lines drawn partly in a form and
+partly on the page, shared forms, text objects without `ET`, characters no font can read (the line's text would be
+incomplete), and `/ActualText` spans that also cover text outside the block (a paragraph containing both lines is
+fine).
+
 ### Image operations
 
 * **Move/resize** edit the `cm` in front of the image (when the image is exactly `q … cm /Im Do Q`) or wrap the
@@ -128,7 +180,7 @@ signature (PNG/JPEG only, at most 40 MB) and returns `{ name, kind, bytes }`. Th
 | Rotated, skewed or mirrored text; any text on a page with `/Rotate` ≠ 0 | Shown as not editable ("rotate the page back to 0° first"). Images on rotated pages are supported. |
 | Text in a Form XObject that is drawn more than once or referenced from elsewhere | Refused (a change would alter every copy). Single-use forms are editable. Same for images in such forms. |
 | Marked content whose `/ActualText`/`/Alt` lives in a `/Properties` resource | Refused (cannot be rewritten in place). |
-| Right-to-left and complex scripts | Existing text is edited in the order it is stored in the content stream (visual order) — editing existing Arabic/Hebrew text properly is a separate project. **New** Arabic, Hebrew, Indic, Thai or CJK text is drawn by the text engine (shaped, correct order, extractable). Kerning/ligatures of the old font are not kept for it. |
+| Right-to-left and complex scripts | Existing lines and paragraphs are edited as logical text and redrawn by the text engine (above). The whole line (or paragraph) is redrawn, usually in a bundled Noto font, not only the changed word, so its look can change slightly next to untouched lines of the old font. The document's own font is only reused when its embedded program can shape the new text (rare for producer subsets). A rewritten paragraph that needs more lines grows downwards and can overlap what is below it; there is no reflow of the rest of the page. Tables drawn as one line are edited cell by cell only where the model splits them into lines. Lines with characters no font can read are refused. |
 | Colours other than DeviceGray/RGB/CMYK (ICC, Separation, patterns) | Replaced text is drawn in the closest DeviceRGB colour. In-place edits keep the original. |
 | Per-run styling inside one block | In-place edits keep it. Replace uses the first run's font/size/colour for the whole block. |
 | Kerning inside replaced text | Not kept (the new font's own advance widths are used). |
@@ -168,6 +220,10 @@ Other things to know:
 1. Open any PDF made by a word processor, **Edit text**, hover a line (outline), click it, change a word,
    Enter → "Edited using the document’s own font". Undo, Redo, Save, reopen: the word is changed and the old
    word cannot be found with search or by copying text.
+1a. Open an Arabic PDF (from Word, LibreOffice or a browser), **Edit text**, click an Arabic line: the editor shows
+   it as you read it, right to left. Change a word, Enter: the line is redrawn at the same place, right-aligned, in
+   the same size and colour ("Font not available in this PDF — used Noto Naskh Arabic (…)" the first time). Copy the
+   line in the viewer, search for the new word, Undo/Redo, Save and reopen.
 2. Type a character the document's font lacks (for example `Ω` in a Helvetica document) → "Font not available in
    this PDF — used Noto Sans" (or Helvetica for Latin-1 text).
 3. Change the size/colour in the ribbon while the editor is open, Apply.
@@ -188,3 +244,14 @@ Other things to know:
 * E2E (`tests/e2e/edit-content.spec.ts`): the UI flows above against fixtures from
   `tests/fixtures/edit-content.mjs`, always verifying the saved file with pdf-lib and PDF.js, plus axe scans
   (light and dark).
+* Right-to-left editing (`tests/unit/editcontent-rtl.test.ts`, read back with the page text model): every corpus line
+  of the LibreOffice, Chromium, text-engine and legacy presentation-form fixtures (`tests/fixtures/pagetext`) is one
+  editable block with its logical text; a dozen kinds of edits (word replaced, numbers/dates/Latin in brackets,
+  tashkeel, Arabic-Indic digits, lam-alef and punctuation, Latin words, a left-to-right line with an Arabic word,
+  Persian, Urdu, Hebrew with and without niqqud, Devanagari) read back exactly, the old line is gone (also from every
+  `/ActualText`), every other line is untouched; right edge / left edge, baseline and size kept; RGB, CMYK and gray
+  kept, ribbon size and colour applied; deletion; a `TJ` shared by two table cells; paragraphs re-wrapped in the old
+  width and pitch (three producers) and a two-column page; font reuse (full embedded font) and fallback (subsets);
+  live cross-checks with **headless Microsoft Edge** (Segoe UI, Tahoma, Arial, Times New Roman, colour, a
+  left-to-right line) and **LibreOffice** (skipped when not installed). E2E: `tests/e2e/edit-content-rtl.spec.ts`
+  (right-to-left editor anchored at the right edge, messages, undo/redo, save, paragraph scope, axe).

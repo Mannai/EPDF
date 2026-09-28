@@ -71,7 +71,7 @@ export const slotOf = (analysis: PageAnalysis, source: string, slot: number): St
  * dictionary that other pages may share: the source gets its own copy of its resources.
  * Returns the (unique) resource name that was assigned.
  */
-export function addResource(pdf: PDFDocument, src: ContentSource, category: 'Font' | 'XObject', prefix: string, ref: PDFRef): string {
+export function addResource(pdf: PDFDocument, src: ContentSource, category: 'Font' | 'XObject' | 'ExtGState', prefix: string, ref: PDFRef): string {
   const context = pdf.context
   let res = src.resourcesOverride
   if (!res) {
