@@ -272,9 +272,9 @@ export async function withSystemClipboard<T>(fn: () => Promise<T>, app?: Electro
     }
   }
   try {
-    // Start from an empty clipboard owned by the app under test, so what is read back can only come from this copy
-    // (on X11 a clipboard left by an app that has quit made the read-back unreliable).
-    if (app) await app.evaluate(({ clipboard }) => clipboard.writeText(''))
+    // Start from a marker owned by the app under test, so what is read back can only come from this copy (on X11 a
+    // clipboard left by an app that has quit made the read-back unreliable; an empty string doesn't take ownership).
+    if (app) await app.evaluate(({ clipboard }) => clipboard.writeText('epdf-e2e-clipboard-marker'))
     return await fn()
   } finally {
     rmSync(lock, { recursive: true, force: true })
