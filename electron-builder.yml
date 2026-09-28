@@ -1,6 +1,6 @@
 appId: com.epdf.app
 productName: Epdf
-copyright: Copyright © Epdf
+copyright: Copyright © 2026 Meshal AlMannai
 directories:
   buildResources: build
   output: dist
@@ -41,6 +41,12 @@ extraResources:
   - from: resources/ocr
     to: ocr
     filter: ['*.traineddata', '*.txt']
+  # License texts of every bundled package, font and WebAssembly module, written by `npm run build`
+  # (scripts/lib/notices.mjs). Help > Third-Party Notices opens it.
+  - from: out/THIRD-PARTY-NOTICES.txt
+    to: THIRD-PARTY-NOTICES.txt
+  - from: LICENSE.md
+    to: LICENSE.txt # .txt: Windows has no default app for .md
 
 # Native modules cannot be loaded from inside an asar archive. The OCR engine runs in worker threads that
 # tesseract.js starts from its own script file and that load the WebAssembly core from disk, so tesseract.js,
