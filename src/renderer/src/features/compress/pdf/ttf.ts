@@ -7,9 +7,7 @@
  * of composite glyphs (accented letters), are copied byte for byte.
  */
 
-// hdmx / VDMX / LTSH (per-size metrics) stay: FreeType uses them when it hints, so without them the pruned font
-// rendered a little differently on Linux than the original.
-const DROP = new Set(['GSUB', 'GPOS', 'GDEF', 'DSIG', 'kern', 'JSTF', 'BASE', 'MATH'])
+const DROP = new Set(['GSUB', 'GPOS', 'GDEF', 'DSIG', 'kern', 'JSTF', 'BASE', 'LTSH', 'hdmx', 'VDMX', 'MATH'])
 /** Colour / bitmap glyph tables: pruning outlines would break them, so such fonts are left alone. */
 const COLOUR = new Set(['COLR', 'CPAL', 'SVG ', 'sbix', 'CBDT', 'CBLC', 'EBDT', 'EBLC', 'EBSC', 'CFF ', 'CFF2', 'fvar', 'gvar'])
 
