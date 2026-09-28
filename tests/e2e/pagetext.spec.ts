@@ -86,7 +86,8 @@ test.describe('page text model in the app', () => {
         const item = byId(id)
         const li = lines.findIndex((t) => norm(t) === norm(item.text))
         await dragAcross(page, li, item.dir === 'rtl')
-        expect(norm(await selection(page)), id).toBe(norm(item.text))
+        // the model layer settles the selection just after mouse-up; what counts is where it settles
+        await expect.poll(async () => norm(await selection(page)), { message: id, timeout: 5000 }).toBe(norm(item.text))
       }
       // Copy: the clipboard receives the same logical string
       const date = byId('ar-date')
