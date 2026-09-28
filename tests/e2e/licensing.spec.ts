@@ -2,9 +2,9 @@ import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { launch } from './helpers'
 
-/** Help ▸ License and Help ▸ Third-Party Notices open the license texts that ship with the app. */
+/** Help ▸ License, Third-Party Notices and End User License Agreement open the texts that ship with the app. */
 
-test('Help ▸ License and Third-Party Notices open the license texts that ship with the app', async () => {
+test('Help ▸ License, Third-Party Notices and the EULA open the license texts that ship with the app', async () => {
   const { app, page } = await launch()
   try {
     await expect(page.getByRole('button', { name: 'File', exact: true })).toBeVisible()
@@ -13,7 +13,7 @@ test('Help ▸ License and Third-Party Notices open the license texts that ship 
       const paths: string[] = []
       shell.openPath = async (p: string) => (paths.push(p), '')
       const items = Menu.getApplicationMenu()!.items.find((m) => m.role === 'help')!.submenu!.items
-      for (const label of ['License', 'Third-Party Notices']) {
+      for (const label of ['License', 'Third-Party Notices', 'End User License Agreement']) {
         const item = items.find((i) => i.label === label)!
         if (!item.enabled) throw new Error(`${label} is disabled`)
         item.click()
@@ -21,7 +21,11 @@ test('Help ▸ License and Third-Party Notices open the license texts that ship 
       await new Promise((r) => setTimeout(r, 100))
       return paths
     })
-    expect(opened).toHaveLength(2)
+    expect(opened).toHaveLength(3)
+    // The agreement the installer asks the user to accept.
+    const eula = readFileSync(opened[2], 'utf8')
+    expect(eula).toContain('EPDF END USER LICENSE AGREEMENT')
+    expect(eula).toContain('laws of the Kingdom of Bahrain')
     const license = readFileSync(opened[0], 'utf8')
     expect(license).toContain('PolyForm Strict License 1.0.0')
     expect(license).toContain('Meshal AlMannai')

@@ -10,10 +10,9 @@ const isMac = process.platform === 'darwin'
 type Item = MenuItemConstructorOptions
 
 /** Opens a text file that ships next to the app (see extraResources); unpackaged runs use the build output. */
-async function openBundledText(name: 'LICENSE' | 'THIRD-PARTY-NOTICES'): Promise<void> {
-  const file = app.isPackaged
-    ? join(process.resourcesPath, `${name}.txt`)
-    : join(app.getAppPath(), name === 'LICENSE' ? 'LICENSE.md' : `out/${name}.txt`)
+async function openBundledText(name: 'LICENSE' | 'EULA' | 'THIRD-PARTY-NOTICES'): Promise<void> {
+  const dev = { LICENSE: 'LICENSE.md', EULA: 'build/license.txt', 'THIRD-PARTY-NOTICES': `out/${name}.txt` }
+  const file = app.isPackaged ? join(process.resourcesPath, `${name}.txt`) : join(app.getAppPath(), dev[name])
   const error = await shell.openPath(file)
   if (error) dialog.showErrorBox('Epdf', `Could not open ${name}.\n\n${error}`)
 }
@@ -232,6 +231,7 @@ export function installMenus(c: Controller): void {
       submenu: withContributions('Help', [
         ...(isMac ? [] : ([{ role: 'about' }, { type: 'separator' }] as Item[])),
         { label: `Epdf ${app.getVersion()}`, enabled: false },
+        { label: 'End User License Agreement', click: () => void openBundledText('EULA') },
         { label: 'License', click: () => void openBundledText('LICENSE') },
         { label: 'Third-Party Notices', click: () => void openBundledText('THIRD-PARTY-NOTICES') },
         { type: 'separator' },

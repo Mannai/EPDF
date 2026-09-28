@@ -4,6 +4,10 @@ The source code of Epdf and the Epdf installers are made available under the Pol
 reproduced below. For commercial use, redistribution or any other permission not granted here, contact
 support@epdf.ing for a separate license.
 
+Installing and using the Epdf application is also subject to the Epdf End User License Agreement (build/license.txt,
+shown by the installer and installed as EULA.txt). Where the two differ for the installed application, the End User
+License Agreement applies.
+
 # PolyForm Strict License 1.0.0
 
 <https://polyformproject.org/licenses/strict/1.0.0>

@@ -47,6 +47,8 @@ extraResources:
     to: THIRD-PARTY-NOTICES.txt
   - from: LICENSE.md
     to: LICENSE.txt # .txt: Windows has no default app for .md
+  - from: build/license.txt
+    to: EULA.txt
 
 # Native modules cannot be loaded from inside an asar archive. The OCR engine runs in worker threads that
 # tesseract.js starts from its own script file and that load the WebAssembly core from disk, so tesseract.js,
@@ -107,6 +109,9 @@ nsis:
   deleteAppDataOnUninstall: false # user data (settings, library index, signatures) survives an uninstall
   include: build/installer.nsh # Explorer right-click entries ("Convert to PDF", "Combine files")
   # One installer in several languages: it starts in the language of Windows (no picker), Arabic is right-to-left.
+  # The end user license agreement: a page the user must accept ("I Agree") before anything is installed. The same
+  # text ships as EULA.txt (Help > End User License Agreement). English in every installer language (English prevails).
+  license: build/license.txt
   multiLanguageInstaller: true
   installerLanguages: [en_US, ar_SA, fr_FR, de_DE, es_ES]
   displayLanguageSelector: false

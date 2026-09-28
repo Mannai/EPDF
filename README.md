@@ -193,6 +193,9 @@ published under the [PolyForm Strict License 1.0.0](LICENSE.md).
 
 For a commercial license or any other permission, contact support@epdf.ing.
 
+Installing Epdf also means accepting its [End User License Agreement](build/license.txt): the installer shows it and
+installs nothing until you click **I Agree**. It ships with the app (**Help ▸ End User License Agreement**).
+
 Third-party components keep their own licenses; their full texts ship with Epdf in `THIRD-PARTY-NOTICES.txt`
 (**Help ▸ Third-Party Notices**). See also
 [Licensing and self-containment](docs/DEVELOPMENT.md#licensing-and-self-containment).

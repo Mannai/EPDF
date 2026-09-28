@@ -1,0 +1,117 @@
+EPDF END USER LICENSE AGREEMENT
+
+Version 1.0, 28 September 2026
+
+Please read this agreement carefully. It is a legal agreement between you and Meshal AlMannai ("the Licensor", "we", "us"), the owner of Epdf. By clicking "I Agree", or by installing, copying or using Epdf, you agree to be bound by this agreement. If you do not agree, click "Cancel", do not install Epdf, and delete any copy you have. If you accept this agreement for an organization, you confirm that you have the authority to bind it, and "you" means that organization.
+
+1. DEFINITIONS
+
+"Software" means the Epdf application in object-code form, its installers, updates, language and data files supplied by us, and its documentation.
+
+"Your Documents" means the files you open, create or change with the Software.
+
+"Commercial Use" means any use for, or on behalf of, a business or other for-profit activity, including use by an employee or contractor in the course of their work, and any use intended to earn money or other commercial advantage.
+
+2. LICENSE
+
+2.1 Subject to your compliance with this agreement, we grant you a personal, limited, non-exclusive, non-transferable, non-sublicensable and revocable license to install and use the Software on computers you own or control, for personal and noncommercial purposes only.
+
+2.2 Noncommercial use by a charitable organization, educational institution, public research organization, public safety or health organization, or government institution is permitted.
+
+2.3 Commercial Use is not licensed under this agreement. It requires a separate written license from the Licensor. To ask for one, write to support@epdf.ing.
+
+2.4 The Software is licensed, not sold. We reserve all rights not expressly granted to you in this agreement.
+
+3. RESTRICTIONS
+
+Except as expressly allowed by this agreement or by a law that cannot be excluded by contract, you must not, and must not allow anyone else to:
+
+(a) copy the Software, except for installing it as allowed above and making one backup copy;
+(b) sell, resell, rent, lease, lend, distribute, publish, sublicense, transfer or otherwise make the Software available to anyone else, including as a hosted, online or network service;
+(c) modify, adapt, translate or create derivative works of the Software;
+(d) reverse engineer, decompile, disassemble or otherwise attempt to obtain the source code, structure, algorithms or ideas of the Software;
+(e) remove, alter or hide any copyright, trademark, license or other notice in or on the Software;
+(f) bypass, disable or interfere with any license check, security or technical protection of the Software;
+(g) use the Software, or any part or knowledge of it, to build, train or improve a competing product or service;
+(h) use the Software in breach of any law or regulation, or to infringe the rights of anyone else.
+
+4. OWNERSHIP AND TRADEMARKS
+
+The Software, including all copies, updates and parts of it, and all intellectual property rights in it, are and remain the exclusive property of the Licensor. "Epdf", the Epdf logo and related names and designs are trademarks of the Licensor. This agreement gives you no right to use them.
+
+5. BETA SOFTWARE
+
+This version of the Software is a pre-release ("beta") version. It may contain errors, may not work as described, and may cause the loss or corruption of data. It is provided for evaluation. Keep backup copies of Your Documents before you open or change them with the Software. We may change, suspend or stop the Software, or any feature of it, at any time, and a beta version may stop working after a later version is released.
+
+6. YOUR DOCUMENTS AND PRIVACY
+
+6.1 You keep all rights in Your Documents. We claim no ownership of them.
+
+6.2 The Software works on your computer. It does not send Your Documents to us or to anyone else. It connects to the internet only when you ask it to download optional language data, and to check for updates (which you can turn off).
+
+6.3 You alone are responsible for Your Documents and for how you use the results of the Software, including checking every result before you rely on it, share it or file it. In particular, you are responsible for confirming that redacted content has been removed, that converted, compressed, edited or recognized (OCR) documents are correct and complete, and that password protection meets your needs. Signatures made with the Software are visual marks, not certified digital signatures, and may not be accepted as legally binding in every place or for every purpose.
+
+7. THIRD-PARTY COMPONENTS
+
+The Software includes components, fonts and data made by third parties, which are licensed to you under their own license terms. Those terms are listed in the file THIRD-PARTY-NOTICES.txt installed with the Software (Help > Third-Party Notices). Nothing in this agreement limits the rights those licenses give you in those components.
+
+8. UPDATES
+
+We may, but do not have to, provide updates. Updates are part of the Software and are governed by this agreement unless they come with a different agreement, which then applies. The Software asks before it downloads or installs an update.
+
+9. FEEDBACK
+
+If you send us ideas, suggestions or other feedback about the Software, we may use them freely, without any obligation or payment to you.
+
+10. TERMINATION
+
+10.1 This agreement applies until it ends. It ends automatically, without notice, if you breach any of its terms. We may also end it at any time by notice to you.
+
+10.2 When it ends, you must stop using the Software and uninstall and delete all copies of it.
+
+10.3 Sections 3, 4, 6.3, 9, 11, 12, 13, 15 and 16 continue to apply after this agreement ends.
+
+11. DISCLAIMER OF WARRANTIES
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITH ALL FAULTS AND WITHOUT WARRANTY OF ANY KIND. THE LICENSOR EXPRESSLY DISCLAIMS ALL WARRANTIES AND CONDITIONS, WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING ANY WARRANTY OF MERCHANTABILITY, SATISFACTORY QUALITY, FITNESS FOR A PARTICULAR PURPOSE, ACCURACY, QUIET ENJOYMENT, TITLE AND NON-INFRINGEMENT, AND ANY WARRANTY THAT THE SOFTWARE WILL BE ERROR-FREE, SECURE OR UNINTERRUPTED, OR THAT IT WILL KEEP YOUR DOCUMENTS OR DATA SAFE. NO ADVICE OR INFORMATION, WHETHER ORAL OR WRITTEN, CREATES ANY WARRANTY NOT EXPRESSLY STATED IN THIS AGREEMENT.
+
+12. LIMITATION OF LIABILITY
+
+12.1 TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT WILL THE LICENSOR BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY OR PUNITIVE DAMAGES, OR FOR ANY LOSS OF DATA, DOCUMENTS, PROFITS, REVENUE, BUSINESS, GOODWILL OR ANTICIPATED SAVINGS, OR THE COST OF SUBSTITUTE GOODS OR SERVICES, ARISING OUT OF OR IN CONNECTION WITH THIS AGREEMENT OR THE SOFTWARE, HOWEVER CAUSED AND UNDER ANY THEORY OF LIABILITY, EVEN IF THE LICENSOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+12.2 TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSOR'S TOTAL LIABILITY FOR ALL CLAIMS ARISING OUT OF OR IN CONNECTION WITH THIS AGREEMENT OR THE SOFTWARE WILL NOT EXCEED THE GREATER OF (A) THE AMOUNT YOU PAID FOR THE SOFTWARE IN THE TWELVE (12) MONTHS BEFORE THE CLAIM AROSE, AND (B) TEN UNITED STATES DOLLARS (USD 10).
+
+12.3 Some laws do not allow certain warranties or liabilities to be excluded or limited. In that case, the exclusions and limits above apply only to the extent those laws allow, and nothing in this agreement limits any right you have that cannot lawfully be limited.
+
+13. INDEMNITY
+
+To the extent permitted by law, you will defend, indemnify and hold harmless the Licensor from and against any claims, losses, damages, liabilities, costs and expenses (including reasonable legal fees) arising out of your breach of this agreement, your misuse of the Software, or Your Documents.
+
+14. EXPORT AND SANCTIONS
+
+You must comply with all export control and sanctions laws that apply to the Software and to your use of it. You must not use, export or re-export the Software in breach of those laws.
+
+15. GOVERNING LAW AND DISPUTES
+
+This agreement, and any dispute or claim arising out of or in connection with it or the Software, is governed by the laws of the Kingdom of Bahrain. The courts of the Kingdom of Bahrain have exclusive jurisdiction over any such dispute or claim, and you submit to that jurisdiction. The Licensor may nevertheless seek urgent or injunctive relief to protect its intellectual property in any court of competent jurisdiction.
+
+16. GENERAL
+
+16.1 This agreement is the entire agreement between you and the Licensor about the Software and replaces any earlier understanding about it. A separate written license signed by the Licensor, if you have one, takes precedence where it differs.
+
+16.2 If any provision of this agreement is found invalid or unenforceable, it will be enforced to the maximum extent possible, and the other provisions remain in full force.
+
+16.3 A failure or delay by the Licensor in enforcing any right is not a waiver of that right.
+
+16.4 You may not assign or transfer this agreement or any of your rights under it. The Licensor may assign or transfer this agreement, for example to a company that takes over the Software.
+
+16.5 We may change this agreement for future versions of the Software. The version that comes with a version of the Software applies to that version.
+
+16.6 This agreement is written in English. If it is translated, the English version prevails.
+
+17. CONTACT
+
+Meshal AlMannai
+support@epdf.ing
+
+Copyright (c) 2026 Meshal AlMannai. All rights reserved.
