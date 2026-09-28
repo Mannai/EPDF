@@ -1,4 +1,5 @@
-// Generates the placeholder app icon (build/icon.png, 1024x1024): a plain page glyph on a blue tile.
+// Generates the placeholder app icon (build/icon.png, 1024x1024): a plain page glyph on a blue tile, plus the
+// Windows (build/icon.ico) and macOS (build/icon.icns) icon files made from it.
 // Dependency-free PNG encoder. Replace build/icon.png with real artwork when branding exists.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { deflateSync } from 'node:zlib'
@@ -126,3 +127,21 @@ const dir = sizes.map((s, i) => {
 })
 writeFileSync('build/icon.ico', Buffer.concat([header, ...dir, ...images]))
 console.log('wrote build/icon.ico')
+
+// macOS icon (app, Dock, Finder and the PDF document icon): PNG entries in the types iconutil writes for a full
+// iconset, 16 to 512 pt at 1x and 2x.
+const icnsTypes = [['icp4', 16], ['icp5', 32], ['ic11', 32], ['ic12', 64], ['ic07', 128], ['ic13', 256], ['ic08', 256], ['ic14', 512], ['ic09', 512], ['ic10', 1024]]
+const pngOf = new Map()
+const entries = icnsTypes.map(([type, size]) => {
+  if (!pngOf.has(size)) pngOf.set(size, size === N ? encodePng(px, N) : encodePng(downscale(size), size))
+  const data = pngOf.get(size)
+  const head = Buffer.alloc(8)
+  head.write(type, 0, 'latin1')
+  head.writeUInt32BE(8 + data.length, 4)
+  return Buffer.concat([head, data])
+})
+const icnsHead = Buffer.alloc(8)
+icnsHead.write('icns', 0, 'latin1')
+icnsHead.writeUInt32BE(8 + entries.reduce((n, e) => n + e.length, 0), 4)
+writeFileSync('build/icon.icns', Buffer.concat([icnsHead, ...entries]))
+console.log('wrote build/icon.icns')
