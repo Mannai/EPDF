@@ -117,6 +117,13 @@ nsis:
   displayLanguageSelector: false
   runAfterFinish: true
   artifactName: Epdf-Setup-${version}.${ext} # no spaces: friendlier in update URLs and download links
+  # Branding: the Epdf icon on the setup and uninstaller files, a sidebar picture on the welcome and finish pages
+  # (164 x 314) and a header picture on the inner pages (150 x 57); 24-bit BMPs, as NSIS requires.
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerSidebar: build/installerSidebar.bmp
+  uninstallerSidebar: build/installerSidebar.bmp
+  installerHeader: build/installerHeader.bmp
 
 msi:
   artifactName: Epdf-${version}.${ext}
