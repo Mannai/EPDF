@@ -4,6 +4,49 @@ import { Modal } from '../../components/Modal'
 import { useJobs } from '../../state/jobs'
 import { blocker, scopeOf, useOcrUi } from './store'
 
+/** "Detect turned pages": needs the optional page orientation data, downloaded (and removed) like a language. */
+function OrientationOption(): JSX.Element {
+  const s = useOcrUi()
+  const dl = useJobs((j) => Object.values(j.jobs).find((x) => x.kind === 'ocr:download' && x.state === 'running'))
+  const o = s.orientation!
+  const downloading = s.download?.language === o.code
+  const pct = downloading && dl ? Math.round(dl.progress * 100) : 0
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1" data-lang={o.code}>
+      <label className="flex items-center gap-2">
+        <input type="checkbox" className="accent-accent" checked={!!s.prefs.orient} onChange={(e) => s.setPref('orient', e.target.checked)} />
+        Detect turned pages (sideways or upside down)
+      </label>
+      <span className="flex shrink-0 items-center gap-2 text-sm">
+        {downloading ? (
+          <>
+            <span role="status" className="text-ink-muted">
+              Downloading… {pct}%
+            </span>
+            <button type="button" className="btn h-7 px-2 text-xs" onClick={s.download!.cancel}>
+              Cancel<span className="sr-only"> download of the page orientation data</span>
+            </button>
+          </>
+        ) : o.installed ? (
+          <>
+            <span className="text-ink-muted">Downloaded</span>
+            <button type="button" className="btn h-7 px-2 text-xs" onClick={() => void s.removeLanguage(o.code)}>
+              Remove<span className="sr-only"> page orientation data</span>
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="text-ink-muted">Needs a download · {formatBytes(o.size)}</span>
+            <button type="button" className="btn h-7 px-2 text-xs" disabled={!!s.download} onClick={() => void s.downloadLanguage(o.code)}>
+              Download<span className="sr-only"> page orientation data ({formatBytes(o.size)})</span>
+            </button>
+          </>
+        )}
+      </span>
+    </div>
+  )
+}
+
 /** "Recognize Text (OCR)…": pages, languages (with on-demand downloads), options. */
 export function OcrDialog(): JSX.Element | null {
   const s = useOcrUi()
@@ -63,7 +106,7 @@ export function OcrDialog(): JSX.Element | null {
       <fieldset className="mb-3">
         <legend className="mb-1 text-sm font-medium">Languages</legend>
         <p id={`${uid}-lang-help`} className="mb-1 text-sm text-ink-muted">
-          Choose up to {MAX_LANGUAGES_PER_RUN}. English is built in; others are downloaded once from the official Tesseract repository (1 to 6 MB) and then work offline.
+          Choose up to {MAX_LANGUAGES_PER_RUN}. English is built in; others are downloaded once from the official Tesseract repository (up to 6 MB) and then work offline.
         </p>
         <ul aria-describedby={`${uid}-lang-help`} data-testid="ocr-languages" className="max-h-40 divide-y divide-line overflow-y-auto rounded-md border border-line">
           {s.languages.map((l) => {
@@ -144,10 +187,11 @@ export function OcrDialog(): JSX.Element | null {
           <input type="checkbox" className="accent-accent" checked={s.prefs.deskew} onChange={(e) => s.setPref('deskew', e.target.checked)} />
           Straighten tilted pages
         </label>
-        <label className="flex items-center gap-2">
+        <label className="mb-1 flex items-center gap-2">
           <input type="checkbox" className="accent-accent" checked={s.prefs.force} onChange={(e) => s.setPref('force', e.target.checked)} />
           Recognize pages that already contain text
         </label>
+        {s.orientation && <OrientationOption />}
       </fieldset>
 
       {why && !rangeError && (

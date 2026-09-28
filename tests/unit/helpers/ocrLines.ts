@@ -57,14 +57,13 @@ export function scannedLine(spec: LineSpec): OcrLine {
   const isMark = (c: string): boolean => /^\p{M}+$/u.test(c)
   // x of every character (marks sit on their base: no advance of their own)
   const xOf = new Map<number, [number, number]>()
-  let advanceCount = chars.filter((c) => !isMark(c)).length
-  let x = dir === 'rtl' ? spec.edge - advanceCount * charW : spec.edge
+  const advancing = chars.filter((c) => !isMark(c)).length
+  let x = dir === 'rtl' ? spec.edge - advancing * charW : spec.edge
   for (const cp of visualCp) {
     if (isMark(chars[cp])) continue
     xOf.set(cp, [x, x + charW])
     x += charW
   }
-  advanceCount = 0
   chars.forEach((c, i) => {
     if (!isMark(c)) return
     let b = i - 1

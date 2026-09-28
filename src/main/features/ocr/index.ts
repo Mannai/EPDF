@@ -6,11 +6,13 @@ import {
   BeginRequestSchema,
   DownloadJobSchema,
   EndRequestSchema,
-  findLanguage,
+  findPack,
   formatBytes,
   LanguagesRequestSchema,
   OCR_CHANNELS,
   OCR_JOBS,
+  OrientationRequestSchema,
+  OSD_PACK,
   RemoveLanguageRequestSchema,
   RunJobSchema,
   sanitizePrefs,
@@ -18,13 +20,15 @@ import {
   TESSDATA_BASE_URL,
   type BeginResponse,
   type LanguagesResponse,
-  type OcrPageResult
+  type OcrPageResult,
+  type OrientationResult
 } from '../../../shared/features/ocr'
 import { commandItem, contributeMenu } from '../../menu/contributions'
 import type { MainContext } from '../api'
 import { registerFeatureChannel } from '../api'
 import { downloadLanguage } from './download'
 import { LanguageStore } from './languages'
+import { OrientationDetector } from './orientation'
 import { runOcrJob } from './runJob'
 import { SessionRegistry } from './session'
 
@@ -60,6 +64,7 @@ export function register(ctx: MainContext): void {
   // ---- languages & preferences ------------------------------------------------------------------------
   const languagesResponse = async (): Promise<LanguagesResponse> => ({
     languages: await store.list(),
+    orientation: await store.status(OSD_PACK.code),
     prefs: sanitizePrefs(kv.get('prefs', null))
   })
   registerFeatureChannel(OCR_CHANNELS.languages, LanguagesRequestSchema, () => languagesResponse())
@@ -74,7 +79,7 @@ export function register(ctx: MainContext): void {
   // ---- downloading a language pack --------------------------------------------------------------------
   const downloading = new Set<string>()
   ctx.jobs.register(OCR_JOBS.download, 'Downloading language data', DownloadJobSchema, async ({ language }, job) => {
-    const lang = findLanguage(language)!
+    const lang = findPack(language)!
     if (lang.bundled) throw new Error(`${lang.name} is part of Epdf; there is nothing to download.`)
     if (downloading.has(language)) throw new Error(`${lang.name} is already being downloaded.`)
     downloading.add(language)
@@ -99,9 +104,10 @@ export function register(ctx: MainContext): void {
   })
 
   // ---- recognition ------------------------------------------------------------------------------------
-  registerFeatureChannel(OCR_CHANNELS.begin, BeginRequestSchema, async ({ languages, total, mayRetry }): Promise<BeginResponse> => {
+  registerFeatureChannel(OCR_CHANNELS.begin, BeginRequestSchema, async ({ languages, total, mayRetry, orient }): Promise<BeginResponse> => {
     for (const code of languages) await store.verify(code) // fail early, with a clear message, before any page is drawn
-    const s = sessions.create(languages, total, mayRetry === true)
+    if (orient) await store.verify(OSD_PACK.code)
+    const s = sessions.create(languages, total, mayRetry === true, orient === true)
     return { sessionId: s.id, parallel: workerCount(total) }
   })
 
@@ -109,6 +115,19 @@ export function register(ctx: MainContext): void {
     const s = sessions.get(sessionId)
     if (!s) throw new Error('This recognition run is no longer active.')
     return s.add(index, image, retry === true)
+  })
+
+  // Page orientation of one picture, with the run's detector (started on first use, stopped when the run ends).
+  registerFeatureChannel(OCR_CHANNELS.orientation, OrientationRequestSchema, async ({ sessionId, image }): Promise<OrientationResult> => {
+    const s = sessions.get(sessionId)
+    if (!s || s.isClosed) throw new Error('This recognition run is no longer active.')
+    if (!s.orient) throw new Error('This recognition run did not ask for page orientation.')
+    if (!s.detector) {
+      s.detector = OrientationDetector.create(store, app.getPath('temp'))
+      const d = s.detector
+      s.onClose(async () => (await d.catch(() => null))?.terminate())
+    }
+    return (await s.detector).detect(image)
   })
 
   registerFeatureChannel(OCR_CHANNELS.end, EndRequestSchema, ({ sessionId }) => {

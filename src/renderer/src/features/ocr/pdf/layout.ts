@@ -19,10 +19,18 @@ export interface PageGeometry {
   /** [x0, y0, x1, y1] of the visible box in user space (x0 < x1, y0 < y1). */
   view: [number, number, number, number]
   rotate: Rotation
+  /**
+   * The picture was drawn turned a further `turn` degrees clockwise (the page was scanned turned or upside down and
+   * orientation detection straightened it). The page itself is not changed.
+   */
+  turn?: Rotation
   /** Size of the recognized picture in pixels. */
   width: number
   height: number
 }
+
+/** Rotation of the recognized picture relative to the page's user space. */
+const pictureRotation = (g: PageGeometry): Rotation => normalizeRotation(g.rotate + (g.turn ?? 0))
 
 /** Any angle (e.g. -90, 450) as 0/90/180/270. Non-multiples of 90 snap to the nearest. */
 export function normalizeRotation(angle: number): Rotation {
@@ -33,7 +41,7 @@ export function normalizeRotation(angle: number): Rotation {
 /** Picture pixels per user-space unit. */
 export function pixelsPerUnit(g: PageGeometry): number {
   const [x0, y0, x1, y1] = g.view
-  const unitsAcross = g.rotate % 180 === 0 ? x1 - x0 : y1 - y0
+  const unitsAcross = pictureRotation(g) % 180 === 0 ? x1 - x0 : y1 - y0
   return g.width / unitsAcross
 }
 
@@ -46,7 +54,7 @@ export interface Point {
 export function pixelToUser(g: PageGeometry, px: number, py: number): Point {
   const [x0, y0, x1, y1] = g.view
   const s = pixelsPerUnit(g)
-  switch (g.rotate) {
+  switch (pictureRotation(g)) {
     case 0:
       return { x: x0 + px / s, y: y1 - py / s }
     case 90:

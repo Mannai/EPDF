@@ -31,8 +31,13 @@ export class OcrSession {
     readonly languages: string[],
     readonly total: number,
     /** Second pictures of pages may follow the last page: only `end()` finishes the run. */
-    readonly mayRetry = false
+    readonly mayRetry = false,
+    /** The run may ask for page orientation (the orientation data was verified at the start). */
+    readonly orient = false
   ) {}
+
+  /** The run's orientation detector, started on first use (see index.ts). */
+  detector: Promise<import('./orientation').OrientationDetector> | null = null
 
   get hasQueued(): boolean {
     return this.queue.length > 0
@@ -72,12 +77,28 @@ export class OcrSession {
   end(): void {
     this.ended = true
     this.flush(new Error('This recognition run has ended.'))
+    this.dispose()
   }
 
   /** Abnormal end: every waiting `add` rejects with `err`. */
   fail(err: Error): void {
     this.closed ??= err
     this.flush(err)
+    this.dispose()
+  }
+
+  private cleanups: (() => Promise<void>)[] = []
+
+  /** Runs `fn` (once) when the run ends, however it ends; at once if it already has. */
+  onClose(fn: () => Promise<void>): void {
+    if (this.isClosed) void fn().catch(() => undefined)
+    else this.cleanups.push(fn)
+  }
+
+  private dispose(): void {
+    const fns = this.cleanups
+    this.cleanups = []
+    for (const fn of fns) void fn().catch(() => undefined)
   }
 
   private flush(err: Error): void {
@@ -93,7 +114,7 @@ export class OcrSession {
 export class SessionRegistry {
   private sessions = new Map<string, { session: OcrSession; created: number }>()
 
-  create(languages: string[], total: number, mayRetry = false): OcrSession {
+  create(languages: string[], total: number, mayRetry = false, orient = false): OcrSession {
     const now = Date.now()
     for (const [id, s] of this.sessions) {
       if (now - s.created > 3600_000) {
@@ -101,7 +122,7 @@ export class SessionRegistry {
         this.sessions.delete(id)
       }
     }
-    const session = new OcrSession(languages, total, mayRetry)
+    const session = new OcrSession(languages, total, mayRetry, orient)
     this.sessions.set(session.id, { session, created: now })
     return session
   }

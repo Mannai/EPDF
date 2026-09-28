@@ -49,12 +49,41 @@ export const OCR_LANGUAGES: readonly OcrLanguage[] = [
   { code: 'hin', name: 'Hindi', nativeName: 'हिन्दी', size: 1122751, sha256: '4c73ffc59d497c186b19d1e90f5d721d678ea6b2e277b719bee4e2af12271825', bundled: false }
 ]
 
+/**
+ * Tesseract's orientation and script detection data (`osd.traineddata` from the same tessdata_fast commit, 10.1 MB,
+ * Apache-2.0; it runs on Tesseract's legacy engine, which tesseract.js ships). Optional: downloaded like a language
+ * when the user turns on "Detect turned pages", never needed otherwise. Not a recognition language.
+ */
+export const OSD_PACK: OcrLanguage = {
+  code: 'osd',
+  name: 'Page orientation',
+  nativeName: 'Page orientation',
+  size: 10562727,
+  sha256: '9cf5d576fcc47564f11265841e5ca839001e7e6f38ff7f7aacf46d15a96b00ff',
+  bundled: false
+}
+
+/** "The German language data" / "The page orientation data" (for messages). */
+export const packData = (l: OcrLanguage): string => (l.code === OSD_PACK.code ? 'page orientation data' : `${l.name} language data`)
+
+/** A downloadable data file: a recognition language or the orientation data. */
+export const findPack = (code: string): OcrLanguage | undefined => findLanguage(code) ?? (code === OSD_PACK.code ? OSD_PACK : undefined)
+
+/**
+ * Orientation found with less confidence than this (Tesseract's orientation confidence) is not acted on. Measured on
+ * the right-to-left scan fixtures turned by 90/180/270 degrees: 6.7 to 12.1 for correct answers; pages with too little
+ * text give no answer at all.
+ */
+export const ORIENTATION_CONFIDENCE = 2.5
+
 export const DEFAULT_LANGUAGES = ['eng']
 export const MAX_LANGUAGES_PER_RUN = 4
 
 export const findLanguage = (code: string): OcrLanguage | undefined => OCR_LANGUAGES.find((l) => l.code === code)
 
 export const LanguageCodeSchema = z.string().refine((c) => !!findLanguage(c), 'Unsupported language')
+/** A language or the orientation data (downloads, removal). */
+export const PackCodeSchema = z.string().refine((c) => !!findPack(c), 'Unsupported language')
 
 export const LanguageListSchema = z.array(LanguageCodeSchema).min(1, 'Choose at least one language').max(MAX_LANGUAGES_PER_RUN, `Choose at most ${MAX_LANGUAGES_PER_RUN} languages`)
 
@@ -92,11 +121,13 @@ export const OcrPrefsSchema = z.object({
   dpi: z.number().int().min(72).max(600),
   contrast: z.boolean(),
   deskew: z.boolean(),
-  force: z.boolean()
+  force: z.boolean(),
+  /** Detect pages scanned turned or upside down (needs the orientation data, OSD_PACK). */
+  orient: z.boolean().optional()
 })
 export type OcrPrefs = z.infer<typeof OcrPrefsSchema>
 
-export const DEFAULT_PREFS: OcrPrefs = { languages: [...DEFAULT_LANGUAGES], dpi: 300, contrast: true, deskew: true, force: false }
+export const DEFAULT_PREFS: OcrPrefs = { languages: [...DEFAULT_LANGUAGES], dpi: 300, contrast: true, deskew: true, force: false, orient: false }
 
 /** Reads whatever was stored and returns valid preferences (unknown fields dropped, bad values defaulted). */
 export function sanitizePrefs(raw: unknown): OcrPrefs {
@@ -107,7 +138,8 @@ export function sanitizePrefs(raw: unknown): OcrPrefs {
     dpi,
     contrast: typeof r.contrast === 'boolean' ? r.contrast : DEFAULT_PREFS.contrast,
     deskew: typeof r.deskew === 'boolean' ? r.deskew : DEFAULT_PREFS.deskew,
-    force: typeof r.force === 'boolean' ? r.force : DEFAULT_PREFS.force
+    force: typeof r.force === 'boolean' ? r.force : DEFAULT_PREFS.force,
+    orient: typeof r.orient === 'boolean' ? r.orient : false
   }
 }
 
@@ -119,6 +151,7 @@ export const OCR_CHANNELS = {
   removeLanguage: 'ocr:removeLanguage',
   begin: 'ocr:begin',
   addPage: 'ocr:addPage',
+  orientation: 'ocr:orientation',
   end: 'ocr:end'
 } as const
 
@@ -133,8 +166,13 @@ export const BeginRequestSchema = z.object({
   languages: LanguageListSchema,
   total: z.number().int().min(1).max(100000),
   /** The renderer may send second pictures (`retry`): the run then ends only when the renderer says so. */
-  mayRetry: z.boolean().optional()
+  mayRetry: z.boolean().optional(),
+  /** The run asks for page orientation (`ocr:orientation`): the orientation data must be installed. */
+  orient: z.boolean().optional()
 })
+export const OrientationRequestSchema = z.object({ sessionId: SessionIdSchema, image: BytesSchema })
+/** How far to turn the picture clockwise to make its text upright, or null when Tesseract has no confident answer. */
+export type OrientationResult = { degrees: 0 | 90 | 180 | 270; confidence: number } | null
 export const AddPageRequestSchema = z.object({
   sessionId: SessionIdSchema,
   index: z.number().int().min(0).max(100000),
@@ -145,8 +183,8 @@ export const AddPageRequestSchema = z.object({
 })
 export const EndRequestSchema = z.object({ sessionId: SessionIdSchema })
 export const RunJobSchema = z.object({ sessionId: SessionIdSchema })
-export const DownloadJobSchema = z.object({ language: LanguageCodeSchema })
-export const RemoveLanguageRequestSchema = z.object({ language: LanguageCodeSchema })
+export const DownloadJobSchema = z.object({ language: PackCodeSchema })
+export const RemoveLanguageRequestSchema = z.object({ language: PackCodeSchema })
 export const LanguagesRequestSchema = z.object({})
 export const SetPrefsRequestSchema = OcrPrefsSchema
 
@@ -155,6 +193,8 @@ export interface LanguageStatus extends OcrLanguage {
 }
 export interface LanguagesResponse {
   languages: LanguageStatus[]
+  /** The orientation data (OSD_PACK) and whether it is installed. */
+  orientation: LanguageStatus
   prefs: OcrPrefs
 }
 export interface BeginResponse {

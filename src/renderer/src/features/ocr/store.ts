@@ -28,6 +28,8 @@ interface OcrUi {
   scopeMode: PageScope['mode']
   rangeText: string
   languages: LanguageStatus[]
+  /** The optional page orientation data (OSD_PACK). */
+  orientation: LanguageStatus | null
   prefs: OcrPrefs
   loading: boolean
   loadError: string | null
@@ -53,6 +55,7 @@ export const useOcrUi = create<OcrUi>((set, get) => ({
   scopeMode: 'all',
   rangeText: '',
   languages: [],
+  orientation: null,
   prefs: DEFAULT_PREFS,
   loading: false,
   loadError: null,
@@ -63,7 +66,7 @@ export const useOcrUi = create<OcrUi>((set, get) => ({
     set({ open: true, docId, numPages, currentPage, scopeMode: 'all', rangeText: '', loading: true, loadError: null, downloadError: null })
     try {
       const r = await window.epdf.call<LanguagesResponse>(OCR_CHANNELS.languages, {})
-      set({ languages: r.languages, prefs: r.prefs, loading: false })
+      set({ languages: r.languages, orientation: r.orientation ?? null, prefs: r.prefs, loading: false })
     } catch (err) {
       set({ loading: false, loadError: clean(err) })
     }
@@ -93,7 +96,7 @@ export const useOcrUi = create<OcrUi>((set, get) => ({
     try {
       await handle.promise
       const r = await window.epdf.call<LanguagesResponse>(OCR_CHANNELS.languages, {})
-      set({ languages: r.languages })
+      set({ languages: r.languages, orientation: r.orientation ?? null })
     } catch (err) {
       if (!(err instanceof JobCancelledError)) set({ downloadError: clean(err) })
     } finally {
@@ -104,7 +107,11 @@ export const useOcrUi = create<OcrUi>((set, get) => ({
   removeLanguage: async (code) => {
     try {
       const r = await window.epdf.call<LanguagesResponse>(OCR_CHANNELS.removeLanguage, { language: code })
-      set((s) => ({ languages: r.languages, prefs: { ...s.prefs, languages: s.prefs.languages.filter((c) => c !== code).length ? s.prefs.languages.filter((c) => c !== code) : ['eng'] } }))
+      set((s) => ({
+        languages: r.languages,
+        orientation: r.orientation ?? null,
+        prefs: { ...s.prefs, languages: s.prefs.languages.filter((c) => c !== code).length ? s.prefs.languages.filter((c) => c !== code) : ['eng'] }
+      }))
     } catch (err) {
       set({ downloadError: clean(err) })
     }
@@ -138,6 +145,7 @@ export function blocker(s: OcrUi): string | null {
   if (s.prefs.languages.length === 0) return 'Choose at least one language.'
   const missing = s.prefs.languages.map((c) => s.languages.find((l) => l.code === c)).filter((l) => l && !l.installed)
   if (missing.length) return `Download ${missing.map((l) => l!.name).join(', ')} before recognizing.`
+  if (s.prefs.orient && s.orientation && !s.orientation.installed) return 'Download the page orientation data before recognizing, or turn off “Detect turned pages”.'
   if (s.download) return 'Wait for the download to finish.'
   return null
 }

@@ -26,7 +26,10 @@ const h = vi.hoisted(() => {
     /** confidence of the first picture of a page, and of the binarised second one */
     confidence: 85,
     retryConfidence: 90,
-    released: 0
+    released: 0,
+    renders: [] as [number, number][],
+    /** what ocr:orientation answers, per page */
+    orientation: new Map<number, { degrees: number; confidence: number } | null>()
   }
   class JobCancelledError extends Error {
     constructor() {
@@ -72,11 +75,12 @@ vi.mock('../../src/renderer/src/features/ocr/render', () => ({
     return { numPages, getPage: async (n: number) => ({ n }), loadingTask: { destroy: async () => undefined } }
   },
   pageHasText: async (p: { n: number }) => h.state.textPages.has(p.n - 1),
-  renderPage: async (p: { n: number }) => {
+  renderPage: async (p: { n: number }, _prefs: unknown, turn = 0) => {
     if (h.state.renderThrows.has(p.n - 1)) throw new Error('bad picture')
+    h.state.renders.push([p.n - 1, turn])
     return {
-      png: new Uint8Array([1, 2, 3]),
-      geometry: { view: [0, 0, 612, 792], rotate: 0, width: 1700, height: 2200 },
+      png: new Uint8Array([1, 2, 3 + turn / 90]),
+      geometry: { view: [0, 0, 612, 792], rotate: 0, width: turn % 180 ? 2200 : 1700, height: turn % 180 ? 1700 : 2200, ...(turn ? { turn } : {}) },
       alternative: { png: async () => new Uint8Array([9, 9, 9]), release: () => void h.state.released++ }
     }
   }
@@ -111,7 +115,9 @@ beforeEach(() => {
     onAddPage: undefined,
     confidence: 85,
     retryConfidence: 90,
-    released: 0
+    released: 0,
+    renders: [],
+    orientation: new Map()
   })
   ;(globalThis as unknown as { window: unknown }).window = {
     epdf: {
@@ -120,6 +126,13 @@ beforeEach(() => {
         if (channel === 'ocr:begin') {
           if (payload.languages?.includes('deu')) throw new Error("Error invoking remote method 'feature:call': Error: The German language data is not installed. Download it first.")
           return { sessionId: 'session-12345', parallel: 2 }
+        }
+        if (channel === 'ocr:orientation') {
+          const png = (payload as unknown as { image: Uint8Array }).image
+          // the fake picture of page n (turn 0) is [1, 2, 3]: answer from the map by the order of calls
+          void png
+          const calls = h.state.calls.filter((c) => c.channel === 'ocr:orientation').length - 1
+          return h.state.orientation.get(calls) ?? { degrees: 0, confidence: 9 }
         }
         if (channel === 'ocr:addPage') {
           h.state.onAddPage?.()
@@ -188,6 +201,29 @@ describe('runOcr', () => {
     h.state.lines = [{ ...(goodLines()[0] as object), words: [{ text: 'first', x0: 200, y0: 270, x1: 340, y1: 307, conf: 50 }] }]
     await run([0])
     expect(h.state.calls.filter((c) => c.channel === 'ocr:addPage')).toHaveLength(2)
+  })
+
+  it('page orientation: a page found turned is drawn again the right way up and recognized that way', async () => {
+    h.state.bytes = await createScan3()
+    h.state.orientation.set(1, { degrees: 270, confidence: 7 }) // the second page asked about is sideways
+    h.state.orientation.set(2, null) // the third: no confident answer
+    const out = await run([0, 1, 2], { prefs: { dpi: 300, contrast: true, deskew: true, force: false, orient: true } })
+    expect(h.state.calls.find((c) => c.channel === 'ocr:begin')!.payload).toMatchObject({ orient: true })
+    expect(h.state.calls.filter((c) => c.channel === 'ocr:orientation')).toHaveLength(3)
+    const turnedPage = h.state.renders.find(([, t]) => t === 270)![0]
+    expect(h.state.renders.filter(([, t]) => t !== 0)).toEqual([[turnedPage, 270]])
+    // the turned picture is the one recognized
+    const images = h.state.calls.filter((c) => c.channel === 'ocr:addPage').map((c) => [...(c.payload as { image: Uint8Array }).image])
+    expect(images).toContainEqual([1, 2, 6])
+    expect(out).toMatchObject({ status: 'done', pages: 3, turned: [turnedPage] })
+    expect(h.state.toasts.at(-1)!.message).toContain('1 page was scanned turned and read the right way up.')
+  })
+
+  it('without "Detect turned pages" no orientation is asked for', async () => {
+    h.state.bytes = await createScan1()
+    await run([0])
+    expect(h.state.calls.filter((c) => c.channel === 'ocr:orientation')).toHaveLength(0)
+    expect(h.state.calls.find((c) => c.channel === 'ocr:begin')!.payload).not.toHaveProperty('orient')
   })
 
   it('without "Improve contrast" nothing is recognized twice, and main is told no second pictures will come', async () => {

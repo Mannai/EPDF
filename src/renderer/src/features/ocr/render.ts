@@ -1,7 +1,7 @@
 import * as pdfjs from 'pdfjs-dist'
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist'
 import { REAL_TEXT_MIN_CHARS } from '@shared/features/ocr'
-import { normalizeRotation, type PageGeometry } from './pdf/layout'
+import { normalizeRotation, type PageGeometry, type Rotation } from './pdf/layout'
 import { autoContrast, binarize, estimateSkew, grayToRgba, scaleFor, shouldDeskew, toGrayscale } from './pixels'
 
 /**
@@ -58,9 +58,11 @@ const toPng = (canvas: HTMLCanvasElement): Promise<Uint8Array> =>
     )
   )
 
-export async function renderPage(page: PDFPageProxy, opts: RenderOptions): Promise<RenderedPage> {
-  const base = page.getViewport({ scale: 1 })
-  const viewport = page.getViewport({ scale: scaleFor(base.width, base.height, opts.dpi) })
+/** `turn`: draw the page turned a further 0/90/180/270 degrees clockwise (a page scanned turned, see flow.ts). */
+export async function renderPage(page: PDFPageProxy, opts: RenderOptions, turn: Rotation = 0): Promise<RenderedPage> {
+  const rotation = (page.rotate + turn) % 360
+  const base = page.getViewport({ scale: 1, rotation })
+  const viewport = page.getViewport({ scale: scaleFor(base.width, base.height, opts.dpi), rotation })
   const width = Math.max(1, Math.round(viewport.width))
   const height = Math.max(1, Math.round(viewport.height))
   const canvas = document.createElement('canvas')
@@ -73,7 +75,7 @@ export async function renderPage(page: PDFPageProxy, opts: RenderOptions): Promi
   await page.render({ canvasContext: ctx, canvas, viewport, intent: 'print', annotationMode: pdfjs.AnnotationMode.DISABLE, background: 'rgb(255,255,255)' }).promise
 
   const view = page.view as [number, number, number, number]
-  const geometry: PageGeometry = { view, rotate: normalizeRotation(page.rotate), width, height }
+  const geometry: PageGeometry = { view, rotate: normalizeRotation(page.rotate), width, height, ...(turn ? { turn } : {}) }
   let deskew: RenderedPage['deskew'] = undefined
 
   if (opts.contrast || opts.deskew) {

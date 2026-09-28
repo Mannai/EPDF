@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { copyFile, mkdir, readdir, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { findLanguage, OCR_LANGUAGES, type LanguageStatus, type OcrLanguage } from '../../../shared/features/ocr'
+import { findPack as findLanguage, OCR_LANGUAGES, packData, type LanguageStatus, type OcrLanguage } from '../../../shared/features/ocr'
 
 /**
  * Where trained-data files live and how they are trusted. `eng` ships inside the app (`bundledDir`);
@@ -60,15 +60,22 @@ export class LanguageStore {
     return Promise.all(OCR_LANGUAGES.map(async (l) => ({ ...l, installed: await this.isInstalled(l.code) })))
   }
 
+  /** One pack (a language or the orientation data) with its install state. */
+  async status(code: string): Promise<LanguageStatus> {
+    const lang = findLanguage(code)
+    if (!lang) throw new Error(`Unsupported language: ${code}`)
+    return { ...lang, installed: await this.isInstalled(code) }
+  }
+
   /** Throws a user-presentable error unless the file exists and matches its pinned hash. */
   async verify(code: string): Promise<string> {
     const lang = findLanguage(code)
     if (!lang) throw new Error(`Unsupported language: ${code}`)
     const path = this.pathOf(code)
-    if (!(await this.isInstalled(code))) throw new Error(`The ${lang.name} language data is not installed. Download it first.`)
+    if (!(await this.isInstalled(code))) throw new Error(`The ${packData(lang)} is not installed. Download it first.`)
     const actual = await sha256File(path)
     if (actual !== this.expectedHash(lang)) {
-      throw new Error(`The ${lang.name} language data on disk is damaged or has been modified, so it was not used. Remove it and download it again.`)
+      throw new Error(`The ${packData(lang)} on disk is damaged or has been modified, so it was not used. Remove it and download it again.`)
     }
     return path
   }

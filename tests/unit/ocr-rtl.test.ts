@@ -4,11 +4,12 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import type { OcrLine, OcrWord } from '../../src/shared/features/ocr'
 import { buildPageText, rangeBoxes, type PageTextModel } from '../../src/shared/pagetext'
 import { findNormalized } from '../../src/shared/text/search'
-import { applyOcrLayers, embedGlyphlessFont, harmonizeSizes, keptWords, visibleBox } from '../../src/renderer/src/features/ocr/pdf/apply'
+import { applyOcrLayers, dropMarginSpecks, embedGlyphlessFont, harmonizeSizes, keptWords, visibleBox } from '../../src/renderer/src/features/ocr/pdf/apply'
 import { visualLine } from '../../src/renderer/src/features/ocr/pdf/bidi'
 import { Charset } from '../../src/renderer/src/features/ocr/pdf/charset'
 import { normalizeRotation, pageSlopes, pixelToUser, type PageGeometry, type PlacedLine } from '../../src/renderer/src/features/ocr/pdf/layout'
 import { collectChars, separateWords } from '../../src/renderer/src/features/ocr/pdf/textLayer'
+import { interpretOsd } from '../../src/main/features/ocr/orientation'
 import { searchDocument } from '../../src/renderer/src/features/redact/logic/search'
 import { DEFAULT_OPTIONS, redactDocument } from '../../src/renderer/src/features/redact/logic/redact'
 import { createScan1, createScanRotated } from '../fixtures/ocr.mjs'
@@ -157,6 +158,17 @@ describe('placing the words of a line', () => {
     expect(keptWords(line).map((x) => x.text)).toEqual(['شركة', '0', '.', 'ش'])
   })
 
+  it('specks in the margin read as "0" or "." are dropped; numbers in the text stay', () => {
+    const w = (text: string, x0: number, x1: number, conf = 70): OcrWord => ({ text, conf, x0, x1, y0: 100, y1: 150 })
+    // an Arabic line from x 600 to 1500, with a "0" of dust far to its left and a real number inside it
+    const words = [w('0', 90, 110), w('.', 150, 160), w('شكرا', 600, 700, 90), w('10', 720, 760, 80), w('لكم', 780, 900, 90), w('جميعا', 920, 1500, 90)]
+    expect(dropMarginSpecks(words, 50).map((x) => x.text)).toEqual(['شكرا', '10', 'لكم', 'جميعا'])
+    // close to the text, or confidently read, or long: kept
+    expect(dropMarginSpecks([w('0', 540, 560), ...words.slice(2)], 50)).toHaveLength(5)
+    expect(dropMarginSpecks([w('7', 90, 110, 97), ...words.slice(2)], 50)).toHaveLength(5)
+    expect(dropMarginSpecks([w('2026', 90, 190), ...words.slice(2)], 50)).toHaveLength(5)
+  })
+
   it('lines of the body text share one size; headings keep theirs', () => {
     const l = (fontSize: number, n = 4): PlacedLine => ({ ...place([]), fontSize, words: Array.from({ length: n }, (_, i) => ({ text: 'x', offset: i * 10, width: 5, conf: 90 })) })
     const lines = [l(24, 2), l(13), l(16), l(12.5), l(20)]
@@ -289,6 +301,32 @@ describe('right-to-left layers on rotated and tilted pages', () => {
     l.words[3].conf = 5 // "كبير" is dropped: a gap of a whole word
     const bytes = await ocrPdf([l])
     expect(linesOf(await modelOf(bytes))).toEqual(['تم تحويل مبلغ إلى حساب الشركة'])
+  })
+})
+
+describe('page orientation', () => {
+  it("reads Tesseract's answer: the clockwise turn that makes the page upright, only when confident", () => {
+    expect(interpretOsd({ orientation_degrees: 270, orientation_confidence: 6.8 })).toEqual({ degrees: 270, confidence: 6.8 })
+    expect(interpretOsd({ orientation_degrees: 90, orientation_confidence: 1.2 })).toBeNull() // not sure: leave the page alone
+    expect(interpretOsd({ orientation_degrees: 0, orientation_confidence: 0.4 })).toEqual({ degrees: 0, confidence: 0.4 })
+    expect(interpretOsd({ orientation_degrees: null, orientation_confidence: null })).toBeNull() // too little text
+    expect(interpretOsd(undefined)).toBeNull()
+  })
+
+  it('a picture drawn turned maps back like a page with that much more /Rotate', () => {
+    const a = pixelToUser({ view: [0, 0, 612, 792], rotate: 90, turn: 180, width: 1700, height: 2200 }, 100, 200)
+    const b = pixelToUser({ view: [0, 0, 612, 792], rotate: 270, width: 1700, height: 2200 }, 100, 200)
+    expect(a).toEqual(b)
+  })
+
+  it.each([90, 180, 270] as const)('a page scanned turned by %i degrees, recognized the right way up: the layer reads in order', async (turn) => {
+    // the picture was drawn turned so the text is upright in it; the page itself is still the sideways scan
+    const size: [number, number] = turn % 180 ? [2200, 1700] : [1700, 2200]
+    const pdf = await PDFDocument.load(await createScan1())
+    const page = pdf.getPage(0)
+    applyOcrLayers(pdf, [{ pageIndex: 0, geometry: { ...geometryOf(page, size[0], size[1]), turn }, lines: scannedPage(SAMPLES.slice(0, 4), { right: size[0] - 200 }) }])
+    expect(geometryOf(page, 1, 1).rotate).toBe(0) // the page is not rotated by recognition
+    expect(linesOf(await modelOf(await pdf.save()))).toEqual(SAMPLES.slice(0, 4).map(norm))
   })
 })
 

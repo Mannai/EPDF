@@ -7,7 +7,8 @@ import {
   type BeginResponse,
   type OcrLine,
   type OcrPageResult,
-  type OcrPrefs
+  type OcrPrefs,
+  type OrientationResult
 } from '@shared/features/ocr'
 import { currentBytes, editPdf, ensureEditable, useEdits } from '../../edit/session'
 import { JobCancelledError, startJob } from '../../state/jobs'
@@ -27,7 +28,7 @@ export interface OcrRunOptions {
   /** 0-based pages to recognize, or 'all' (resolved from the document itself, so it works right after opening). */
   pages: number[] | 'all'
   languages: string[]
-  prefs: Pick<OcrPrefs, 'dpi' | 'contrast' | 'deskew' | 'force'>
+  prefs: Pick<OcrPrefs, 'dpi' | 'contrast' | 'deskew' | 'force' | 'orient'>
   /** No success toast (callers such as Scanning show their own feedback). Errors are still reported. */
   silent?: boolean
 }
@@ -39,8 +40,13 @@ export interface OcrOutcome {
   confidence: number
   skippedWithText: number
   failedPages: number[]
+  /** Pages found turned or upside down (orientation detection) and recognized the right way up. */
+  turned?: number[]
   message?: string
 }
+
+/** A page whose first recognition took longer than this (queueing included) is not recognized a second time. */
+export const RETRY_MAX_MS = 30_000
 
 const running = new Set<string>()
 export const isOcrRunning = (docId: string): boolean => running.has(docId)
@@ -52,8 +58,9 @@ export const clean = (err: unknown): string => errorMessage(err).replace(/^Error
 
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`
 
-export function summaryMessage(o: Pick<OcrOutcome, 'pages' | 'words' | 'confidence' | 'skippedWithText' | 'failedPages'>): string {
+export function summaryMessage(o: Pick<OcrOutcome, 'pages' | 'words' | 'confidence' | 'skippedWithText' | 'failedPages' | 'turned'>): string {
   let m = `Recognized ${plural(o.pages, 'page')}, ${plural(o.words, 'word')}, average confidence ${Math.round(o.confidence)}%.`
+  if (o.turned?.length) m += ` ${plural(o.turned.length, 'page was', 'pages were')} scanned turned and read the right way up.`
   if (o.skippedWithText) m += ` ${plural(o.skippedWithText, 'page')} already had text and ${o.skippedWithText === 1 ? 'was' : 'were'} skipped.`
   if (o.failedPages.length) m += ` ${plural(o.failedPages.length, 'page')} could not be read.`
   return m
@@ -104,7 +111,12 @@ export async function runOcr(opts: OcrRunOptions): Promise<OcrOutcome> {
 
     let begin: BeginResponse
     try {
-      begin = await window.epdf.call<BeginResponse>(OCR_CHANNELS.begin, { languages: opts.languages, total: todo.length, mayRetry: opts.prefs.contrast })
+      begin = await window.epdf.call<BeginResponse>(OCR_CHANNELS.begin, {
+        languages: opts.languages,
+        total: todo.length,
+        mayRetry: opts.prefs.contrast,
+        ...(opts.prefs.orient ? { orient: true } : {})
+      })
     } catch (err) {
       const m = clean(err)
       notify('error', m)
@@ -120,13 +132,15 @@ export async function runOcr(opts: OcrRunOptions): Promise<OcrOutcome> {
 
     const results = new Map<number, OcrPageResult>()
     const geometry = new Map<number, PageOcr>()
+    const turned = new Set<number>()
     const inflight: Promise<void>[] = []
     const depth = Math.max(1, begin.parallel) + 1
 
     const send = async (pageIndex: number): Promise<void> => {
       let rendered: Awaited<ReturnType<typeof renderPage>>
+      let page: Awaited<ReturnType<PDFDocumentProxy['getPage']>>
       try {
-        const page = await pdfDoc!.getPage(pageIndex + 1)
+        page = await pdfDoc!.getPage(pageIndex + 1)
         rendered = await renderPage(page, opts.prefs)
       } catch (err) {
         // One page that PDF.js cannot draw must not sink the whole run.
@@ -136,9 +150,24 @@ export async function runOcr(opts: OcrRunOptions): Promise<OcrOutcome> {
       const sid = sessionId!
       let r: OcrPageResult
       try {
+        // A page scanned turned or upside down: draw it again the right way up (the page itself is not changed).
+        if (opts.prefs.orient) {
+          const o = await window.epdf.call<OrientationResult>(OCR_CHANNELS.orientation, { sessionId: sid, image: rendered.png })
+          if (o && o.degrees !== 0) {
+            const upright = await renderPage(page, opts.prefs, o.degrees).catch(() => null)
+            if (upright) {
+              rendered.alternative?.release()
+              rendered = upright
+              turned.add(pageIndex)
+            }
+          }
+        }
+        const t0 = performance.now()
         r = await window.epdf.call<OcrPageResult>(OCR_CHANNELS.addPage, { sessionId: sid, index: pageIndex, image: rendered.png })
         // Unsure about the page (noise, uneven lighting): try once more on the binarised picture, keep the better one.
-        if (opts.prefs.contrast && r.ok && rendered.alternative && r.confidence < RETRY_CONFIDENCE && !state.error) {
+        // Not when the first pass was already very slow (Tesseract reading noise as text): it would only double that.
+        const slow = performance.now() - t0 > RETRY_MAX_MS
+        if (opts.prefs.contrast && r.ok && rendered.alternative && r.confidence < RETRY_CONFIDENCE && !slow && !state.error) {
           const image = await rendered.alternative.png()
           const again = await window.epdf.call<OcrPageResult>(OCR_CHANNELS.addPage, { sessionId: sid, index: pageIndex, image, retry: true })
           if (again.ok && again.confidence > r.confidence) r = again
@@ -219,7 +248,8 @@ export async function runOcr(opts: OcrRunOptions): Promise<OcrOutcome> {
       words: a.words,
       confidence: a.confidence,
       skippedWithText,
-      failedPages: [...failedPages, ...a.skipped.map((s) => s.pageIndex)]
+      failedPages: [...failedPages, ...a.skipped.map((s) => s.pageIndex)],
+      turned: [...turned].filter((i) => a.pages.includes(i)).sort((x, y) => x - y)
     }
     if (!opts.silent) notify('success', summaryMessage(outcome))
     if (a.skipped.length) notify('info', `${plural(a.skipped.length, 'page')} changed while text was being recognized and ${a.skipped.length === 1 ? 'was' : 'were'} left as they are.`)

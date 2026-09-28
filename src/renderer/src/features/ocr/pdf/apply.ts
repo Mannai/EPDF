@@ -64,7 +64,7 @@ const ONLY_MARKS = /^[\p{M}\p{Cf}]+$/u
 export function keptWords(line: OcrLine, minConfidence = MIN_WORD_CONFIDENCE): OcrLine['words'] {
   const heights = line.words.map((w) => w.y1 - w.y0).sort((a, b) => a - b)
   const median = heights[heights.length >> 1] ?? 0
-  return line.words.filter((w) => {
+  const kept = line.words.filter((w) => {
     if (w.conf < minConfidence) return false
     const text = w.text.trim()
     if (!text || ONLY_MARKS.test(text)) return false
@@ -72,6 +72,46 @@ export function keptWords(line: OcrLine, minConfidence = MIN_WORD_CONFIDENCE): O
     if (!HAS_LETTER_OR_DIGIT.test(text)) return false
     return !(median > 0 && w.y1 - w.y0 < 0.2 * median)
   })
+  return dropMarginSpecks(kept, line.rowHeight > 0 ? line.rowHeight : median)
+}
+
+/** A "word" of at most this many characters, without letters, can be a speck read as a digit or a dot. */
+const SPECK_CHARS = 3
+const SPECK = /^[\p{N}\p{P}\p{S}]+$/u
+
+/**
+ * Specks in the margin: Tesseract adds dust beside a line to the line as "0", "1", "." or "'", often with a fair
+ * confidence. A short word without letters at either end of a line, much further from the rest than the words are
+ * from each other (more than 2.5 line heights and 4 times the usual gap), is dropped. Real numbers inside text and
+ * numbers set apart in a table column (usually long, or confidently read) stay.
+ */
+export function dropMarginSpecks(words: OcrLine['words'], em: number): OcrLine['words'] {
+  if (words.length < 3 || !(em > 0)) return words
+  const byX = [...words].sort((a, b) => a.x0 - b.x0)
+  const gaps: number[] = []
+  for (let i = 1; i < byX.length; i++) gaps.push(Math.max(0, byX[i].x0 - byX[i - 1].x1))
+  const sorted = [...gaps].sort((a, b) => a - b)
+  const usual = sorted[sorted.length >> 1] ?? 0
+  const far = (gap: number): boolean => gap > 2.5 * em && gap > 4 * usual
+  const speck = (w: OcrLine['words'][number]): boolean => {
+    const t = w.text.trim()
+    return [...t].length <= SPECK_CHARS && SPECK.test(t) && w.conf < 95
+  }
+  // a few specks together (dust rarely comes alone) beyond one wide gap, at either end
+  const MAX_SPECKS = 3
+  let a = 0
+  for (let k = 1; k <= MAX_SPECKS && k < byX.length - 1; k++) {
+    if (!speck(byX[k - 1])) break
+    if (far(byX[k].x0 - byX[k - 1].x1)) a = k
+  }
+  let z = byX.length
+  for (let k = 1; k <= MAX_SPECKS && byX.length - k > a + 1; k++) {
+    if (!speck(byX[byX.length - k])) break
+    if (far(byX[byX.length - k].x0 - byX[byX.length - k - 1].x1)) z = byX.length - k
+  }
+  if (a === 0 && z === byX.length) return words
+  const keep = new Set(byX.slice(a, z))
+  return words.filter((w) => keep.has(w))
 }
 
 /** Lines whose size is within this factor of the page's body size are written at the body size. */
