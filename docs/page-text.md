@@ -168,7 +168,7 @@ documents.
   PDF.js's viewport and Chromium's layout.
 - **Heuristics**: line grouping (baseline tolerance 0.4 em), column splitting (gaps ≥ 1.25 em, or ≥ 0.5 em with a
   stream jump), spaces from gaps (0.16 em), block grouping and XY-cut reading order, paragraph direction by
-  strong-letter majority, mark attachment without a font program, the ranking of ambiguous bidi readings. Tables,
+  strong-letter majority, mark attachment without a font program, the ranking of ambiguous bidi readings. Simple tables (side-by-side columns of short cells sharing baselines) are read row by row with tab-separated cells, right to left in RTL tables (`readingSequence` in build.ts; cells that wrap onto several lines become extra rows). Other tables,
   sidebars and complex magazine layouts may be read in a different order than a human would.
 - **Ambiguity**: when several logical texts display identically, the model returns the reader's order, which can
   differ from what was typed: `42 PDF` typed in an Arabic sentence is displayed, and copied, as `PDF 42`; a phone

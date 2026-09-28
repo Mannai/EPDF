@@ -9,6 +9,7 @@ import { runCompare } from '../../src/renderer/src/features/compare/diff/engine'
 import { extractPage } from '../../src/renderer/src/features/compare/extract'
 import { exportDocument } from '../../src/renderer/src/features/export/run'
 import { extractText } from '../../src/main/features/library/extract'
+import { foldIndexText } from '../../src/shared/features/library/text'
 import { searchDocument } from '../../src/renderer/src/features/redact/logic/search'
 import { DEFAULT_OPTIONS, redactDocument } from '../../src/renderer/src/features/redact/logic/redact'
 import { verifyRedaction } from '../../src/renderer/src/features/redact/logic/verify'
@@ -77,7 +78,8 @@ describe('library indexing', () => {
     const r = await extractText({ path: p, knownHash: null, maxPages: 10, assets: TEST_ASSETS })
     expect(r.kind).toBe('indexed')
     const text = r.kind === 'indexed' ? r.texts[0].text : ''
-    for (const id of ['ar-hello', 'ar-date', 'ar-indic-digits', 'he', 'fa']) expect(text, id).toContain(norm(byId(id)).normalize('NFKC'))
+    // (The index holds the search folding: Arabic-Indic digits as 0-9, no tashkeel, one alef; see foldIndexText.)
+    for (const id of ['ar-hello', 'ar-date', 'ar-indic-digits', 'he', 'fa']) expect(text, id).toContain(foldIndexText(norm(byId(id)).normalize('NFKC')))
   })
 })
 

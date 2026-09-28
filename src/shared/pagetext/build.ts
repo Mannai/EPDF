@@ -729,6 +729,10 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
   const orderedBlocks: number[] = []
   for (const [, list] of frameOrder) orderedBlocks.push(...xyCut(list, pageRtl).map((b) => b.id))
 
+  // 8b. tables: side-by-side blocks whose short lines share baselines are read row by row (cells in reading order,
+  // separated by tabs, so a copied table pastes into a spreadsheet as one), not column after column.
+  const sequence = readingSequence(orderedBlocks, byBlock, pageRtl)
+
   // 9. assemble
   let text = ''
   const charQuad: number[] = []
@@ -740,11 +744,10 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
   const glyphLine = opts.glyphLines ? new Int32Array(glyphs.length).fill(-1) : undefined
   let blockIndex = -1
   let lastBlock = -1
-  for (const bid of orderedBlocks) {
-    const ls = byBlock.get(bid)!
-    for (const l of ls) {
+  for (const { line: l, sep, block: bid } of sequence) {
+    {
       if (text) {
-        text += '\n'
+        text += sep
         charQuad.push(-1)
       }
       if (bid !== lastBlock) {
@@ -815,6 +818,88 @@ export function modelFromInterpretation(ip: Interpretation, pageIndex: number, o
     warnings: ip.warnings,
     ...(glyphLine ? { glyphLine } : {})
   }
+}
+
+interface SeqLine {
+  s0: number
+  s1: number
+  t: number
+  size: number
+  text: string
+  dir: 0 | 1
+}
+
+/**
+ * The lines in reading order, with the separator that goes before each. Runs of adjacent blocks (in XY-cut order)
+ * that lie side by side and look like table columns are merged into rows:
+ *   - at least two blocks, each with at least two lines, whose vertical extents overlap;
+ *   - short lines (on average at most five words: cells, not running text, so two columns of prose are left alone);
+ *   - most lines of every block share a baseline (within 0.35 em) with a line of another block of the run.
+ * Rows go top to bottom; the cells of a row right to left when the run is right-to-left text, else left to right.
+ */
+function readingSequence<L extends SeqLine>(orderedBlocks: number[], byBlock: Map<number, L[]>, pageRtl: boolean): { line: L; sep: '\n' | '\t'; block: number }[] {
+  const out: { line: L; sep: '\n' | '\t'; block: number }[] = []
+  const ext = (ls: L[]) => ({
+    s0: Math.min(...ls.map((l) => l.s0)),
+    s1: Math.max(...ls.map((l) => l.s1)),
+    t0: Math.min(...ls.map((l) => l.t - l.size)),
+    t1: Math.max(...ls.map((l) => l.t))
+  })
+  const words = (t: string): number => t.split(/\s+/).filter(Boolean).length
+  let i = 0
+  while (i < orderedBlocks.length) {
+    // grow a run of side-by-side blocks
+    let j = i + 1
+    const first = byBlock.get(orderedBlocks[i])!
+    let box = ext(first)
+    while (j < orderedBlocks.length) {
+      const b = ext(byBlock.get(orderedBlocks[j])!)
+      const vOverlap = Math.min(box.t1, b.t1) - Math.max(box.t0, b.t0)
+      const hOverlap = Math.min(box.s1, b.s1) - Math.max(box.s0, b.s0)
+      if (vOverlap <= 0.5 * Math.min(box.t1 - box.t0, b.t1 - b.t0) || hOverlap > 0) break
+      box = { s0: Math.min(box.s0, b.s0), s1: Math.max(box.s1, b.s1), t0: Math.min(box.t0, b.t0), t1: Math.max(box.t1, b.t1) }
+      j++
+    }
+    const run = orderedBlocks.slice(i, j)
+    const table = run.length >= 2 ? tableRows(run, byBlock, words) : null
+    if (table) {
+      const rtl = pageRtl || run.reduce((n, b) => n + byBlock.get(b)!.filter((l) => l.dir === 1).length, 0) * 2 > run.reduce((n, b) => n + byBlock.get(b)!.length, 0)
+      for (const row of table) {
+        row.sort((a, b) => (rtl ? b.s1 - a.s1 : a.s0 - b.s0))
+        row.forEach((l, k) => out.push({ line: l, sep: k === 0 ? '\n' : '\t', block: run[0] }))
+      }
+      i = j
+    } else {
+      for (const l of byBlock.get(orderedBlocks[i])!) out.push({ line: l, sep: '\n', block: orderedBlocks[i] })
+      i++
+    }
+  }
+  return out
+}
+
+/** The rows of a run of blocks when it is a table (see readingSequence), else null. */
+function tableRows<L extends SeqLine>(run: number[], byBlock: Map<number, L[]>, words: (t: string) => number): L[][] | null {
+  const all: { l: L; b: number }[] = []
+  for (const b of run) {
+    const ls = byBlock.get(b)!
+    if (ls.length < 2) return null
+    for (const l of ls) all.push({ l, b })
+  }
+  if (all.reduce((n, x) => n + words(x.l.text), 0) / all.length > 5) return null
+  // rows: lines of different blocks on the same baseline
+  all.sort((a, b) => a.l.t - b.l.t)
+  const rows: { t: number; size: number; items: { l: L; b: number }[] }[] = []
+  for (const x of all) {
+    const row = rows.find((r) => Math.abs(r.t - x.l.t) <= 0.35 * Math.max(r.size, x.l.size) && !r.items.some((y) => y.b === x.b))
+    if (row) row.items.push(x)
+    else rows.push({ t: x.l.t, size: x.l.size, items: [x] })
+  }
+  for (const b of run) {
+    const mine = rows.filter((r) => r.items.some((x) => x.b === b))
+    const shared = mine.filter((r) => r.items.length >= 2).length
+    if (shared < 0.7 * mine.length) return null
+  }
+  return rows.sort((a, b) => a.t - b.t).map((r) => r.items.map((x) => x.l))
 }
 
 interface XyBox {

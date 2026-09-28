@@ -39,6 +39,32 @@ async function expectText(bytes: Uint8Array, expected: string[], name: string): 
   await compareWithPdfjs(name, bytes, expected)
 }
 
+describe('tables (Edge, HTML tables with borders)', () => {
+  // Read row by row, cells in reading order separated by tabs (pastes into a spreadsheet), not column after column.
+  it('a right-to-left table: the rightmost cell first in each row', async () => {
+    const [m] = await modelsOf(fixtureBytes('edge-table-rtl.pdf'))
+    expect(m.text.split('\n')).toEqual([
+      'جدول الأسعار للربع الأول',
+      'المنتج\tالكمية\tالسعر',
+      'تفاح أحمر\t12\t4.500 دينار',
+      'برتقال\t30\t2.250 دينار',
+      'موز من الإكوادور\t7\t1.100 دينار',
+      'نهاية الجدول'
+    ])
+  })
+  it('a left-to-right table: the leftmost cell first in each row', async () => {
+    const [m] = await modelsOf(fixtureBytes('edge-table-ltr.pdf'))
+    expect(m.text.split('\n')).toEqual([
+      'Price list for the first quarter',
+      'Product\tQuantity\tPrice',
+      'Red apples\t12\t4.500 dinars',
+      'Oranges\t30\t2.250 dinars',
+      'Bananas from Ecuador\t7\t1.100 dinars',
+      'End of the table'
+    ])
+  })
+})
+
 describe('LibreOffice (writer_web_pdf_Export)', () => {
   it('one line per corpus item: Arabic plain/vocalised/dates/Arabic-Indic digits/punctuation, Persian, Urdu, Hebrew, Hindi, Chinese, Latin', async () => {
     await expectLines(fixtureBytes('lo-lines.pdf'), lineTexts, 'lo-lines')
