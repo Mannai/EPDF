@@ -54,7 +54,8 @@ hands back opaque ids (`SourceRegistry`) and all payloads (zod-validated) refer 
     sample). Needs the free HEIF Image Extensions (and HEVC Video Extensions for most iPhone photos) from the Store.
     File names are never spliced into the script (paths travel in environment variables; the script is a constant, passed
     with `-EncodedCommand`).
-  * macOS – `/usr/bin/sips` (built in). **Not run on this machine** (implemented from the documented CLI; unverified).
+  * macOS – `/usr/bin/sips` (built in). Verified on macOS 26 (Apple Silicon) with a HEIC made by `sips -s format heic`
+    (not with an iPhone photo).
   * Linux – `heif-convert`, else ImageMagick `magick`/`convert`. **Not run on this machine.**
   * If no decoder works the user sees: ““x.heic” could not be converted: … <platform-specific instructions>”.
 * Verified end to end with the real sample through the UI (`EPDF_TEST_HEIC=<file.heic> npx playwright test create-export`);

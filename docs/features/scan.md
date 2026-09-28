@@ -52,7 +52,9 @@ page hand-over, refusing files outside the job folder) is tested against a **stu
 The **Swift helper itself (`resources/native/mac-scan/main.swift`) has never been compiled or run**: it was written on a
 Windows machine. Build it with `resources/native/mac-scan/build.sh` on a Mac and expect to fix compile errors and
 ImageCaptureCore quirks. Without the helper, the macOS Scanner tab explains that scanner support is not available in this
-copy; webcam and phone still work. Details and the protocol: `resources/native/mac-scan/README.md`.
+copy; webcam and phone still work. The 1.1.0-beta.1 Mac build ships without it: the only Mac available had Command Line
+Tools whose Swift compiler does not match their SDK, so it could not be compiled there (a matching Xcode or Command Line
+Tools install is needed, and then a real scanner to test it). Details and the protocol: `resources/native/mac-scan/README.md`.
 
 ### Scanner test backend
 
