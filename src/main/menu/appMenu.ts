@@ -3,7 +3,7 @@ import { openBundledText } from '../services/bundledText'
 import { hardwareAccelerationEnabled, setHardwareAcceleration } from '../services/gpu'
 import type { MenuAction } from '../../shared/types'
 import type { Controller } from '../controller'
-import { commandItem, contributionsFor, NEEDS_DOCUMENT, setCommandSender, type MenuName } from './contributions'
+import { APP_MENU_ID, commandItem, contributionsFor, NEEDS_DOCUMENT, setCommandSender, type MenuName } from './contributions'
 
 const isMac = process.platform === 'darwin'
 
@@ -64,6 +64,8 @@ export function installMenus(c: Controller): void {
     ...(isMac
       ? [
           {
+            // There is no Settings window: Epdf's settings are the checkable items of the Edit, View and Help menus.
+            id: APP_MENU_ID,
             label: app.name,
             submenu: [
               { role: 'about' },
@@ -107,10 +109,14 @@ export function installMenus(c: Controller): void {
       submenu: withContributions('Edit', [
         commandItem('&Undo', 'edit.undo', 'CmdOrCtrl+Z'),
         commandItem('&Redo', 'edit.redo', isMac ? 'Cmd+Shift+Z' : 'Ctrl+Y'),
-        // Second, hidden Redo binding for the other platform convention.
-        { ...commandItem('Redo', 'edit.redo', 'CmdOrCtrl+Shift+Z'), visible: false },
+        // Second, hidden Redo binding for the other platform convention (on macOS both would be Cmd+Shift+Z).
+        ...(isMac ? [] : [{ ...commandItem('Redo', 'edit.redo', 'CmdOrCtrl+Shift+Z'), visible: false }]),
         { type: 'separator' },
+        // macOS text fields cut and paste only through these menu items (Cmd+X / Cmd+V are menu key equivalents
+        // there); on Windows and Linux the fields handle the keys themselves.
+        ...(isMac ? ([{ role: 'cut' }] as Item[]) : []),
         { id: NEEDS_DOCUMENT + 'copy', role: 'copy' },
+        ...(isMac ? ([{ role: 'paste' }] as Item[]) : []),
         { id: NEEDS_DOCUMENT + 'selectAll', role: 'selectAll' },
         { type: 'separator' },
         item('&Find…', { type: 'find' }, 'CmdOrCtrl+F'),
@@ -213,8 +219,16 @@ export function installMenus(c: Controller): void {
       label: '&Window',
       submenu: withContributions('Window', [
         { role: 'minimize' },
+        ...(isMac ? ([{ role: 'zoom' }, { type: 'separator' }] as Item[]) : []),
         item('Next Tab', { type: 'next-tab' }, 'Ctrl+Tab'),
         item('Previous Tab', { type: 'prev-tab' }, 'Ctrl+Shift+Tab'),
+        // macOS also switches tabs with Cmd+Shift+] / Cmd+Shift+[ (Safari, Finder, Terminal).
+        ...(isMac
+          ? [
+              { ...item('Next Tab', { type: 'next-tab' }, 'Cmd+Shift+]'), visible: false },
+              { ...item('Previous Tab', { type: 'prev-tab' }, 'Cmd+Shift+['), visible: false }
+            ]
+          : []),
         ...(isMac ? ([{ type: 'separator' }, { role: 'front' }] as Item[]) : [])
       ])
     },

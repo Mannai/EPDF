@@ -20,6 +20,7 @@ import {
 import { useTabs, type Tab } from '../../state/tabs'
 import { useWorkspace } from '../../state/workspace'
 import { runCommand } from '../api'
+import { shortcutLabel } from '../keys'
 import { announce, applyPlan, deletePages, deletePagesByKey, duplicatePages, movePages, rotatePages } from './actions'
 import { MAX_THUMB, MIN_THUMB, loadThumbWidth, saveThumbWidth, useOrganizerSelection, usePageDialog } from './store'
 import { Thumb } from './Thumb'
@@ -408,10 +409,10 @@ export function Organizer({ tab }: { tab: Tab }): JSX.Element {
           <IconRedo />
         </button>
         <span className="mx-1 h-5 w-px bg-line" aria-hidden="true" />
-        <button className={btn} disabled={busy || !n} onClick={() => doRotate(-90)} title="Rotate selected pages counterclockwise (Ctrl+[)">
+        <button className={btn} disabled={busy || !n} onClick={() => doRotate(-90)} title={`Rotate selected pages counterclockwise (${shortcutLabel('Ctrl+[')})`}>
           Rotate left
         </button>
-        <button className={btn} disabled={busy || !n} onClick={() => doRotate(90)} title="Rotate selected pages clockwise (Ctrl+])">
+        <button className={btn} disabled={busy || !n} onClick={() => doRotate(90)} title={`Rotate selected pages clockwise (${shortcutLabel('Ctrl+]')})`}>
           Rotate right
         </button>
         <button className={btn} disabled={busy || !n} onClick={doDuplicate}>

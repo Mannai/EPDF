@@ -1,5 +1,6 @@
 import { useEditInfo } from '../edit/session'
 import { runCommand } from '../features/api'
+import { isMac, shortcutLabel } from '../features/keys'
 import { openSearch } from '../state/actions'
 import { useSearch } from '../state/search'
 import type { Tab } from '../state/tabs'
@@ -31,13 +32,13 @@ export function TitleBar({ tab, quickAccess = true }: { tab: Tab | null; quickAc
       </span>
       {quickAccess && (
         <>
-          <button className="btn-icon btn-icon-sm" aria-label="Save" title="Save (Ctrl+S)" disabled={!ready || !edit.dirty} onClick={() => void runCommand('file.save')}>
+          <button className="btn-icon btn-icon-sm" aria-label="Save" title={`Save (${shortcutLabel('Ctrl+S')})`} disabled={!ready || !edit.dirty} onClick={() => void runCommand('file.save')}>
             <Icon name="save" />
           </button>
           <button
             className="btn-icon btn-icon-sm"
             aria-label={edit.undoLabel ? `Undo ${edit.undoLabel}` : 'Undo'}
-            title={edit.undoLabel ? `Undo ${edit.undoLabel} (Ctrl+Z)` : 'Undo (Ctrl+Z)'}
+            title={`${edit.undoLabel ? `Undo ${edit.undoLabel}` : 'Undo'} (${shortcutLabel('Ctrl+Z')})`}
             disabled={!ready || !edit.canUndo}
             onClick={() => void runCommand('edit.undo')}
           >
@@ -46,7 +47,7 @@ export function TitleBar({ tab, quickAccess = true }: { tab: Tab | null; quickAc
           <button
             className="btn-icon btn-icon-sm"
             aria-label={edit.redoLabel ? `Redo ${edit.redoLabel}` : 'Redo'}
-            title={edit.redoLabel ? `Redo ${edit.redoLabel} (Ctrl+Y)` : 'Redo (Ctrl+Y)'}
+            title={`${edit.redoLabel ? `Redo ${edit.redoLabel}` : 'Redo'} (${shortcutLabel('Ctrl+Y')})`}
             disabled={!ready || !edit.canRedo}
             onClick={() => void runCommand('edit.redo')}
           >
@@ -62,14 +63,14 @@ export function TitleBar({ tab, quickAccess = true }: { tab: Tab | null; quickAc
           type="button"
           aria-label="Find in document"
           aria-pressed={searchOpen}
-          aria-keyshortcuts="Control+F"
-          title="Find (Ctrl+F)"
+          aria-keyshortcuts={isMac ? 'Meta+F' : 'Control+F'}
+          title={`Find (${shortcutLabel('Ctrl+F')})`}
           disabled={!ready}
           onClick={openSearch}
           className="inline-flex h-[30px] w-full max-w-[360px] items-center gap-2 rounded-md border border-black/10 border-b-black/25 bg-white/75 px-2.5 text-ink-muted transition-colors duration-fast hover:bg-white disabled:cursor-default disabled:opacity-60 aria-pressed:border-b-2 aria-pressed:border-b-accent dark:border-white/10 dark:border-b-white/20 dark:bg-white/[.06] dark:hover:bg-white/10"
         >
           <Icon name="search" size={14} />
-          <span className="truncate">Search in document (Ctrl+F)</span>
+          <span className="truncate">Search in document ({shortcutLabel('Ctrl+F')})</span>
         </button>
         )}
       </div>

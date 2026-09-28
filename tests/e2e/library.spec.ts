@@ -513,7 +513,7 @@ test.describe('library', () => {
       await page.keyboard.press('ArrowUp')
       await page.keyboard.press('Shift+ArrowDown')
       await expect(rows(page).filter({ has: page.locator('[aria-selected="true"]') }).or(page.locator('[role="row"][aria-selected="true"]'))).toHaveCount(2)
-      await page.keyboard.press('Control+d')
+      await page.keyboard.press('ControlOrMeta+d')
       await expect(library(page).getByRole('button', { name: /^Remove report .* from favorites$/ })).toHaveCount(2)
       // Enter opens both selected files in new tabs.
       await page.keyboard.press('Enter')

@@ -95,7 +95,7 @@ test.describe('page text model in the app', () => {
       // Copy once the selection is complete, as a reader would see it (the model layer settles it just after mouse-up).
       await expect.poll(async () => norm(await selection(page))).toBe(norm(date.text))
       await withSystemClipboard(async () => {
-        await page.keyboard.press('Control+C')
+        await page.keyboard.press('ControlOrMeta+C')
         await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain('2026-09-26 (Epdf)')
         expect(norm(await app.evaluate(({ clipboard }) => clipboard.readText()))).toBe(norm(date.text))
       }, app)

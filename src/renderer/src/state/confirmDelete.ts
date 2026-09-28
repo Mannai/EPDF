@@ -1,3 +1,4 @@
+import { shortcutLabel } from '../features/keys'
 import { askConfirmChecked } from './confirm'
 import { notify } from './notify'
 import { useTabs } from './tabs'
@@ -8,7 +9,7 @@ import { useTabs } from './tabs'
  * turns it back on. Deleting from a right-click menu doesn't ask: choosing "Delete" there is already deliberate.
  * Resolves true when the caller should delete.
  */
-export async function confirmDelete(what: string, message = 'You can undo this with Ctrl+Z.'): Promise<boolean> {
+export async function confirmDelete(what: string, message = `You can undo this with ${shortcutLabel('Ctrl+Z')}.`): Promise<boolean> {
   if (!useTabs.getState().settings.confirmDelete) return true
   const { value, checked } = await askConfirmChecked({
     title: `Delete ${what}?`,

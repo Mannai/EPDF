@@ -84,8 +84,8 @@ test.describe('shortcuts and menus', () => {
       const first = (await frame(page).boundingBox())!
 
       await frame(page).focus()
-      await page.keyboard.press('Control+c')
-      await page.keyboard.press('Control+v')
+      await page.keyboard.press('ControlOrMeta+c')
+      await page.keyboard.press('ControlOrMeta+v')
       await expect(page.getByRole('button', { name: 'Undo Paste' })).toBeEnabled()
       // The copy is selected, down and to the right of the original.
       await expect.poll(async () => (await frame(page).boundingBox())!.x).toBeGreaterThan(first.x + 5)
@@ -93,7 +93,7 @@ test.describe('shortcuts and menus', () => {
       expect(second.y).toBeGreaterThan(first.y + 5)
       expect(Math.abs(second.width - first.width)).toBeLessThan(2)
 
-      await page.keyboard.press('Control+v')
+      await page.keyboard.press('ControlOrMeta+v')
       await expect.poll(async () => (await frame(page).boundingBox())!.x).toBeGreaterThan(second.x + 5)
 
       await page.getByRole('button', { name: 'Save', exact: true }).click()
@@ -197,8 +197,8 @@ test.describe('shortcuts and menus', () => {
 
       // Ctrl+click adds pages to the selection; one question for all of them.
       await thumbs(page).nth(0).click()
-      await thumbs(page).nth(2).click({ modifiers: ['Control'] })
-      await thumbs(page).nth(3).click({ modifiers: ['Control'] })
+      await thumbs(page).nth(2).click({ modifiers: ['ControlOrMeta'] })
+      await thumbs(page).nth(3).click({ modifiers: ['ControlOrMeta'] })
       await expect(page.getByTestId('thumbnails').locator('button[aria-pressed="true"]')).toHaveCount(3)
       await page.keyboard.press('Backspace')
       await expect(page.getByRole('dialog', { name: 'Delete 3 pages?' })).toBeVisible()

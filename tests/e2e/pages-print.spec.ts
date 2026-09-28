@@ -107,11 +107,11 @@ test.describe('organizer: opening, selecting, reordering', () => {
       expect(await selected()).toEqual(['2'])
       await pageItem(page, 4).click({ modifiers: ['Shift'] })
       expect(await selected()).toEqual(['2', '3', '4'])
-      await pageItem(page, 3).click({ modifiers: ['Control'] })
+      await pageItem(page, 3).click({ modifiers: ['ControlOrMeta'] })
       expect(await selected()).toEqual(['2', '4'])
       await pageItem(page, 5).click()
       expect(await selected()).toEqual(['5'])
-      await page.keyboard.press('Control+a')
+      await page.keyboard.press('ControlOrMeta+a')
       expect(await selected()).toEqual(['1', '2', '3', '4', '5'])
       await expect(page.getByTestId('organizer-count')).toContainText('5 of 5 selected')
     } finally {
@@ -131,7 +131,7 @@ test.describe('organizer: opening, selecting, reordering', () => {
 
       // Two non-adjacent pages ('5' and '2') dragged together to the end (they keep their relative order).
       await pageItem(page, 1).click()
-      await pageItem(page, 3).click({ modifiers: ['Control'] })
+      await pageItem(page, 3).click({ modifiers: ['ControlOrMeta'] })
       await dragPage(page, 3, 5, 'after')
       await expect(page.getByRole('button', { name: 'Undo Move 2 pages' })).toBeEnabled()
       await save(app, page)
@@ -224,7 +224,7 @@ test.describe('organizer: actions on the selection', () => {
     try {
       await openOrganizer(app, page)
       await pageItem(page, 2).click()
-      await pageItem(page, 3).click({ modifiers: ['Control'] })
+      await pageItem(page, 3).click({ modifiers: ['ControlOrMeta'] })
       await page.getByRole('button', { name: 'Rotate right' }).click()
       await expect(page.getByRole('button', { name: 'Undo Rotate 2 pages clockwise' })).toBeEnabled()
       await page.getByRole('button', { name: 'Rotate left' }).click() // back to 0...
@@ -265,7 +265,7 @@ test.describe('organizer: actions on the selection', () => {
     try {
       await openOrganizer(app, page, 500)
       await pageItem(page, 1).click()
-      await page.keyboard.press('Control+a')
+      await page.keyboard.press('ControlOrMeta+a')
       await page.getByRole('button', { name: 'Delete', exact: true }).click()
       await expect(page.getByRole('alert').filter({ hasText: 'A PDF needs at least one page' })).toBeVisible()
       await expect(page.getByRole('dialog')).toHaveCount(0)
@@ -375,7 +375,7 @@ test.describe('organizer: actions on the selection', () => {
     try {
       await openOrganizer(app, page)
       await pageItem(page, 4).click()
-      await pageItem(page, 2).click({ modifiers: ['Control'] })
+      await pageItem(page, 2).click({ modifiers: ['ControlOrMeta'] })
       await page.getByRole('button', { name: 'Extract…' }).click()
       const dlg = page.getByRole('dialog', { name: 'Extract pages' })
       await expect(dlg.getByLabel('Pages to extract')).toHaveValue('2,4')
@@ -424,9 +424,9 @@ test.describe('organizer: large documents', () => {
       expect(lag).toBeLessThan(500)
       // Keyboard navigation to the end scrolls the focused page into view.
       await grid(page).focus()
-      await page.keyboard.press('Control+Home')
+      await page.keyboard.press('ControlOrMeta+Home')
       await expect(pageItem(page, 1)).toBeVisible()
-      await page.keyboard.press('Control+End')
+      await page.keyboard.press('ControlOrMeta+End')
       await expect(pageItem(page, 500)).toBeVisible()
       await expect(grid(page)).toHaveAttribute('aria-activedescendant', 'org-page-500')
     } finally {
@@ -652,7 +652,7 @@ test.describe('accessibility', () => {
     try {
       await openOrganizer(app, page)
       await pageItem(page, 2).click()
-      await pageItem(page, 3).click({ modifiers: ['Control'] })
+      await pageItem(page, 3).click({ modifiers: ['ControlOrMeta'] })
       const scan = async (label: string): Promise<void> => expect(await axeViolations(page, label)).toEqual([])
       await scan('organizer light')
       for (const [button, name] of [

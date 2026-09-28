@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { getTools } from '../features/api'
+import { shortcutLabel } from '../features/keys'
 import { toggleSidebar } from '../state/actions'
 import type { Tab } from '../state/tabs'
 import { useUi } from '../state/ui'
@@ -91,7 +92,7 @@ export function RibbonTabs({ tab }: { tab: Tab | null }): JSX.Element {
         className="btn-icon btn-icon-sm me-1.5"
         aria-label="Toggle sidebar"
         aria-pressed={sidebarOpen}
-        title="Show or hide the side panel (Ctrl+Shift+B)"
+        title={`Show or hide the side panel (${shortcutLabel('Ctrl+Shift+B')})`}
         disabled={!ready}
         onClick={toggleSidebar}
       >

@@ -1,4 +1,5 @@
 import { getCommands, runCommand } from '../features/api'
+import { platformAccelerator } from '../features/keys'
 
 /**
  * Right-click menus, shown by main as native Windows menus (src/main/features/chrome/contextMenu.ts). An item either
@@ -14,7 +15,10 @@ export type ContextItem =
       run?: () => void | Promise<void>
       enabled?: boolean
       checked?: boolean
-      /** The key that does the same thing, shown at the right of the item. Display only: it binds nothing. */
+      /**
+       * The key that does the same thing, shown at the right of the item. Display only: it binds nothing. Written
+       * the Windows way (`Ctrl+W`); macOS shows the Cmd equivalent.
+       */
       keys?: string
       submenu?: ContextItem[]
     }
@@ -60,7 +64,8 @@ export async function openContextMenu(e: { clientX: number; clientY: number; cur
       const run = i.run ?? (i.command ? () => void runCommand(i.command!) : undefined)
       if (run) actions.set(id, run)
       const enabled = (i.enabled ?? true) && (i.command ? commandEnabled(i.command) : true) && !!run
-      return { id, label: i.label, enabled, type: i.checked === undefined ? 'normal' : 'checkbox', checked: i.checked, accelerator: i.keys }
+      const accelerator = i.keys === undefined ? undefined : platformAccelerator(i.keys)
+      return { id, label: i.label, enabled, type: i.checked === undefined ? 'normal' : 'checkbox', checked: i.checked, accelerator }
     })
   const menu = wire(items)
   if (!menu.length) return

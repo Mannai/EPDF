@@ -128,7 +128,7 @@ test.describe('OCR of right-to-left scans: the recognized layer in the viewer', 
       await dragAcrossLine(page, li)
       expect(norm(await page.evaluate(() => getSelection()?.toString() ?? ''))).toBe(lines[li])
       await withSystemClipboard(async () => {
-        await page.keyboard.press('Control+C')
+        await page.keyboard.press('ControlOrMeta+C')
         await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain('دينار بحريني')
         expect(norm(await app.evaluate(({ clipboard }) => clipboard.readText()))).toBe('نود إفادتكم بأن المبلغ المستحق هو 1250 دينار بحريني.')
       }, app)

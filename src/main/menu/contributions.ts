@@ -34,6 +34,9 @@ export function setCommandSender(fn: (id: string) => void): void {
  */
 export const NEEDS_DOCUMENT = 'doc:'
 
+/** macOS: id of the application menu (Epdf ▸ About, Hide, Quit), which the ribbon's File button leaves out. */
+export const APP_MENU_ID = 'app-menu'
+
 /**
  * A menu item that runs a renderer command registered with `registerCommand(id, ...)`. It works on the open document
  * unless `anyTime` says it also works with none (Create PDF, Combine, Scan, Library...).

@@ -43,7 +43,9 @@ if (!hasLock) {
 }
 
 async function start(): Promise<void> {
-  // macOS delivers "open with" / dock-drop / double-click through this event, possibly before ready.
+  // macOS delivers Finder's double-click / "Open With", a drop on the Dock icon and `open -a Epdf x.pdf` through this
+  // event, also for the file that launched the app, which arrives before `ready`. Until startup has finished (license
+  // prompt, session restore) the paths wait here, so the launching file replaces the empty start window.
   const pendingOpen: string[] = []
   let controller: Controller | null = null
   app.on('open-file', (event, path) => {
@@ -73,7 +75,6 @@ async function start(): Promise<void> {
     }
   }
   const c = new Controller(repos, app.getPath('userData'))
-  controller = c
   c.applyTheme()
 
   installSecurity()
@@ -112,8 +113,9 @@ async function start(): Promise<void> {
     else c.windows.focused()?.win.focus()
   })
 
+  // macOS: clicking the Dock icon with no window open opens one (not while startup is still opening windows).
   app.on('activate', () => {
-    if (c.windows.all().length === 0) c.newWindow()
+    if (controller && c.windows.all().length === 0) c.newWindow()
   })
 
   app.on('before-quit', () => {
@@ -131,12 +133,16 @@ async function start(): Promise<void> {
   })
 
   // Startup: explicit files win; otherwise restore the last session (always after a crash).
-  const argPaths = [...pdfPathsFromArgv(process.argv), ...pendingOpen]
+  const argPaths = [...pdfPathsFromArgv(process.argv), ...pendingOpen.splice(0)]
   const crashed = repos.settings.getFlag('cleanExit') === '0'
   repos.settings.setFlag('cleanExit', '0')
 
   let restored = false
   if (crashed || (argPaths.length === 0 && c.settings.restoreOnLaunch)) restored = await c.restoreSession()
+  // Files macOS handed over while the session was being restored join the startup files.
+  argPaths.push(...pendingOpen.splice(0))
   if (argPaths.length) await c.openPaths(argPaths)
   else if (!restored) c.newWindow()
+  controller = c
+  if (pendingOpen.length) await c.openPaths(pendingOpen.splice(0))
 }

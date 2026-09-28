@@ -182,7 +182,7 @@ const changedPixels = (a: number[], b: number[]): number => {
 const distance = (a: number[], b: number[]): number => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
 
 async function openComments(page: Page): Promise<void> {
-  if ((await page.getByTestId('comments-panel').count()) === 0) await page.keyboard.press('Control+Alt+m')
+  if ((await page.getByTestId('comments-panel').count()) === 0) await page.keyboard.press('ControlOrMeta+Alt+m')
   await expect(page.getByTestId('comments-panel')).toBeVisible()
 }
 
@@ -743,7 +743,7 @@ test.describe('markup: comments panel', () => {
     const second = await launch({ files: [copyFixture('markup.pdf')], userData })
     try {
       await expect(second.page.locator('[data-page="1"] canvas')).toBeVisible()
-      await second.page.keyboard.press('Control+Alt+m')
+      await second.page.keyboard.press('ControlOrMeta+Alt+m')
       await expect(second.page.getByLabel('Your name (written into new comments)')).toHaveValue('Ada Tester')
     } finally {
       await quitDiscarding(second.app, second.page)

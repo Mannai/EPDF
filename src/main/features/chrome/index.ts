@@ -1,7 +1,7 @@
 import { Menu, nativeTheme, type MenuItem } from 'electron'
 import { z } from 'zod'
 import { chromeOverlay, customTitleBar } from '../../windows/WindowManager'
-import { NEEDS_DOCUMENT } from '../../menu/contributions'
+import { APP_MENU_ID, NEEDS_DOCUMENT } from '../../menu/contributions'
 import { registerFeatureChannel, type MainContext } from '../api'
 import { ContextMenuRequest, installEditableFallback, showContextMenu } from './contextMenu'
 
@@ -37,7 +37,8 @@ export function register(ctx: MainContext): void {
       // File's own items first (as Office's File tab), then the other menus as submenus. On the start screen the
       // items that need a document are greyed out (and so is a submenu with nothing left to choose).
       const copy = (item: MenuItem): Electron.MenuItemConstructorOptions => clone(item, hasDocument !== false)
-      const [file, ...rest] = app.items as MenuItem[]
+      // macOS puts the application menu (About, Hide, Quit) first; it stays in the menu bar only.
+      const [file, ...rest] = (app.items as MenuItem[]).filter((m) => m.id !== APP_MENU_ID)
       const template = [
         ...(file?.submenu?.items ?? []).map(copy),
         { type: 'separator' as const },

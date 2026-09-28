@@ -334,11 +334,11 @@ test.describe('manual field tools', () => {
       await expect(undoBtn(page, 'Undo Resize “Text1”')).toBeEnabled({ timeout: 15_000 })
       // Copy, paste (goes to the same page, offset), duplicate.
       await page.getByTestId('fb-field-Text1').focus()
-      await page.keyboard.press('Control+c')
-      await page.keyboard.press('Control+v')
+      await page.keyboard.press('ControlOrMeta+c')
+      await page.keyboard.press('ControlOrMeta+v')
       await expect(fieldCount(page)).toContainText('Fields (4)', { timeout: 15_000 })
       await page.getByTestId('fb-field-Text1').focus()
-      await page.keyboard.press('Control+d')
+      await page.keyboard.press('ControlOrMeta+d')
       await expect(fieldCount(page)).toContainText('Fields (5)', { timeout: 15_000 })
 
       // Multi-select with Shift+click on list rows... then align left, same size, distribute.

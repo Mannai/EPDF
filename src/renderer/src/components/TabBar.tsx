@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useEdits } from '../edit/session'
 import { closeTabInteractive } from '../features/core/closeFlow'
+import { shortcutLabel } from '../features/keys'
 import { useTabs } from '../state/tabs'
 import { detachActiveTab, openFiles } from '../state/actions'
 import { openContextMenu, type ContextItem } from './contextMenu'
@@ -149,7 +150,7 @@ export function TabBar(): JSX.Element {
           )
         })}
       </div>
-      <button type="button" className="btn-icon btn-icon-sm mb-0.5 shrink-0" aria-label="Open PDF" title="Open PDF (Ctrl+O)" onClick={() => void openFiles()}>
+      <button type="button" className="btn-icon btn-icon-sm mb-0.5 shrink-0" aria-label="Open PDF" title={`Open PDF (${shortcutLabel('Ctrl+O')})`} onClick={() => void openFiles()}>
         <Icon name="plus" size={14} />
       </button>
     </div>

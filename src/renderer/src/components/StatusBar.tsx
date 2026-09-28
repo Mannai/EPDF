@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ViewMode } from '@shared/types'
+import { shortcutLabel } from '../features/keys'
 import { pageBy, setViewMode, setZoomMode, zoomStep } from '../state/actions'
 import { useTabs, type Tab } from '../state/tabs'
 import { ZOOM_STEPS } from '../viewer/layout'
@@ -95,7 +96,7 @@ export function StatusBar({ tab }: { tab: Tab }): JSX.Element {
         ))}
       </div>
       <span aria-hidden="true" className="mx-2 h-3.5 w-px bg-black/[.15] dark:bg-white/[.15]" />
-      <button className={small} aria-label="Zoom out" title="Zoom out (Ctrl+-)" disabled={!ready} onClick={() => zoomStep(-1)}>
+      <button className={small} aria-label="Zoom out" title={`Zoom out (${shortcutLabel('Ctrl+-')})`} disabled={!ready} onClick={() => zoomStep(-1)}>
         <Icon name="minus" size={14} />
       </button>
       <input
@@ -109,7 +110,7 @@ export function StatusBar({ tab }: { tab: Tab }): JSX.Element {
         onChange={(e) => setZoomMode('custom', Math.round(fromSlider(Number(e.target.value)) * 100) / 100)}
         className="h-1 w-[120px] cursor-pointer accent-[rgb(var(--c-accent))] disabled:cursor-default"
       />
-      <button className={small} aria-label="Zoom in" title="Zoom in (Ctrl+=)" disabled={!ready} onClick={() => zoomStep(1)}>
+      <button className={small} aria-label="Zoom in" title={`Zoom in (${shortcutLabel('Ctrl+=')})`} disabled={!ready} onClick={() => zoomStep(1)}>
         <Icon name="plus" size={14} />
       </button>
       <select
