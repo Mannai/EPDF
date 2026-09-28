@@ -228,3 +228,13 @@ skip when the tools are absent.)
 Bundled fonts (Liberation, Carlito, Caladea, Noto Sans, Aref Ruqaa and several script fonts) are SIL OFL / Apache-2.0
 with their license texts in `resources/fonts`. PDF.js, pdf-lib, React, zod, zustand, fflate, utif2 and fontkit are MIT
 or Apache-2.0.
+
+Epdf's own code is under the [PolyForm Strict License 1.0.0](../LICENSE.md) (source-available: personal and other
+noncommercial use only, no changes or redistribution).
+
+**Third-party notices.** `npm run build` writes `out/THIRD-PARTY-NOTICES.txt` (`scripts/lib/notices.mjs`, a Vite
+plugin in `electron.vite.config.ts`): the full license text of every npm package in the main, preload, renderer and
+worker bundles, of every runtime `dependency` shipped in `node_modules`, and of the fonts, WebAssembly modules and
+data files listed in `ASSET_LICENSE_DIRS`. The installers put it and `LICENSE.txt` in the app's `resources` folder;
+**Help ▸ License** and **Help ▸ Third-Party Notices** open them. A new asset folder that ships with its own license
+file must be added to `ASSET_LICENSE_DIRS`.

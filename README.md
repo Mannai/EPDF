@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/version-1.0.6--beta.1-2563eb" alt="Version 1.0.6-beta.1">
   <img src="https://img.shields.io/badge/platform-Windows-2563eb" alt="Platform: Windows">
   <img src="https://img.shields.io/badge/works-offline-16a34a" alt="Works offline">
-  <img src="https://img.shields.io/badge/license-proprietary-6b7280" alt="License: proprietary">
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-PolyForm%20Strict%201.0.0-6b7280" alt="License: PolyForm Strict 1.0.0"></a>
 </p>
 
 <p align="center">
@@ -181,6 +181,18 @@ done or not verified yet is listed honestly in [Known limitations](docs/LIMITATI
 
 ## License
 
-Copyright © 2026 Epdf. All rights reserved. This is proprietary software; no license is granted to copy, modify or
-distribute it. Third-party components and their licenses are listed in
+Copyright © 2026 Meshal AlMannai. Epdf is **source-available, not open source**: the code and the installers are
+published under the [PolyForm Strict License 1.0.0](LICENSE.md).
+
+| | |
+|---|---|
+| Read the code, download the installers, use Epdf for personal or other noncommercial purposes | Allowed |
+| Use by charities, schools, public research, public health or government organizations | Allowed |
+| Changing the code, building on it, or sharing copies of it or of the installers | Not allowed |
+| Use in or for a business, selling it, or offering it as part of a product or service | Not allowed without a commercial license |
+
+For a commercial license or any other permission, contact support@epdf.ing.
+
+Third-party components keep their own licenses; their full texts ship with Epdf in `THIRD-PARTY-NOTICES.txt`
+(**Help ▸ Third-Party Notices**). See also
 [Licensing and self-containment](docs/DEVELOPMENT.md#licensing-and-self-containment).
