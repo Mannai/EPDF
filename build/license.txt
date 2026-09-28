@@ -18,7 +18,7 @@ Please read this agreement carefully. It is a legal agreement between you and Me
 
 2.2 Noncommercial use by a charitable organization, educational institution, public research organization, public safety or health organization, or government institution is permitted.
 
-2.3 Commercial Use is not licensed under this agreement. It requires a separate written license from the Licensor. To ask for one, write to support@epdf.ing.
+2.3 Commercial Use is not licensed under this agreement. It requires a separate written license from the Licensor. To ask for one, write to sales@epdf.ing.
 
 2.4 The Software is licensed, not sold. We reserve all rights not expressly granted to you in this agreement.
 
@@ -112,6 +112,6 @@ This agreement, and any dispute or claim arising out of or in connection with it
 17. CONTACT
 
 Meshal AlMannai
-support@epdf.ing
+support@epdf.ing (licenses and purchases: sales@epdf.ing)
 
 Copyright (c) 2026 Meshal AlMannai. All rights reserved.

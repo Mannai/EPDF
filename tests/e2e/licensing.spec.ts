@@ -26,9 +26,14 @@ test('Help ▸ License, Third-Party Notices and the EULA open the license texts 
     const eula = readFileSync(opened[2], 'utf8')
     expect(eula).toContain('EPDF END USER LICENSE AGREEMENT')
     expect(eula).toContain('laws of the Kingdom of Bahrain')
+    // Public contact addresses only: support for help, sales for commercial licenses.
+    expect(eula).toContain('support@epdf.ing')
+    expect(eula).toContain('write to sales@epdf.ing')
+    expect(eula).not.toContain('@gmail.com')
     const license = readFileSync(opened[0], 'utf8')
     expect(license).toContain('PolyForm Strict License 1.0.0')
     expect(license).toContain('Meshal AlMannai')
+    expect(license).toContain('sales@epdf.ing')
     const notices = readFileSync(opened[1], 'utf8')
     // Bundled into the renderer (pdf-lib, PDF.js), shipped in node_modules (tesseract.js), and a bundled font.
     for (const text of ['pdf-lib 1.17.1', 'pdfjs-dist ', 'tesseract.js ', 'Apache License', 'SIL OPEN FONT LICENSE'])

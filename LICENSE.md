@@ -2,7 +2,7 @@ Copyright (c) 2026 Meshal AlMannai. All rights reserved, except as granted by th
 
 The source code of Epdf and the Epdf installers are made available under the PolyForm Strict License 1.0.0,
 reproduced below. For commercial use, redistribution or any other permission not granted here, contact
-support@epdf.ing for a separate license.
+sales@epdf.ing for a separate license.
 
 Installing and using the Epdf application is also subject to the Epdf End User License Agreement (build/license.txt,
 shown by the installer and installed as EULA.txt). Where the two differ for the installed application, the End User

@@ -195,7 +195,7 @@ published under the [PolyForm Strict License 1.0.0](LICENSE.md).
 | Changing the code, building on it, or sharing copies of it or of the installers | Not allowed |
 | Use in or for a business, selling it, or offering it as part of a product or service | Not allowed without a commercial license |
 
-For a commercial license or any other permission, contact support@epdf.ing.
+For a commercial license or any other permission, contact sales@epdf.ing. For help, write to support@epdf.ing.
 
 Installing Epdf also means accepting its [End User License Agreement](build/license.txt): the installer shows it and
 installs nothing until you click **I Agree**. It ships with the app (**Help ▸ End User License Agreement**).
