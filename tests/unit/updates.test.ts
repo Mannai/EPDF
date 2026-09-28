@@ -48,12 +48,25 @@ describe('update policy', () => {
     expect(followsPrereleases('1.1.0')).toBe(false)
   })
 
-  it('only a Linux .deb (no $APPIMAGE) is notify-only', () => {
+  it('a Linux .deb (no $APPIMAGE) and macOS are notify-only', () => {
     expect(canInstallUpdates('win32', {})).toBe(true)
-    expect(canInstallUpdates('darwin', {})).toBe(true)
     expect(canInstallUpdates('linux', { APPIMAGE: '/home/u/Epdf-1.0.8-beta.1-x86_64.AppImage' })).toBe(true)
     expect(canInstallUpdates('linux', {})).toBe(false)
     expect(canInstallUpdates('linux', { APPIMAGE: '' })).toBe(false)
+    // The Mac app is signed ad hoc, and Squirrel.Mac installs only Developer ID-signed updates.
+    expect(canInstallUpdates('darwin', {})).toBe(false)
+    expect(canInstallUpdates('darwin', { APPIMAGE: '/tmp/x.AppImage' })).toBe(false)
+  })
+
+  it('the download page of a macOS update is the release page of that version', () => {
+    expect(releasePageUrl('1.1.0-beta.1')).toBe('https://github.com/Mannai/EPDF/releases/tag/v1.1.0-beta.1')
+  })
+
+  it('the Mac build writes the update feed file and names its downloads like the other platforms', () => {
+    const yml = readFileSync(join(__dirname, '../../electron-builder.yml'), 'utf8').replace(/\r\n/g, '\n')
+    const mac = /^mac:\n((?:[ \t].*\n|\n)+)/m.exec(yml)?.[1] ?? ''
+    expect(mac).toMatch(/target: zip/) // the zip target is what writes latest-mac.yml
+    expect(mac).toMatch(/artifactName: Epdf-\$\{version\}-\$\{arch\}\.\$\{ext\}/)
   })
 
   it('points at the public release channel', () => {
@@ -177,7 +190,7 @@ describe('update flow', () => {
     expect(quiet.ui.notifyUnavailable).not.toHaveBeenCalled()
   })
 
-  it('a notify-only install (Linux .deb) offers the download page and never downloads or quits', async () => {
+  it('a notify-only install (Linux .deb, macOS) offers the download page and never downloads or quits', async () => {
     const h = harness({ canInstall: false })
     expect(await h.flow.check(false)).toBe('notified')
     expect(h.ui.offerDownloadPage).toHaveBeenCalledWith('0.2.0', '0.1.0')

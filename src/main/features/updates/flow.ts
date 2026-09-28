@@ -3,8 +3,9 @@
  * check → (ask) download → (ask) restart. Installing happens when the app really quits, never before, so a
  * pending "Save changes?" prompt can still veto it and no work is lost.
  *
- * Where the app can't replace itself (a Linux .deb, installed by the system's package manager), the flow only tells
- * the user about the new version and offers the download page; nothing is downloaded or installed.
+ * Where the app can't replace itself (a Linux .deb, installed by the system's package manager; macOS without a
+ * Developer ID signature), the flow only tells the user about the new version and offers the download page; nothing
+ * is downloaded or installed.
  */
 
 export interface UpdateCheckResult {
@@ -37,7 +38,7 @@ export interface UpdateFlowOptions {
   currentVersion: string
   /** False for a dev/unpackaged run: there is nothing installed to update. */
   canUpdate: boolean
-  /** False when the app can't install its own updates (a Linux .deb): only tell the user. Default true. */
+  /** False when the app can't install its own updates (a Linux .deb, macOS): only tell the user. Default true. */
   canInstall?: boolean
   /** Starts the normal quit (which asks about unsaved changes); the installer runs once the quit really happens. */
   requestQuit: () => void

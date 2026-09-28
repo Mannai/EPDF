@@ -21,8 +21,9 @@ import {
  *
  * The feed is the `publish` entry in electron-builder.yml, the public GitHub releases of Mannai/EPDF (baked into
  * the installed app as resources/app-update.yml; public, so no token is involved). Nothing is downloaded without
- * the user saying yes, and an update installs only when the app really quits. On a Linux .deb the app only says that a
- * new version is out and offers its download page. electron-updater is loaded on first use so it costs nothing at startup.
+ * the user saying yes, and an update installs only when the app really quits. On a Linux .deb and on macOS (the Mac app
+ * has no Developer ID signature, which Squirrel.Mac requires) the app only says that a new version is out and offers
+ * its download page. electron-updater is loaded on first use so it costs nothing at startup.
  */
 export function register(ctx: MainContext): void {
   const kv = ctx.kv('updates')
@@ -67,7 +68,10 @@ export function register(ctx: MainContext): void {
         (await say({
           type: 'info',
           message: `Epdf ${version} is available`,
-          detail: `You have version ${current}. Open the download page to get the new package? Install it the same way you installed Epdf.`,
+          detail:
+            process.platform === 'darwin'
+              ? `You have version ${current}. Open the download page to get the new version? Quit Epdf, then drag the new Epdf into your Applications folder and replace the old one.`
+              : `You have version ${current}. Open the download page to get the new package? Install it the same way you installed Epdf.`,
           buttons: ['Open Download Page', 'Not Now'],
           defaultId: 0,
           cancelId: 1

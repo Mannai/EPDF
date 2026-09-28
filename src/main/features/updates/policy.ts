@@ -42,11 +42,14 @@ export function followsPrereleases(currentVersion: string): boolean {
 }
 
 /**
- * Whether the app can download and install its own update. Windows (NSIS) and macOS can, and so can an AppImage
+ * Whether the app can download and install its own update. Windows (NSIS) can, and so can an AppImage
  * (electron-updater replaces the file named by $APPIMAGE). A .deb is owned by the system's package manager, so there
- * the app only tells the user about the new version.
+ * the app only tells the user about the new version. So does macOS: its installer (Squirrel.Mac) accepts only an app
+ * signed with an Apple Developer ID, and the Mac build is not (it is signed ad hoc), so an in-app install could
+ * only fail.
  */
 export function canInstallUpdates(platform: NodeJS.Platform, env: Record<string, string | undefined>): boolean {
+  if (platform === 'darwin') return false
   if (platform !== 'linux') return true
   return !!env['APPIMAGE']
 }
