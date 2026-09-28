@@ -187,6 +187,13 @@ describe.skipIf(!HAVE_SOFFICE)('Arabic Office corpus compared with LibreOffice',
         const A = la[la.length - 1]!
         const B = lb[lb.length - 1]!
         if (p.side) {
+          // LibreOffice is the reference only where it follows the documented behaviour (Word's): some versions
+          // (26.2 on Linux) put a right-to-left paragraph with jc="left" on the left. Epdf is held to the documented
+          // side in the test above either way.
+          if (p.where !== 'tab' && sideOf(B, areaB) !== p.side) {
+            report.push(`LibreOffice puts “${p.text.slice(0, 30)}…” on the ${sideOf(B, areaB)}, not the ${p.side}: not compared`)
+            continue
+          }
           if (p.where !== 'tab') expect(sideOf(A, areaA), `Epdf side of “${p.text}”`).toBe(sideOf(B, areaB))
           const edge = p.side === 'right' ? [A.width - A.x1, B.width - B.x1] : p.side === 'left' ? [A.x0, B.x0] : [(A.x0 + A.x1) / 2, (B.x0 + B.x1) / 2]
           report.push(`${p.side.padEnd(6)} edge Epdf=${edge[0]!.toFixed(1)} LO=${edge[1]!.toFixed(1)} | ${p.text.slice(0, 40)}`)
