@@ -10,7 +10,8 @@ What Epdf 1.1.0-beta.1 does not do yet, and what has not been verified. Each fea
   are not supported (webcam and phone are), HEIC pictures need `heif-convert` or ImageMagick, saving signatures needs
   a desktop keyring, and there are no file-manager "Convert to PDF" entries.
 - **macOS** (since 1.1.0-beta.1): the universal `.dmg`/`.zip` was built and tested on one Apple Silicon Mac (M2,
-  macOS 26). Not tried: an Intel Mac (the universal app contains the Intel code, but it never ran on one), macOS 13
+  macOS 26). Not tried: an Intel Mac (the Intel half of the universal app passed the packaged-app checks under
+  Rosetta 2 on the Apple Silicon Mac, but never ran on Intel hardware), macOS 13
   to 15, a Mac with an Apple Developer ID signature. The app is signed ad hoc, not notarized: users allow it once in
   System Settings, and it cannot update itself (it only announces new versions). Scanners are not supported on macOS
   (the camera and phone are); the camera scan, printing to a real printer, the Keychain question after replacing

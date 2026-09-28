@@ -136,7 +136,8 @@ What differs on macOS:
 - **Saved signatures** are encrypted with a key kept in the login Keychain ("epdf Safe Storage", named after the
   package). An ad hoc signed new version is a different program for the Keychain, so macOS may ask once whether Epdf
   may use that key (**Always Allow**); with **Deny**, saved signatures can't be read until access is allowed. (On the
-  test Mac a freshly built copy read the key made by an earlier one without asking.)
+  test Mac a rebuilt Apple Silicon copy read the key without asking; the Intel half of the same app, run under
+  Rosetta, asked.)
 - **Updates**: macOS installs updates only for an app signed with a Developer ID, so Epdf only says that a new
   version is out and offers its release page, like the Linux .deb.
 - **Scanners** are not supported (a scanner helper for macOS does not exist yet); the camera and phone work.
