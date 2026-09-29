@@ -55,8 +55,9 @@ export class DocRegistry {
     if (existing) {
       const e = this.docs.get(existing)!
       e.refs++
-      e.handle = { ...e.handle, size, mtime, lastPage }
-      if (!sameIdentity(e.identity, identity)) {
+      if (e.writing === 0) e.handle = { ...e.handle, size, mtime }
+      e.handle = { ...e.handle, lastPage }
+      if (e.writing === 0 && !sameIdentity(e.identity, identity)) {
         // Changed behind the watcher's back: the windows that have it open must still be told.
         e.identity = identity
         this.watchEntry(e)
