@@ -48,9 +48,10 @@ Content of the marked pages, per mark (a mark is a set of boxes or exact rotated
 | **Form XObjects** reached from the page, nested forms, soft-mask groups | processed per use and **copy-on-write**: a form shared with another page, another use or an unmarked area is copied and only the marked use points at the copy; original entries are dropped from the (private) resource dictionaries |
 | Marked content `/ActualText /Alt /E` (inline properties or `Properties` resources) around removed content | keys removed |
 | **Images** intersecting a mark | pixels under the mark **decoded, set to black, re-encoded** (Flate/LZW/ASCII85/ASCIIHex/RunLength sources → lossless Flate; baseline/progressive 8-bit RGB/gray JPEG → JPEG q95) for Gray/RGB/CMYK/ICCBased/Cal* at 1/2/4/8/16 bits, Indexed (black entry used/added/expanded), `/Decode`, image masks, **SMask and stencil `/Mask` cleared in the same region**; inline images become image objects; the image object is **copied before modifying** (shared images keep their pixels elsewhere) |
-| Images that cannot be decoded safely (JPEG 2000, JBIG2, CCITT, CMYK/Lab/Separation JPEG, odd bit depth, huge, corrupt) | **fail closed: the image is removed entirely** and a solid box is drawn in its place; the summary says so |
-| **Vector paths** | fully inside a mark: removed; partly inside: clipped so nothing paints under the mark (even-odd clip); unpainted paths under a mark are dropped; clipping paths that lie under a mark keep their effect but lose their shape |
-| **Shadings / patterns** | axial/radial shadings and vector-only tiling patterns are clipped around the mark; anything that can carry text/pictures or data (tiling patterns with text/images, function/mesh shadings) is dropped where it paints under a mark and its object is deleted when unused |
+| Images that cannot be decoded safely (JPEG 2000, JBIG2, CCITT, CMYK/Lab/Separation JPEG, odd bit depth, huge, corrupt) | **fail closed: the image is removed entirely** and a solid box is drawn in its place (its part outside the marks; the overlay covers the rest); the summary says so |
+| **Vector paths** | decided **per subpath** (each `m`/`re` shape of a path, with its operators): a subpath whose outline — lines and the control polygons of curves — reaches a mark, or whose stroke does (half the line width, stretched by the transformation, times the cap/join reach: √2 for square caps, the exact miter at corners up to the miter limit), is **removed with its operators**, in page content, forms and soft-mask groups alike. A lone **filled or clipping rectangle** is instead **cut along the marks** (the pieces outside stay, in the original direction; rotated ones become polygons). No clip is used to hide anything: removed geometry is not in the file. A shape that merely surrounds a mark (a page background, a frame, a page-size clip) is kept. In fills and clips, anything whose hull overlaps a removed subpath outside the marks goes too, so what remains always paints **a subset** of the original (removing an outline never turns a hole into a filled area). Unpainted paths (`n`) that reach a mark are dropped whole; a clip with nothing left becomes an empty clip placed outside the marks. |
+| **Collateral removal** | shapes that cross the edge of a mark are removed **entirely**, so they can also disappear outside the mark: counted separately, reported as a page warning ("N drawn shapes that cross the edge of a mark were removed entirely…") and as a note in the Apply dialog — check the After view |
+| **Shadings / patterns** | a shading (`sh`, any type: its colours are data) whose clip region (narrowed by its `/BBox`) reaches a mark is **removed from that use**; a path painted with a **pattern** whose shape reaches a mark is removed whole; the pattern or shading object is deleted when nothing else uses it. A pattern that can carry text or pictures (tiling patterns with text/images/shadings, function/mesh shading patterns) that is removed under a mark but still painted elsewhere on the same page makes Epdf **refuse** the page |
 | **Annotations** whose `/Rect` meets a mark (text, comments, links, widgets and their values, popups, replies) | removed, with their popups/replies; widgets are detached from their field and the AcroForm |
 | Annotations/fields elsewhere that carry the redacted text (`/Contents /RC /T /Subj /V /DV /TU`, or text drawn in their appearance) | removed (widgets: value scrubbed, stale appearance dropped, `/NeedAppearances` set) |
 | **Bookmarks, structure `/ActualText /Alt`, Info strings, form values, any other text string** containing the redacted text | the text is replaced by `[redacted]` (case/whitespace/encoding-insensitive) |
@@ -78,11 +79,17 @@ made it:
 1. every glyph on a marked page, read with the text-edit engine's own positioning, must lie outside the marks;
 2. every image under a mark is decoded and its marked pixels must be black (JPEG: within a few levels);
 3. no annotation may remain under a mark;
-4. the redacted strings must not occur anywhere: decoded page/form/appearance text (with the fonts), literal /
+4. **no drawn shape may keep geometry under a mark**: every page's content is re-parsed from the saved bytes (its
+   own walk, transformation and line-width tracking; forms with their `/Matrix` and soft-mask groups followed; only
+   the redaction's own overlay stream is skipped) and every subpath — painted, clipping or unpainted — fails the
+   check if a point lies in a mark, a line or a curve's control polygon crosses one, or a stroke's band reaches one
+   (marks shrunk by 0.01 pt, so pieces cut exactly along a mark's edge pass). The removal rule above reaches at least
+   as far as this test, so the redaction's own output passes, while a result that only hid shapes behind a clip fails;
+5. the redacted strings must not occur anywhere: decoded page/form/appearance text (with the fonts), literal /
    UTF-16BE / hex spellings inside every decompressed stream and every text string of every object (object streams
    are expanded), the raw file bytes, and the text PDF.js extracts. Text that legitimately stays outside the
    marks (the same word elsewhere on the page) is allowed: occurrences are compared with what is visible;
-5. no unreachable object may remain in the file.
+6. no unreachable object may remain in the file.
 
 If anything is found the redaction is **not applied**: the dialog lists where (page, object, attachment...). After
 Apply the committed bytes are checked again, and rolled back if that ever fails.
@@ -107,9 +114,19 @@ Apply the committed bytes are checked again, and rolled back if that ever fails.
 * **Content in resources that no operator draws** (an unused form listed in a resource dictionary, glyph procedures
   of Type 3 fonts, Type 3 glyphs drawing images) is not searched. If such content contains the redacted text the
   **self-check refuses** to apply rather than pass it.
-* Text or images that only look like the marked content (outlined letters drawn as vector shapes that straddle the
-  mark boundary are clipped, not deleted; a scanned page is destroyed only inside the marked pixels — the rest of
-  the scan is untouched) are removed visually and by geometry, not by meaning.
+* Content is removed **by geometry, not by meaning**. Outlined letters drawn as vector shapes go when their
+  outline reaches a mark (a letter straddling the mark's edge goes entirely, see *Collateral removal*); a letter
+  just outside the mark stays even if it belongs to the marked word. A scanned page is destroyed only inside the
+  marked pixels — the rest of the scan is untouched.
+* Not walked by the geometry removal or its self-check: the content of **tiling patterns** and **Type 3 glyph
+  procedures** (Type 3 text under a mark is removed as whole runs), and **annotation appearance streams**
+  (annotations whose rectangle meets a mark are removed whole, appearance included, which covers everything they can
+  show under it). A **reused pattern or shading** that cannot carry text or pictures stays in the file when it is
+  still painted elsewhere on the page (a vector-only tiling pattern with a single huge cell could hold drawn shapes
+  that were painted under the mark).
+* Collateral removal is conservative: a curve is judged by its control polygon, a stroke by the farthest its caps
+  and joins can reach, and a pattern-painted shape by the hull of its points, so shapes close to a mark can go
+  although they do not visibly touch it. The After view and the collateral note show it.
 * A **glyph is treated as covered at 30 %** of its box; a sliver overlap leaves the character (drawn mark still
   covers it). Text-derived marks (selection, search) use exact glyph boxes, so this only matters for hand-drawn areas.
 * **Ambiguous data such as text stored inside an image** is only destroyed if it lies under a mark; OCR is not run.
@@ -131,13 +148,14 @@ src/renderer/src/features/redact/
   logic/             pure logic (no pdfjs/DOM imports): runs in Node, covered by unit tests
     geom.ts          rects, disjoint decomposition, convex polygon coverage (rotated glyph boxes)
     interp.ts        the redaction interpreter (text, images, forms, paths, patterns, shadings, marked content)
+    vector.ts        hull/stroke reach tests and cutting shapes along the marks (used by interp.ts)
     textRewrite.ts   advance-preserving cut of Tj/TJ/'/"
     imageRedact.ts   pixel destruction for every colour space/filter we support (uses jpeg-js for JPEG)
     pageRedact.ts    page content rewrite + overlay
     prune.ts         drops replaced originals from private resource dictionaries
     docScrub.ts      annotations, fields, bookmarks, destinations, strings, XMP, thumbnails, JS, hidden data, GC
     redact.ts        orchestrator (steps per page, then the document-wide scrub); report + summary
-    verify.ts        the independent self-check
+    verify.ts        the independent self-check (verifyVector.ts: its geometry check of drawn shapes)
     extract.ts       page text with glyph geometry (search, selection)
     search.ts, patterns.ts, safeRegex.ts    find and mark, presets, step-limited regex engine
   store.ts overlay.tsx Panel.tsx Options.tsx ApplyDialog.tsx Preview.tsx apply.ts purge.ts pages.ts index.tsx ...
@@ -159,7 +177,11 @@ redaction PDF.js, the content engine and a raw scan of every stream/string/byte 
 black / unchanged, unmarked text, links and structure survive), `redact-verify` (mutation tests: the self-check must
 notice each deliberately planted residue), `redact-images` (every colour space/filter, masks, inline, shared,
 rotated, fail-closed formats), `redact-engine` (font types, forms copy-on-write, marked content, vector/pattern/
-shading, overlay, refusals), `redact-scrub`, `redact-geometry`, `redact-patterns`, `redact-regex` (differential
+shading, overlay, refusals), `redact-vector` (digits drawn as rectangles or outlines in one path or many, marks
+over all, some or across them, curves, strokes near an edge with caps/joins/miter limits, transformations, nested
+forms, even-odd holes, clips straddling a mark, rotated rectangles, removed-image boxes, patterns; what remains
+paints a subset of the original; with every clip and the overlay stripped no geometry is left under the mark; the
+self-check fails on a clip-only result), `redact-scrub`, `redact-geometry`, `redact-patterns`, `redact-regex` (differential
 tests against JavaScript RegExp and budget tests), `redact-search`, `redact-store`, `redact-main`.
 
 `npx playwright test tests/e2e/redact.spec.ts`: mark by selection, by area (pointer, keyboard, numbers), by search/

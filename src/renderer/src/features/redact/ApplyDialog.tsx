@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Modal } from '../../components/Modal'
 import { notify } from '../../state/notify'
 import { applyRedactions, previewRedactions, type ApplyResult, type PreviewResult } from './apply'
-import { summarize } from './logic/redact'
+import { collateralNote, summarize } from './logic/redact'
 import { Preview } from './Preview'
 import { pagesOf, totalRects, useDocRedact, useRedact } from './store'
 
@@ -145,8 +145,13 @@ export function RedactDialog(): JSX.Element | null {
         {preview && (
           <div data-testid="redact-preview-result">
             <p className="font-medium" data-testid="redact-summary">
-              {summarize(preview.report)}
+              {summarize(preview.report, false)}
             </p>
+            {collateralNote(preview.report) && (
+              <p role="note" className="mt-1 rounded-md border border-line bg-surface-alt p-2 text-xs" data-testid="redact-collateral">
+                {collateralNote(preview.report)} Check the After view.
+              </p>
+            )}
             {preview.report.warnings.length > 0 && (
               <ul className="mt-1 list-disc pl-5 text-xs text-ink-muted">
                 {preview.report.warnings.slice(0, 6).map((w, i) => (

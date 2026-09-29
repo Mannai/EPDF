@@ -202,18 +202,36 @@ export async function redactDocumentAsync(pdf: PDFDocument, marks: readonly Mark
   return r.value
 }
 
-/** One-line human summary of a report ("Removed 14 text runs, 2 images (regions), ..."). */
-export function summarize(r: RedactReport): string {
+/**
+ * The sentence about drawn shapes that crossed the edge of a mark and were removed entirely (so they may also be
+ * gone outside the marks), or null when there were none.
+ */
+export function collateralNote(r: Pick<Stats, 'pathsCollateral' | 'shadingsCollateral'>): string | null {
+  const n = r.pathsCollateral + r.shadingsCollateral
+  if (!n) return null
+  return n === 1
+    ? '1 drawn shape that crosses the edge of a mark was removed entirely, so it may also be missing outside the marked area.'
+    : `${n} drawn shapes that cross the edge of a mark were removed entirely, so they may also be missing outside the marked area.`
+}
+
+/**
+ * Human summary of a report ("Removed 14 text runs, 2 images (regions), ..."), followed by the collateral sentence
+ * (`collateralNote`) unless `withCollateral` is false (the dialog shows that one as a separate note).
+ */
+export function summarize(r: RedactReport, withCollateral = true): string {
   const parts: string[] = []
   const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`
   if (r.textRuns) parts.push(plural(r.textRuns, 'text run'))
   if (r.images) parts.push(`${plural(r.images, 'image')} (regions)`)
   if (r.imagesRemoved) parts.push(`${plural(r.imagesRemoved, 'image')} (entirely)`)
-  if (r.paths || r.pathsClipped || r.shadings) parts.push(plural(r.paths + r.pathsClipped + r.shadings, 'graphic'))
+  const graphics = r.paths + r.pathsCollateral + r.shadings + r.shadingsCollateral
+  if (graphics) parts.push(plural(graphics, 'graphic'))
   if (r.scrub.annotations) parts.push(plural(r.scrub.annotations, 'annotation'))
   const meta = r.scrub.metadata + r.scrub.thumbnails + r.scrub.strings + r.scrub.namedDests
   if (meta) parts.push('metadata')
   if (r.scrub.attachments) parts.push(plural(r.scrub.attachments, 'attachment'))
   if (r.scrub.javascript) parts.push('JavaScript')
-  return parts.length ? `Removed ${parts.join(', ')}.` : 'Nothing under the marks needed removing; the areas were covered.'
+  const main = parts.length ? `Removed ${parts.join(', ')}.` : 'Nothing under the marks needed removing; the areas were covered.'
+  const note = withCollateral ? collateralNote(r) : null
+  return note ? `${main} ${note}` : main
 }

@@ -17,12 +17,15 @@ import { GLYPH_COVERAGE, coverage, intersect, quadCoverage, rectQuad, touches, t
 import { redactImage } from './imageRedact'
 import { fromPdfLib, toPdfLib } from './pdfconv'
 import { rewriteShow, type GlyphSpan } from './textRewrite'
+import { convexHull, hullMeetsRect, maxStretch, miterRatio, polyArea, subtractMarks, type Pt } from './vector'
 
 /**
  * The redaction interpreter. It walks a page's content (and the Form XObjects, soft-mask groups and inline images
  * it reaches) with a full graphics/text state, and — when editing — rewrites everything that lies under the
  * marks: glyphs are cut out of text-showing operators (advance-preserving), images lose the covered pixels,
- * paths/shadings/patterns under a mark are removed or clipped, marked-content replacement text is stripped.
+ * drawn shapes (subpaths) that reach a mark are removed with their operators (filled rectangles are cut along the
+ * marks instead), shadings and pattern paints that reach a mark are removed, marked-content replacement text is
+ * stripped.
  *
  * Nothing shared is ever modified in place: forms, images and graphics states that change are COPIED and the use
  * site is pointed at the copy (through a private copy of the resource dictionary), so other pages and unmarked
@@ -47,9 +50,14 @@ export interface Stats {
   images: number
   imagePixels: number
   imagesRemoved: number
+  /** Drawn shapes (subpaths) removed or cut that lay under the marks. */
   paths: number
-  pathsClipped: number
+  /** Drawn shapes that crossed the edge of a mark and were removed entirely (also outside the marks). */
+  pathsCollateral: number
+  /** Shadings removed that were painted only under the marks. */
   shadings: number
+  /** Shadings removed that were also painted outside the marks. */
+  shadingsCollateral: number
   patterns: number
   forms: number
   marked: number
@@ -63,8 +71,9 @@ export const newStats = (): Stats => ({
   imagePixels: 0,
   imagesRemoved: 0,
   paths: 0,
-  pathsClipped: 0,
+  pathsCollateral: 0,
   shadings: 0,
+  shadingsCollateral: 0,
   patterns: 0,
   forms: 0,
   marked: 0
@@ -201,11 +210,15 @@ interface GS {
   strokePat?: PatSel
   clip: Rect | null
   lw: number
+  /** Line join (0 miter, 1 round, 2 bevel), line cap (0 butt, 1 round, 2 square) and miter limit. */
+  lj: number
+  lc: number
+  ml: number
 }
 
 /**
- * A `/Name scn` that selected a pattern. If every paint that used it was dropped (the pattern draws text or
- * pictures under a mark), the selection is neutralised so the pattern can be deleted.
+ * A `/Name scn` that selected a pattern. If every paint that used it was dropped (it reached a mark), the
+ * selection is neutralised so the pattern can be deleted.
  */
 interface PatSel {
   name: string
@@ -214,6 +227,37 @@ interface PatSel {
   index: number
   keeps: number
   drops: number
+  /** The pattern object (reference tag, or the object itself), to find other uses of the same pattern. */
+  key: unknown
+  /** A paint with this selection was dropped and the pattern can carry text or pictures. */
+  danger: boolean
+}
+
+/**
+ * One subpath of the path being built: the operators that make it (so it can be removed on its own) and its
+ * geometry. A subpath starts at `m` or `re`; `l`/`c`/`h` that follow a closed subpath without a new `m` continue
+ * it, so a subpath that is kept never starts without a current point.
+ */
+interface SubPath {
+  refs: { arr: Op[]; idx: number }[]
+  /** Every point in user space, control points included (the shape lies in their convex hull). */
+  pts: Pt[]
+  /** User-space pieces of the outline: lines (2 points) and curves (4 control points). */
+  segs: Pt[][]
+  startL: Pt
+  startU: Pt
+  lastL: Pt
+  lastU: Pt
+  /** The last operator closed it (`h` or `re`). */
+  closed: boolean
+  /** A lone `re` (local x, y, w, h): it can be cut along the marks instead of being removed. */
+  rect?: [number, number, number, number]
+  /** Miter length / line width at its corners (local space). */
+  ratios: number[]
+  /** It has zero-length pieces or unusable numbers: the reach of its joins cannot be bounded exactly. */
+  odd: boolean
+  firstDir?: Pt
+  lastDir?: Pt
 }
 
 const cloneG = (g: GS): GS => ({ ...g, text: { ...g.text } })
@@ -222,8 +266,49 @@ export const initialState = (): GS => ({
   ctm: IDENTITY,
   text: { font: undefined, fontName: '', size: 0, tc: 0, tw: 0, th: 1, tl: 0, rise: 0, mode: 0 },
   clip: null,
-  lw: 1
+  lw: 1,
+  lj: 0,
+  lc: 0,
+  ml: 10
 })
+
+const bboxOf = (pts: readonly Pt[]): Rect => {
+  let x0 = Infinity
+  let y0 = Infinity
+  let x1 = -Infinity
+  let y1 = -Infinity
+  for (const [x, y] of pts) {
+    x0 = Math.min(x0, x)
+    y0 = Math.min(y0, y)
+    x1 = Math.max(x1, x)
+    y1 = Math.max(y1, y)
+  }
+  return { x0, y0, x1, y1 }
+}
+
+/** The part of convex polygon `p` inside convex polygon `q` (both counter-clockwise). */
+function convexIntersection(p: Pt[], q: Pt[]): Pt[] {
+  let out = p
+  for (let i = 0; i < q.length && out.length; i++) {
+    const a = q[i]
+    const b = q[(i + 1) % q.length]
+    const input = out
+    out = []
+    const side = (s: Pt): number => (b[0] - a[0]) * (s[1] - a[1]) - (b[1] - a[1]) * (s[0] - a[0])
+    for (let k = 0; k < input.length; k++) {
+      const s = input[k]
+      const e = input[(k + 1) % input.length]
+      const ss = side(s)
+      const se = side(e)
+      if (ss >= 0) out.push(s)
+      if ((ss >= 0) !== (se >= 0)) {
+        const t = ss / (ss - se)
+        out.push([s[0] + t * (e[0] - s[0]), s[1] + t * (e[1] - s[1])])
+      }
+    }
+  }
+  return out
+}
 
 const numOf = (a: PdfObj | undefined): number => (a?.t === 'num' ? a.v : NaN)
 
@@ -264,6 +349,8 @@ export class Walker {
   private formStack: string[] = []
   private formId = 0
   private patternCache = new Map<PDFObject, boolean>()
+  /** Every pattern selection seen on the page (forms and soft masks included). */
+  private allSels: PatSel[] = []
   /** Resource dictionaries created by the redaction (safe to prune later). */
   readonly owned = new Set<PDFDict>()
   /** Objects whose use sites were replaced by copies: refTag strings for indirect objects, the object itself otherwise. */
@@ -306,21 +393,130 @@ export class Walker {
       for (const e of mc) e.dirty = true
     }
 
-    // path state
-    let pathStart = -1
-    let pathPts: [number, number][] = []
-    let pathLocal: Rect | null = null
+    // Path state. Operators are never spliced out while walking (other bookkeeping holds indices into `out`):
+    // a removed or rewritten operator is swapped for a placeholder that `expand` maps to its replacement, and every
+    // output list is compacted at the end. A path may span content streams, so each operator is referenced by
+    // (list, index).
+    let inPath = false
+    let subs: SubPath[] = []
+    let cur: Pt | null = null
     let pendingClip: string | null = null
+    const expand = new Map<Op, Op[]>()
+    const dirty = new Set<Op[]>()
 
-    const noteLocal = (x: number, y: number): void => {
-      pathLocal = pathLocal ? { x0: Math.min(pathLocal.x0, x), y0: Math.min(pathLocal.y0, y), x1: Math.max(pathLocal.x1, x), y1: Math.max(pathLocal.y1, y) } : { x0: x, y0: y, x1: x, y1: y }
-      pathPts.push(apply(g.ctm, x, y))
-    }
     const resetPath = (): void => {
-      pathStart = -1
-      pathPts = []
-      pathLocal = null
+      inPath = false
+      subs = []
+      cur = null
       pendingClip = null
+    }
+    const toU = (p: Pt): Pt => apply(g.ctm, p[0], p[1])
+    const openSub = (start: Pt): SubPath => {
+      const u = toU(start)
+      const s: SubPath = { refs: [], pts: [u], segs: [], startL: start, startU: u, lastL: start, lastU: u, closed: false, ratios: [], odd: false }
+      subs.push(s)
+      return s
+    }
+    /** Adds an outline piece (local points: a line or a curve's four control points) and the join before it. */
+    const segment = (s: SubPath, L: Pt[]): void => {
+      const U = L.map(toU)
+      s.segs.push(U)
+      for (const u of U) s.pts.push(u)
+      s.lastL = L[L.length - 1]
+      s.lastU = U[U.length - 1]
+      const a = L[0]
+      const b = L[L.length - 1]
+      let din: Pt | undefined
+      let dout: Pt | undefined
+      for (let k = 1; k < L.length && !din; k++) {
+        const d: Pt = [L[k][0] - a[0], L[k][1] - a[1]]
+        if (d[0] || d[1]) din = d
+      }
+      for (let k = L.length - 2; k >= 0 && !dout; k--) {
+        const d: Pt = [b[0] - L[k][0], b[1] - L[k][1]]
+        if (d[0] || d[1]) dout = d
+      }
+      if (!din || !dout) {
+        s.odd = true
+        return
+      }
+      if (s.lastDir) s.ratios.push(miterRatio(s.lastDir, din))
+      else s.firstDir = din
+      s.lastDir = dout
+    }
+    const closeJoin = (s: SubPath): void => {
+      if (s.lastDir && s.firstDir) s.ratios.push(miterRatio(s.lastDir, s.firstDir))
+    }
+    const buildPath = (op: Op): void => {
+      const a = op.args
+      const ref = { arr: out, idx: out.length }
+      const P = (i: number): Pt => [numOf(a[i]), numOf(a[i + 1])]
+      switch (op.op) {
+        case 'm': {
+          const p = P(0)
+          openSub(p).refs.push(ref)
+          cur = p
+          return
+        }
+        case 're': {
+          const [x, y, w, h] = [numOf(a[0]), numOf(a[1]), numOf(a[2]), numOf(a[3])]
+          const s = openSub([x, y])
+          s.refs.push(ref)
+          const c: Pt[] = [
+            [x, y],
+            [x + w, y],
+            [x + w, y + h],
+            [x, y + h]
+          ]
+          for (let k = 0; k < 4; k++) segment(s, [c[k], c[(k + 1) % 4]])
+          closeJoin(s)
+          s.closed = true
+          s.rect = [x, y, w, h]
+          s.lastL = s.startL
+          s.lastU = s.startU
+          s.firstDir = s.lastDir = undefined
+          cur = [x, y]
+          return
+        }
+        case 'h': {
+          const s = subs[subs.length - 1] ?? openSub(cur ?? [0, 0])
+          s.refs.push(ref)
+          s.rect = undefined
+          if (!s.closed && cur) {
+            if (cur[0] !== s.startL[0] || cur[1] !== s.startL[1]) segment(s, [cur, s.startL])
+            closeJoin(s)
+          }
+          s.closed = true
+          s.lastL = s.startL
+          s.lastU = s.startU
+          s.firstDir = s.lastDir = undefined
+          cur = s.startL
+          return
+        }
+        default: {
+          const pts: Pt[] = op.op === 'l' ? [P(0)] : op.op === 'c' ? [P(0), P(2), P(4)] : op.op === 'v' ? [cur ?? P(0), P(0), P(2)] : [P(0), P(2), P(2)]
+          const end = pts[pts.length - 1]
+          const s = subs[subs.length - 1]
+          if (!s || !cur) {
+            // no current point (malformed): the operator still belongs to a subpath of its own
+            openSub(end).refs.push(ref)
+            cur = end
+            return
+          }
+          s.refs.push(ref)
+          s.rect = undefined
+          if (s.closed) s.closed = false // continues from the start point after `h` / `re`
+          segment(s, [cur, ...pts])
+          cur = end
+        }
+      }
+    }
+    /** Removes an operator of the path (it is dropped from the output list when the lists are compacted). */
+    const kill = (ref: { arr: Op[]; idx: number }, replacement: Op[] = []): void => {
+      const ph: Op = { op: '', args: [], pre: new Uint8Array(0), raw: null }
+      expand.set(ph, replacement)
+      ref.arr[ref.idx] = ph
+      dirty.add(ref.arr)
     }
 
     const setFont = (fontName: string, size: number): void => {
@@ -330,9 +526,14 @@ export class Walker {
       g = { ...g, text: { ...g.text, font, fontName, size } }
     }
 
+    /** The box that replaces a removed image: the image's area outside the marks (the overlay covers the rest). */
     const boxOps = (): Op[] => {
+      const inv = invert(g.ctm)
+      if (!inv) return []
+      const pieces = subtractMarks([toU([0, 0]), toU([1, 0]), toU([1, 1]), toU([0, 1])], this.cfg.marks)
+      if (!pieces.length) return []
       const [r, gr, b] = this.cfg.fill
-      return [mkOp('q'), mkOp('rg', numObj(r), numObj(gr), numObj(b)), mkOp('re', numObj(0), numObj(0), numObj(1), numObj(1)), mkOp('f'), mkOp('Q')]
+      return [mkOp('q'), mkOp('rg', numObj(r), numObj(gr), numObj(b)), ...pieces.flatMap((p) => polygonOps(p, inv)), mkOp('f'), mkOp('Q')]
     }
 
     const show = (op: Op, strArg: number, spacing?: { tw: number; tc: number }): void => {
@@ -549,84 +750,175 @@ export class Walker {
       const keep = (): void => {
         for (const s of sels) s.keeps++
       }
-      const hadPath = pathStart >= 0 && pathPts.length > 0
-      if (!hadPath || !this.editing) {
+      if (!inPath || !this.editing || subs.length === 0) {
         keep()
         finishPath(op)
         return
       }
-      const stroke = PAINT_STROKE.has(op.op)
-      const scale = Math.sqrt(Math.abs(g.ctm[0] * g.ctm[3] - g.ctm[1] * g.ctm[2]))
-      const exp = stroke ? (g.lw * scale) / 2 : 0
-      let x0 = Infinity
-      let y0 = Infinity
-      let x1 = -Infinity
-      let y1 = -Infinity
-      for (const [x, y] of pathPts) {
-        x0 = Math.min(x0, x)
-        y0 = Math.min(y0, y)
-        x1 = Math.max(x1, x)
-        y1 = Math.max(y1, y)
+      const marks = this.cfg.marks
+      const fills = PAINT_FILL.has(op.op)
+      const strokes = PAINT_STROKE.has(op.op)
+      const clip = pendingClip
+      // the shape paints (or clips to) an area: its subpaths are closed implicitly and act on each other's winding
+      const area = fills || clip !== null
+      const closes = area || op.op === 's' || op.op === 'b' || op.op === 'b*'
+      const base = strokes ? (Math.max(0, g.lw) / 2) * maxStretch(g.ctm) : 0
+      // (an unknown cap style counts as square, an unknown join style as miter: the farthest reaching)
+      const capFactor = g.lc === 0 || g.lc === 1 ? 1 : Math.SQRT2
+      const radius = (s: SubPath): number => (strokes ? base * Math.max(capFactor, joinFactor(s, closes)) + 1e-9 : 0)
+      const meets = (pts: readonly Pt[], r: number): boolean => marks.some((m) => hullMeetsRect(pts, m, r))
+      const count = (s: SubPath): void => {
+        if (coverage(bboxOf(s.pts), marks) >= 0.999) this.stats.paths++
+        else this.stats.pathsCollateral++
       }
-      const bbox: Rect = { x0: x0 - exp, y0: y0 - exp, x1: x1 + exp, y1: y1 + exp }
-      if (!this.hits(bbox)) {
-        keep()
-        finishPath(op)
-        return
+      const dropAll = (): void => {
+        for (const s of subs) for (const r of s.refs) kill(r)
+        changed()
+        endEmpty(op, clip)
       }
-      const full = coverage({ x0: bbox.x0, y0: bbox.y0, x1: bbox.x1, y1: bbox.y1 }, this.cfg.marks) >= 0.999
-      if (pendingClip) {
-        keep()
-        if (full && pathLocal) {
-          // A clip that lies entirely under a mark: keep its effect but drop its shape.
-          const l = pathLocal as Rect
-          out.length = pathStart
-          out.push(mkOp('re', numObj(l.x0), numObj(l.y0), numObj(l.x1 - l.x0), numObj(l.y1 - l.y0)))
-          out.push(mkOp(pendingClip))
-          changed()
-          this.stats.paths++
+
+      if (op.op === 'n' && !clip) {
+        // an unpainted, unclipping path: nothing is visible, and its geometry may carry information
+        if (!subs.some((s) => meets(s.pts, 0))) {
+          finishPath(op)
+          return
         }
-        finishPath(op)
+        this.stats.paths += subs.length
+        dropAll()
         return
       }
-      if (op.op === 'n') {
-        // an unpainted, unclipping path: nothing visible, and its geometry may carry information
-        out.length = pathStart
-        changed()
-        this.stats.paths++
-        resetPath()
-        return
-      }
-      const dangerous = sels.filter((s) => this.patternDangerous(res.effective, s.name))
-      if (full || dangerous.length) {
-        out.length = pathStart
-        changed()
-        this.stats.paths++
-        for (const s of dangerous) {
-          s.drops++
-          this.stats.patterns++
+
+      if (sels.length) {
+        // Painted with a pattern: what the pattern draws under the mark cannot be cut out, so a pattern paint that
+        // reaches a mark is removed whole.
+        if (!subs.some((s) => meets(s.pts, radius(s)))) {
+          keep()
+          finishPath(op)
+          return
+        }
+        for (const s of subs) count(s)
+        for (const sel of sels) {
+          sel.drops++
+          if (this.patternDangerous(res.effective, sel.name)) {
+            sel.danger = true
+            this.stats.patterns++
+          }
           res.own('Pattern')
-          const raw = ddict(res.effective, 'Pattern')?.get(N(s.name))
-          this.replaced.add(raw instanceof PDFRef ? refTag(raw) : raw)
+          const raw = ddict(res.effective, 'Pattern')?.get(N(sel.name))
+          if (raw) this.replaced.add(raw instanceof PDFRef ? refTag(raw) : raw)
         }
-        resetPath()
+        dropAll()
         return
       }
-      const clip = clipOutOps(g.ctm, this.cfg.marks)
-      if (!clip) {
-        out.length = pathStart
-        changed()
-        this.stats.paths++
-        resetPath()
+
+      // Each subpath whose outline (or stroke) reaches a mark goes; a lone filled rectangle is cut along the marks.
+      const state: ('keep' | 'split' | 'drop')[] = subs.map((s) => {
+        const segs = s.segs.length ? s.segs : [[s.startU, s.startU]]
+        const r = radius(s)
+        if (segs.some((seg) => meets(seg, r))) return 'drop'
+        if (closes && !s.closed && meets([s.lastU, s.startU], r)) return 'drop'
+        return 'keep'
+      })
+      if (state.every((x) => x === 'keep')) {
+        keep()
+        finishPath(op)
+        return
+      }
+      const inv = invert(g.ctm)
+      const pieces = new Map<number, Pt[][]>()
+      if (area && !strokes && inv) {
+        subs.forEach((s, i) => {
+          if (state[i] !== 'drop' || !s.rect || s.odd || !s.rect.every(Number.isFinite) || s.rect[2] === 0 || s.rect[3] === 0) return
+          const [x, y, w, h] = s.rect
+          const p = subtractMarks([toU([x, y]), toU([x + w, y]), toU([x + w, y + h]), toU([x, y + h])], marks)
+          if (p.length) {
+            pieces.set(i, p)
+            state[i] = 'split'
+          }
+        })
+      }
+      if (area) {
+        // A removed subpath changes the winding of the others where they overlap: anything whose hull meets the
+        // hull of a removed one outside the marks goes too, so what remains paints (or clips to) a subset of the
+        // original — a removed outline can never turn a hole into a filled area.
+        const hulls = subs.map((s) => {
+          const h = convexHull(s.pts)
+          return h.length >= 3 && polyArea(h) > 0 ? h : null
+        })
+        const boxes = subs.map((s) => bboxOf(s.pts))
+        const queue = state.flatMap((st, i) => (st === 'drop' ? [i] : []))
+        while (queue.length) {
+          const d = queue.pop()!
+          const hd = hulls[d]
+          if (!hd) continue
+          for (let k = 0; k < subs.length; k++) {
+            if (state[k] === 'drop' || !hulls[k] || !intersect(boxes[k], boxes[d])) continue
+            const both = convexIntersection(hulls[k]!, hd)
+            if (both.length < 3 || !(Math.abs(polyArea(both)) > 1e-9)) continue
+            if (!subtractMarks(both, marks).length) continue
+            state[k] = 'drop'
+            pieces.delete(k)
+            queue.push(k)
+          }
+        }
+      }
+      let survivors = 0
+      subs.forEach((s, i) => {
+        if (state[i] === 'keep') {
+          survivors++
+          return
+        }
+        if (state[i] === 'split') {
+          survivors++
+          this.stats.paths++
+          const [, , w, h] = s.rect!
+          kill(s.refs[0], pieces.get(i)!.flatMap((p) => (axisAligned(g.ctm) ? [rectOp(p, inv!, w, h)] : polygonOps(p, inv!))))
+          return
+        }
+        count(s)
+        for (const r of s.refs) kill(r)
+      })
+      changed()
+      if (!survivors) {
+        endEmpty(op, clip)
         return
       }
       keep()
-      out.splice(pathStart, 0, ...clip)
-      out.push(op)
-      out.push(mkOp('Q'))
-      changed()
-      this.stats.pathsClipped++
-      afterPaint(op)
+      finishPath(op)
+    }
+    /** Miter length / line width that bounds the joins of a subpath (1 when joins are round or bevelled). */
+    const joinFactor = (s: SubPath, closes: boolean): number => {
+      if (g.lj === 1 || g.lj === 2) return 1
+      const ml = Math.max(1, Number.isFinite(g.ml) ? g.ml : 10)
+      if (s.odd) return ml
+      const ratios = [...s.ratios]
+      if (closes && !s.closed && s.lastDir && s.firstDir) {
+        const d: Pt = [s.startL[0] - s.lastL[0], s.startL[1] - s.lastL[1]]
+        if (d[0] || d[1]) ratios.push(miterRatio(s.lastDir, d), miterRatio(d, s.firstDir))
+        else ratios.push(miterRatio(s.lastDir, s.firstDir))
+      }
+      let f = 1
+      for (const r of ratios) if (r <= ml) f = Math.max(f, r) // longer miters are drawn bevelled
+      return f
+    }
+    /**
+     * Nothing of the path is left: a clip becomes an empty clip (a zero-size rectangle placed outside every mark,
+     * where its first operator was); any other path is dropped with its painting operator.
+     */
+    const endEmpty = (op: Op, clip: string | null): void => {
+      void op
+      if (clip) {
+        const far = { x: Math.min(...this.cfg.marks.map((m) => m.x0)) - 16, y: Math.min(...this.cfg.marks.map((m) => m.y0)) - 16 }
+        const inv = invert(g.ctm)
+        const [lx, ly] = inv ? apply(inv, far.x, far.y) : [0, 0]
+        const first = subs[0]?.refs[0]
+        const empty = mkOp('re', numObj(lx), numObj(ly), numObj(0), numObj(0))
+        if (first) expand.set(first.arr[first.idx], [empty])
+        else out.push(empty)
+        out.push(mkOp('n'))
+        g = { ...g, clip: { x0: far.x, y0: far.y, x1: far.x, y1: far.y } }
+      }
+      resetPath()
     }
     const finishPath = (op: Op): void => {
       out.push(op)
@@ -634,18 +926,8 @@ export class Walker {
     }
     const afterPaint = (op: Op): void => {
       void op
-      if (pendingClip && pathPts.length) {
-        let x0 = Infinity
-        let y0 = Infinity
-        let x1 = -Infinity
-        let y1 = -Infinity
-        for (const [x, y] of pathPts) {
-          x0 = Math.min(x0, x)
-          y0 = Math.min(y0, y)
-          x1 = Math.max(x1, x)
-          y1 = Math.max(y1, y)
-        }
-        const b: Rect = { x0, y0, x1, y1 }
+      if (pendingClip && subs.length) {
+        const b = bboxOf(subs.flatMap((s) => s.pts))
         g = { ...g, clip: g.clip ? (intersect(g.clip, b) ?? { x0: 0, y0: 0, x1: 0, y1: 0 }) : b }
       }
       resetPath()
@@ -660,29 +942,8 @@ export class Walker {
         const op = slot.ops[i]
         const a = op.args
         if (PATH_OPS.has(op.op)) {
-          if (pathStart < 0) pathStart = out.length
-          switch (op.op) {
-            case 'm':
-            case 'l':
-              if (a.length >= 2) noteLocal(numOf(a[0]), numOf(a[1]))
-              break
-            case 'c':
-              if (a.length >= 6) for (let k = 0; k < 6; k += 2) noteLocal(numOf(a[k]), numOf(a[k + 1]))
-              break
-            case 'v':
-            case 'y':
-              if (a.length >= 4) for (let k = 0; k < 4; k += 2) noteLocal(numOf(a[k]), numOf(a[k + 1]))
-              break
-            case 're':
-              if (a.length >= 4) {
-                const [x, y, w, h] = [numOf(a[0]), numOf(a[1]), numOf(a[2]), numOf(a[3])]
-                noteLocal(x, y)
-                noteLocal(x + w, y)
-                noteLocal(x, y + h)
-                noteLocal(x + w, y + h)
-              }
-              break
-          }
+          inPath = true
+          if (this.editing) buildPath(op)
           out.push(op)
           continue
         }
@@ -712,6 +973,18 @@ export class Walker {
             break
           case 'w':
             g = { ...g, lw: numOf(a[0]) || 0 }
+            out.push(op)
+            break
+          case 'j':
+            g = { ...g, lj: numOf(a[0]) || 0 }
+            out.push(op)
+            break
+          case 'J':
+            g = { ...g, lc: numOf(a[0]) || 0 }
+            out.push(op)
+            break
+          case 'M':
+            g = { ...g, ml: Number.isFinite(numOf(a[0])) ? numOf(a[0]) : 10 }
             out.push(op)
             break
           case 'BT':
@@ -838,8 +1111,13 @@ export class Walker {
           case 'scn':
           case 'SCN': {
             const last = a[a.length - 1]
-            const sel: PatSel | undefined = last?.t === 'name' ? { name: last.v, stroke: op.op === 'SCN', target: out, index: out.length, keeps: 0, drops: 0 } : undefined
-            if (sel) patSels.push(sel)
+            let sel: PatSel | undefined
+            if (last?.t === 'name') {
+              const raw = ddict(res.effective, 'Pattern')?.get(N(last.v))
+              sel = { name: last.v, stroke: op.op === 'SCN', target: out, index: out.length, keeps: 0, drops: 0, key: raw instanceof PDFRef ? refTag(raw) : (raw ?? `missing:${last.v}`), danger: false }
+              patSels.push(sel)
+              this.allSels.push(sel)
+            }
             g = op.op === 'scn' ? { ...g, fillPat: sel } : { ...g, strokePat: sel }
             out.push(op)
             break
@@ -855,6 +1133,12 @@ export class Walker {
             }
             const lw = dnum(gsd, 'LW')
             if (lw !== undefined) g = { ...g, lw }
+            const lj = dnum(gsd, 'LJ')
+            if (lj !== undefined) g = { ...g, lj }
+            const lc = dnum(gsd, 'LC')
+            if (lc !== undefined) g = { ...g, lc }
+            const ml = dnum(gsd, 'ML')
+            if (ml !== undefined) g = { ...g, ml }
             const smask = gsd ? ddict(gsd, 'SMask') : undefined
             if (gsName && gsd && smask && this.editing) {
               const rep = this.softMask(gsName, gsd, smask, g, res, depth)
@@ -870,20 +1154,26 @@ export class Walker {
           case 'sh': {
             const shName = a[0]?.t === 'name' ? a[0].v : undefined
             const sh = shName ? dget(ddict(res.effective, 'Shading'), shName) : undefined
-            const region = g.clip
-            if (!this.editing || !sh || (region && !this.hits(region))) {
+            const shDict = sh instanceof PDFStream ? sh.dict : sh instanceof PDFDict ? sh : undefined
+            // where it can paint: the clip, narrowed by the shading's own BBox
+            let region = g.clip
+            const bb = numbers(darr(shDict, 'BBox'))
+            if (bb.length === 4 && bb.every(Number.isFinite)) {
+              const r = transformRect(g.ctm, Math.min(bb[0], bb[2]), Math.min(bb[1], bb[3]), Math.max(bb[0], bb[2]), Math.max(bb[1], bb[3]))
+              region = region ? (intersect(region, r) ?? { x0: region.x0, y0: region.y0, x1: region.x0, y1: region.y0 }) : r
+            }
+            // (a shading clipped to nothing, e.g. by a clip that lay under a mark, paints nothing and goes too)
+            const empty = !!region && (region.x1 - region.x0 <= 0 || region.y1 - region.y0 <= 0)
+            if (!this.editing || !sh || (region && !empty && !this.hits(region))) {
               out.push(op)
               break
             }
-            const shDict = sh instanceof PDFStream ? sh.dict : sh instanceof PDFDict ? sh : undefined
-            const type = dnum(shDict, 'ShadingType') ?? 0
-            const full = region ? coverage(region, this.cfg.marks) >= 0.999 : false
-            const clip = type === 2 || type === 3 ? clipOutOps(g.ctm, this.cfg.marks) : null
+            // Its colours are data (a sampled function can hold anything along the axis), so a shading that reaches
+            // a mark is removed from this use, not clipped.
             changed()
-            this.stats.shadings++
-            if (!full && clip) out.push(...clip, op, mkOp('Q'))
-            else if (shName) {
-              // the shading is dropped from this use: let the original go too
+            if (empty || (region && coverage(region, this.cfg.marks) >= 0.999)) this.stats.shadings++
+            else this.stats.shadingsCollateral++
+            if (shName) {
               res.own('Shading')
               const raw = ddict(res.effective, 'Shading')?.get(N(shName))
               this.replaced.add(raw instanceof PDFRef ? refTag(raw) : raw)
@@ -923,7 +1213,22 @@ export class Walker {
     for (const s of patSels) {
       if (s.drops > 0 && s.keeps === 0) s.target[s.index] = mkOp(s.stroke ? 'G' : 'g', numObj(0))
     }
-    return { slots: outSlots, changed: anyChange, endDepth: stack.length }
+    // removed and rewritten path operators are dropped / expanded now that no index into the lists is needed
+    const slots = outSlots.map((o) => (dirty.has(o.ops) ? { ...o, ops: o.ops.flatMap((x) => expand.get(x) ?? [x]), changed: true } : o))
+    if (depth === 0 && this.editing) this.checkPatterns()
+    return { slots, changed: anyChange, endDepth: stack.length }
+  }
+
+  /**
+   * A pattern that can draw text or pictures must not stay in the file after a paint with it was removed under a
+   * mark: if the same pattern is still painted elsewhere on the page, the page is refused.
+   */
+  private checkPatterns(): void {
+    const kept = new Set(this.allSels.filter((s) => s.keeps > 0).map((s) => s.key))
+    for (const s of this.allSels) {
+      if (s.danger && s.drops > 0 && kept.has(s.key))
+        throw new RedactRefused('A pattern that draws text or pictures is painted both under a mark and elsewhere on the page, so it cannot be removed safely.')
+    }
   }
 
   /** Soft-mask group under a mark: process the mask's own content and point a copy of the graphics state at it. */
@@ -1017,21 +1322,25 @@ export class Walker {
 // ---------------------------------------------------------------------------------------------------------
 // Helpers
 
-/** `q`, an even-odd clip that excludes the marks (in the local coordinate system of `ctm`), ready for the paint that follows (closed by `Q` by the caller). */
-export function clipOutOps(ctm: Matrix, marks: readonly Rect[]): Op[] | null {
-  const inv = invert(ctm)
-  if (!inv) return null
-  const ops: Op[] = [mkOp('q')]
-  const poly = (r: Rect): void => {
-    const pts = [apply(inv, r.x0, r.y0), apply(inv, r.x1, r.y0), apply(inv, r.x1, r.y1), apply(inv, r.x0, r.y1)]
-    ops.push(mkOp('m', numObj(pts[0][0]), numObj(pts[0][1])))
-    for (let i = 1; i < 4; i++) ops.push(mkOp('l', numObj(pts[i][0]), numObj(pts[i][1])))
-    ops.push(mkOp('h'))
-  }
-  poly({ x0: -1e5, y0: -1e5, x1: 1e5, y1: 1e5 })
-  for (const m of marks) poly(m)
-  ops.push(mkOp('W*'), mkOp('n'))
-  return ops
+/** A user-space polygon as a closed subpath in the local coordinates given by `inv` (the inverse CTM). */
+function polygonOps(poly: readonly Pt[], inv: Matrix): Op[] {
+  const loc = poly.map((p) => apply(inv, p[0], p[1]))
+  return [mkOp('m', numObj(loc[0][0]), numObj(loc[0][1])), ...loc.slice(1).map((q) => mkOp('l', numObj(q[0]), numObj(q[1]))), mkOp('h')]
+}
+
+/** True when the matrix maps axis-aligned rectangles to axis-aligned rectangles. */
+function axisAligned(m: Matrix): boolean {
+  const tol = 1e-9 * (Math.abs(m[0]) + Math.abs(m[1]) + Math.abs(m[2]) + Math.abs(m[3]))
+  return (Math.abs(m[1]) <= tol && Math.abs(m[2]) <= tol) || (Math.abs(m[0]) <= tol && Math.abs(m[3]) <= tol)
+}
+
+/** A piece of a cut rectangle (user space) as an `re` in local coordinates, drawn in the original's direction. */
+function rectOp(poly: readonly Pt[], inv: Matrix, w: number, h: number): Op {
+  const loc = poly.map((p) => apply(inv, p[0], p[1]))
+  const b = bboxOf(loc)
+  const x = w > 0 ? b.x0 : b.x1
+  const y = h > 0 ? b.y0 : b.y1
+  return mkOp('re', numObj(x), numObj(y), numObj(w > 0 ? b.x1 - b.x0 : b.x0 - b.x1), numObj(h > 0 ? b.y1 - b.y0 : b.y0 - b.y1))
 }
 
 const INLINE_KEYS: Record<string, string> = { BPC: 'BitsPerComponent', CS: 'ColorSpace', D: 'Decode', DP: 'DecodeParms', F: 'Filter', H: 'Height', IM: 'ImageMask', I: 'Interpolate', W: 'Width' }

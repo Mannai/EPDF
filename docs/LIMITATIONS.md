@@ -61,8 +61,11 @@ What Epdf 1.1.0-beta.1 does not do yet, and what has not been verified. Each fea
   preview and phone upload were tested against stubs or with no device attached, a fake camera and real HTTP requests. Cloud-folder detection in the library was
   tested with fakes, not real OneDrive/Google Drive/Dropbox folders.
 - **Form builder** and **redaction** were tested on generated documents. Redaction verifies its own result and refuses
-  when it cannot be sure; [Redaction](features/redact.md) states exactly what is and is not removed. Copies outside
-  Epdf's data folder (backups, the original left after Save As) are not controlled.
+  when it cannot be sure; [Redaction](features/redact.md) states exactly what is and is not removed. It works by
+  geometry: drawn shapes that cross the edge of a mark are removed entirely, so they can also disappear just outside
+  it (the Apply dialog says how many); the content of tiling patterns, Type 3 glyph procedures and annotation
+  appearances is not inspected shape by shape, and a harmless pattern or shading still used elsewhere on the page
+  stays in the file. Copies outside Epdf's data folder (backups, the original left after Save As) are not controlled.
 - **Compression** does not linearize ("Fast Web View").
 - **HEIC** pictures depend on the Windows HEIF extension (macOS: its built-in `sips`; Linux: `heif-convert` or
   ImageMagick); everything else is built in.

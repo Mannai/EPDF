@@ -259,17 +259,21 @@ describe('forms: copy on write', () => {
 })
 
 describe('vector graphics, patterns and shadings under a mark', () => {
-  it('paths inside a mark are removed, partly covered ones are clipped, others stay', async () => {
-    const { bytes } = await page('1 0 0 rg 100 100 20 20 re f 0 1 0 rg 150 100 60 20 re f 0 0 1 rg 300 300 40 40 re f 0 0 0 RG 2 w 105 105 m 115 115 l S')
+  it('paths inside a mark are removed, a partly covered filled rectangle is cut along the mark, others stay', async () => {
+    const { bytes } = await page('1 0 0 rg 100 100 20 20 re f 0 1 0 rg 150 100 60 20 re f 0 0 1 rg 300 300 40 40 re f 0 0 0 RG 2 w 105 105 m 115 115 l S 150 125 m 250 125 l S')
     const r = await apply(bytes, [area(90, 90, 180, 130)])
     const c = decodedContent(r.pdf)
     expect(c).not.toContain('100 100 20 20 re') // fully inside: gone
     expect(c).not.toContain('105 105 m') // the stroked line inside: gone
-    expect(c).toContain('150 100 60 20 re') // partly covered: kept ...
-    expect(c).toContain('W*') // ... but clipped so nothing paints under the mark
+    expect(c).not.toContain('150 100 60 20 re') // partly covered: only its part outside the mark is left ...
+    expect(c).toContain('180 100 30 20 re')
+    expect(c).not.toContain('W*') // ... (no clip hides anything)
+    expect(c).not.toContain('150 125 m') // a stroke crossing the mark goes entirely
     expect(c).toContain('300 300 40 40 re') // untouched
-    expect(r.report.paths).toBe(2)
-    expect(r.report.pathsClipped).toBe(1)
+    expect(r.report.paths).toBe(3)
+    expect(r.report.pathsCollateral).toBe(1)
+    expect(r.report.warnings).toEqual(['Page 1: 1 drawn shape that crosses the edge of a mark was removed entirely; it may also disappear outside the marked area.'])
+    expect(await verifyRedaction({ bytes: r.out, marksByPage: r.marksByPage, secrets: [] })).toEqual([])
   })
 
   it('an unpainted, unclipping path under a mark is dropped', async () => {
@@ -280,12 +284,14 @@ describe('vector graphics, patterns and shadings under a mark', () => {
     expect(c).toContain('300 300 m')
   })
 
-  it('a clipping path that lies inside a mark keeps its effect but not its shape', async () => {
+  it('a clipping path that lies inside a mark loses its shape: it becomes an empty clip outside the marks', async () => {
     const { bytes } = await page('q 100 100 m 120 100 l 110 130 l h W n 1 0 0 rg 0 0 612 792 re f Q')
     const r = await apply(bytes, [area(90, 90, 130, 140)])
     const c = decodedContent(r.pdf)
     expect(c).not.toContain('120 100 l')
-    expect(c).toMatch(/re\s+W/)
+    expect(c).toMatch(/74 74 0 0 re\s+W\s+n/)
+    expect(c).toContain('0 0 612 792 re') // what it clipped stays (it now paints nothing)
+    expect(r.report.paths).toBe(1)
   })
 
   it('a tiling pattern that draws text is dropped where it paints under a mark', async () => {
@@ -311,19 +317,30 @@ describe('vector graphics, patterns and shadings under a mark', () => {
     expect(all).not.toContain('SECRETPAT')
   })
 
-  it('shadings: axial ones are clipped around the mark, others are removed', async () => {
-    const mk = (type: number) => async () => {
+  it('shadings that reach a mark are removed from that use, axial ones too (their colours are data); others stay', async () => {
+    const mk = (type: number, mark: MarkInput) => async () => {
       const { bytes } = await page('q 50 50 300 100 re W n /Sh1 sh Q', (doc) => ({
         extra: { Shading: { Sh1: register(doc, { ShadingType: type, ColorSpace: N('DeviceRGB'), Coords: [50, 0, 350, 0], Function: { FunctionType: 2, Domain: [0, 1], C0: [1, 0, 0], C1: [0, 0, 1], N: 1 }, Extend: [true, true] }) } }
       }))
-      return apply(bytes, [area(100, 60, 160, 120)])
+      return apply(bytes, [mark])
     }
-    const axial = await mk(2)()
-    expect(decodedContent(axial.pdf)).toContain('/Sh1 sh')
-    expect(decodedContent(axial.pdf)).toContain('W*')
-    expect(axial.report.shadings).toBe(1)
-    const fn = await mk(1)()
+    const axial = await mk(2, area(100, 60, 160, 120))()
+    const c = decodedContent(axial.pdf)
+    expect(c).not.toContain('/Sh1 sh')
+    expect(c).not.toContain('W*')
+    expect(c).toContain('50 50 300 100 re W n') // the clip does not reach into the mark: kept as it was
+    expect(axial.report.shadingsCollateral).toBe(1) // it also painted outside the mark
+    expect(axial.report.warnings.join('\n')).toMatch(/removed entirely/)
+    const fn = await mk(1, area(100, 60, 160, 120))()
     expect(decodedContent(fn.pdf)).not.toContain('sh')
+    // a mark covering the whole clip: the shading was only visible under it
+    const all = await mk(2, area(40, 40, 360, 160))()
+    expect(decodedContent(all.pdf)).not.toContain('/Sh1 sh')
+    expect(all.report.shadings).toBe(1)
+    expect(all.report.shadingsCollateral).toBe(0)
+    // elsewhere on the page: untouched
+    const away = await mk(2, area(400, 400, 450, 450))()
+    expect(decodedContent(away.pdf)).toContain('/Sh1 sh')
   })
 })
 
