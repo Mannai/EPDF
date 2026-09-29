@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 /**
  * The line protocol every scanner helper speaks on stdout: one JSON object per line. Implemented by the Windows
- * WIA PowerShell script (./wia.ts), the macOS Swift helper (resources/native/mac-scan) and the test helpers. Lines that
+ * WIA PowerShell script (./wia.ts), the macOS helper (resources/native/mac-scan) and the test helpers. Lines that
  * are not valid protocol messages (PowerShell warnings, library chatter) are collected as "noise" and ignored.
  */
 

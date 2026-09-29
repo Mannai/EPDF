@@ -13,8 +13,8 @@ What Epdf 1.1.0-beta.1 does not do yet, and what has not been verified. Each fea
   macOS 26). Not tried: an Intel Mac (the Intel half of the universal app passed the packaged-app checks under
   Rosetta 2 on the Apple Silicon Mac, but never ran on Intel hardware), macOS 13
   to 15, a Mac with an Apple Developer ID signature. The app is signed ad hoc, not notarized: users allow it once in
-  System Settings, and it cannot update itself (it only announces new versions). Scanners are not supported on macOS
-  (the camera and phone are); the camera scan, printing to a real printer, the Keychain question after replacing
+  System Settings, and it cannot update itself (it only announces new versions). Scanners on macOS go through Image
+  Capture (ImageCaptureCore) but were never tried with a real scanner, only with none attached; the camera scan, printing to a real printer, the Keychain question after replacing
   the app with a newer build, and double-clicking a PDF in Finder by hand were not exercised (the tests open files
   through Launch Services with `open`, which is what Finder uses).
 - **The beta is unsigned**, so Windows SmartScreen warns on download. The signing pipeline works with a test
@@ -57,8 +57,8 @@ What Epdf 1.1.0-beta.1 does not do yet, and what has not been verified. Each fea
 - **Password-protected PDFs** can be opened, edited and saved (staying encrypted), but Combine and batch file-size
   reduction skip them, and certificate-based (public-key) encryption is not supported. PDF permission flags are
   advisory in other software (see [Security](features/security.md)).
-- **Hardware** — no real scanner, phone or webcam was available; the Windows scanner script, webcam preview and phone
-  upload were tested against stubs, a fake camera and real HTTP requests. Cloud-folder detection in the library was
+- **Hardware** — no real scanner, phone or webcam was available; the Windows scanner script, the macOS scanner helper, webcam
+  preview and phone upload were tested against stubs or with no device attached, a fake camera and real HTTP requests. Cloud-folder detection in the library was
   tested with fakes, not real OneDrive/Google Drive/Dropbox folders.
 - **Form builder** and **redaction** were tested on generated documents. Redaction verifies its own result and refuses
   when it cannot be sure; [Redaction](features/redact.md) states exactly what is and is not removed. Copies outside

@@ -15,7 +15,7 @@
     "test": "vitest run",
     "test:e2e": "npm run build && playwright test",
     "dist:win": "npm run build && electron-builder --win --publish never",
-    "dist:mac": "npm run build && electron-builder --mac --universal --publish never",
+    "dist:mac": "npm run build && sh resources/native/mac-scan/build.sh && electron-builder --mac --universal --publish never",
     "dist:linux": "npm run build && electron-builder --linux --publish never",
     "predev": "node scripts/copy-pdfjs-assets.mjs",
     "prebuild": "node scripts/copy-pdfjs-assets.mjs",

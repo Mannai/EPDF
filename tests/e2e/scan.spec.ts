@@ -290,6 +290,21 @@ test.describe('scanner source (test scanner backend)', () => {
       await quitDiscarding(app, page)
     }
   })
+
+  test('without the test scanner the real macOS helper answers (a list, or "no scanner found")', async () => {
+    test.skip(process.platform !== 'darwin', 'The ImageCaptureCore helper is macOS only')
+    const helper = resolve('resources/bin', `darwin-${process.arch}`, 'epdf-mac-scan')
+    test.skip(!existsSync(helper), 'Build it first: resources/native/mac-scan/build.sh')
+    const { app, page } = await launch({ EPDF_SCANNER_STUB: '' })
+    try {
+      const d = await openScan(app, page)
+      await expect(d.getByTestId('no-scanners').or(d.locator('#f-scanner').locator('option').first())).toBeVisible({ timeout: 60_000 })
+      await expect(d.getByTestId('scanner-unavailable')).toHaveCount(0)
+      await expect(d.getByRole('alert')).toHaveCount(0)
+    } finally {
+      await quitDiscarding(app, page)
+    }
+  })
 })
 
 // ---- webcam -------------------------------------------------------------------------------------------------------

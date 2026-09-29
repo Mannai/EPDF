@@ -105,7 +105,9 @@ npm run dist:mac     # dist/Epdf-<version>-universal.dmg and .zip (Apple Silicon
 A universal build must be produced on macOS. It was developed and verified on an Apple M2 (8 GB) with macOS 26 and
 the Command Line Tools only (no Xcode, no Homebrew): Node from the nodejs.org tarball, `npm ci`, and
 `node node_modules/electron/install.js` if Electron's binary is missing. `npm run dist:mac` takes about 1.5 minutes
-there and needs about 2 GB free while it runs (`dist/` ends up at about 1.2 GB).
+there and needs about 2 GB free while it runs (`dist/` ends up at about 1.2 GB). It first builds the scanner helper
+(`resources/native/mac-scan/build.sh`: clang from the Command Line Tools, one universal binary), which the app carries
+as `Contents/Resources/bin/epdf-mac-scan`.
 
 **Signing.** There is no Apple Developer ID yet, so the app is signed **ad hoc** (`mac.identity: '-'`): Apple Silicon
 refuses to run unsigned code, and an ad hoc signature is enough for that. The hardened runtime stays on; with an ad
@@ -116,6 +118,8 @@ work. Check a build with:
 ```bash
 codesign -dv --verbose=2 dist/mac-universal/Epdf.app     # Signature=adhoc, flags=0x10002(adhoc,runtime)
 codesign --verify --deep --strict dist/mac-universal/Epdf.app
+codesign -dv dist/mac-universal/Epdf.app/Contents/Resources/bin/epdf-mac-scan   # the scanner helper: adhoc,runtime
+lipo -archs dist/mac-universal/Epdf.app/Contents/Resources/bin/epdf-mac-scan    # x86_64 arm64
 spctl -a -vv dist/mac-universal/Epdf.app                 # "rejected": not notarized, expected
 ```
 
@@ -140,7 +144,9 @@ What differs on macOS:
   Rosetta, asked.)
 - **Updates**: macOS installs updates only for an app signed with a Developer ID, so Epdf only says that a new
   version is out and offers its release page, like the Linux .deb.
-- **Scanners** are not supported (a scanner helper for macOS does not exist yet); the camera and phone work.
+- **Scanners** go through macOS Image Capture (ImageCaptureCore) with a small helper program that ships inside the
+  app (`resources/native/mac-scan/`, Objective-C, built by `npm run dist:mac`). It was tested only with no scanner
+  attached (discovery, errors, cancel); scanning with real hardware has not been tried. The camera and phone work too.
   **HEIC** pictures are converted with the `sips` tool that is part of macOS. **Set as Default PDF App** shows the
   Finder steps (Get Info ▸ Open with ▸ Change All). There are no Finder "Convert to PDF" entries.
 

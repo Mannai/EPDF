@@ -388,6 +388,7 @@ describe('phone upload server: abuse, expiry and shutdown', () => {
     const { url, server } = await start({ onClose: (r) => (reason = r) })
     const u = new URL(url)
     const idle = connect(Number(u.port), u.hostname)
+    idle.on('error', () => undefined) // the server drops the connection; macOS may report that as ECONNRESET
     await new Promise<void>((r) => idle.once('connect', () => r()))
     const closed = new Promise<void>((r) => idle.once('close', () => r()))
     server.close()

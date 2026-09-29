@@ -21,7 +21,7 @@ Everything is local. Nothing is uploaded anywhere.
 | Page detection, perspective warp, deskew, enhancement, PDF assembly | In-house TypeScript (`src/shared/features/scan/`), runs in a **Web Worker** so the UI never freezes |
 | QR code | `qrcode-generator` (MIT) draws the modules; `jsqr` (Apache-2.0) is a **dev/test-only** decoder used to prove the code scans |
 | Windows scanners | Windows' own **WIA** COM objects, driven through `powershell.exe` (ships with Windows). Nothing to install |
-| macOS scanners | A small Swift helper using the system **ImageCaptureCore** framework (`resources/native/mac-scan/`). **UNTESTED** (see below) |
+| macOS scanners | A small Objective-C helper using the system **ImageCaptureCore** framework (`resources/native/mac-scan/`), shipped inside the app. **Not tried with a real scanner** (see below) |
 | Linux scanners | Not supported: the Scanner tab says so; webcam and phone work everywhere |
 | Webcam | `getUserMedia({ video })` (camera permission is granted by Epdf to its own pages only, video only) |
 | Phone | A temporary HTTP server inside Epdf, no external service |
@@ -44,17 +44,22 @@ No external program is required. Scanner support depends on the operating system
 * Pages come back as PNG (BMP as fallback) and are scanned at the resolution you chose; the PDF page size is
   `pixels / dpi * 72`.
 
-### Scanner (macOS) - **UNTESTED**
+### Scanner (macOS) - **not tried with a real scanner**
 
-The TypeScript side (launching a helper from `resources/bin/...`, the JSON-lines protocol, timeouts, cancel, error mapping,
-page hand-over, refusing files outside the job folder) is tested against a **stub helper** (a Node script,
-`tests/fixtures/scan-stub-helper.mjs`), including an end-to-end run through the real UI.
-The **Swift helper itself (`resources/native/mac-scan/main.swift`) has never been compiled or run**: it was written on a
-Windows machine. Build it with `resources/native/mac-scan/build.sh` on a Mac and expect to fix compile errors and
-ImageCaptureCore quirks. Without the helper, the macOS Scanner tab explains that scanner support is not available in this
-copy; webcam and phone still work. The 1.1.0-beta.1 Mac build ships without it: the only Mac available had Command Line
-Tools whose Swift compiler does not match their SDK, so it could not be compiled there (a matching Xcode or Command Line
-Tools install is needed, and then a real scanner to test it). Details and the protocol: `resources/native/mac-scan/README.md`.
+Scanners are reached through **ImageCaptureCore**, the framework behind macOS's Image Capture app, by a small helper
+program (`resources/native/mac-scan/main.m`, Objective-C) that ships inside the app as `Contents/Resources/bin/epdf-mac-scan`
+and speaks the same JSON-lines protocol as the Windows script. It lists local and network (Bonjour) scanners, reads the
+flatbed / feeder units, resolutions and duplex support, and scans to PNG files that Epdf reads and deletes; Cancel
+terminates it. `npm run dist:mac` builds it with clang (universal, macOS 13+); it needs no Xcode and no Swift.
+
+Tested on macOS 26 (Apple Silicon, and the Intel half under Rosetta) **without a scanner**: discovery (no scanners: the
+Scanner tab says none was found), argument handling, "not found" for a missing device, cancelling, and the packaged
+app's copy (signed with the app). **Opening a real scanner and scanning (flatbed, feeder, duplex) have never been
+tried**: no scanner was available. The TypeScript side (launching, the protocol, timeouts, cancel, error mapping, page
+hand-over, refusing files outside the job folder) is also tested against a **stub helper** (a Node script,
+`tests/fixtures/scan-stub-helper.mjs`), including an end-to-end run through the real UI. Without the helper (a copy
+built without it), the macOS Scanner tab explains that scanner support is not available; webcam and phone still work.
+Details and the protocol: `resources/native/mac-scan/README.md`.
 
 ### Scanner test backend
 
@@ -132,8 +137,8 @@ src/shared/features/scan/*                  image, geometry, detect, deskew, enh
 src/main/features/scan/                     index (channels, job, menu), backends, wia, helper, protocol, errors,
                                             phoneServer, phonePage, multipart, lan
 src/renderer/src/features/scan/             dialog, panels, page editor, store, worker/
-resources/native/mac-scan/                  Swift helper source, build.sh, README (UNTESTED)
-tests/unit/scan-*.test.ts, tests/e2e/scan.spec.ts, tests/support/scanImages.ts, tests/fixtures/scan-stub-helper.mjs
+resources/native/mac-scan/                  macOS helper source (Objective-C), build.sh, README
+tests/unit/scan-*.test.ts (scan-mac-helper: the real macOS helper), tests/e2e/scan.spec.ts, tests/support/scanImages.ts, tests/fixtures/scan-stub-helper.mjs
 ```
 
 Channels (`scan:` prefix): `environment`, `session`, `endSession`, `devices`, `capabilities`, `phoneStart`, `phoneStop`,
@@ -160,5 +165,5 @@ the Windows WIA script for enumeration and error paths on a machine **with no sc
 helper protocols, the phone server over real HTTP, the QR round trip, the whole UI flow with the test scanner, the fake
 camera (including a Y4M clip of a sheet for outline and auto-capture) and a real browser engine loading the phone page.
 
-**Not verified**: scanning with a real scanner (flatbed, feeder, duplex, WIA property quirks of individual drivers), the
-macOS Swift helper, a real phone browser and real Wi-Fi (firewall behaviour), real webcam quality and autofocus.
+**Not verified**: scanning with a real scanner on Windows or macOS (flatbed, feeder, duplex, WIA and ImageCaptureCore
+quirks of individual drivers; the macOS helper was only run with no scanner attached), a real phone browser and real Wi-Fi (firewall behaviour), real webcam quality and autofocus.

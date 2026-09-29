@@ -9,7 +9,7 @@ import { buildWiaSpec, offeredResolutions, type WiaCommand } from './wia'
 /**
  * Scanner backends behind one interface:
  *  - `wia`   Windows Image Acquisition through PowerShell (./wia.ts)
- *  - `mac`   a native helper speaking the same line protocol (resources/native/mac-scan, macOS only, UNTESTED here)
+ *  - `mac`   a native helper speaking the same line protocol (resources/native/mac-scan, macOS only; not tried with a real scanner)
  *  - `stub`  feeds pictures from a folder (EPDF_SCANNER_STUB=<dir>): the test scanner
  */
 
