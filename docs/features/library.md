@@ -86,6 +86,22 @@ the user's request: the sync client downloads it and Epdf says so.
   deletes that folder's index; Settings ▸ "Rebuild index…" re-reads everything and keeps folders/favorites/library folders;
   "Forget everything…" clears folders, index, thumbnails and library folders. No action deletes a user file.
 
+### What "Forget everything" removes
+
+* **Removed:** every watched folder, every file record (name, path, size, page count, hash, favorite and hidden flags), all
+  indexed page text, every library folder and its memberships, and the thumbnail cache (`userData/library-thumbs/`). The
+  database is then compacted (`VACUUM`) and its write-ahead log emptied (`wal_checkpoint(TRUNCATE)`), so no deleted page text
+  stays behind in `epdf.db` or `epdf.db-wal`. The database runs with `PRAGMA secure_delete = ON` and the full-text table with
+  the FTS5 `secure-delete` option (migration 6), so text deleted at any other time (a file re-indexed, removed or forgotten)
+  is overwritten rather than left in free pages or index segments.
+* **Kept:** the PDFs themselves, the Recent list and its stars (they belong to File ▸ Open Recent), the library settings, and
+  Epdf's version history and recovery copies (those are purged per document; see [Redaction](redact.md)).
+* **Not controlled:** copies made outside Epdf, such as file-system snapshots, backups of the profile folder, or pages the
+  operating system swapped to disk.
+
+Purging a document's history after a redaction also makes the library forget that one file: its page text and thumbnail are
+deleted and it is marked to be read again, so a watched folder indexes the redacted version on its next sync.
+
 ## Data (migration 5)
 
 `library_roots`, `library_files` (one row per PDF: path, relative folder, name + folded name key, size, mtime, pages, hash,
@@ -101,7 +117,8 @@ starred, but only files in a watched folder can be put into library folders.
 
 Rendered in the **renderer** with the PDF.js already used by the viewer (its rendering runs in PDF.js's own worker), one at a
 time, newest-visible first, only for rows on screen; main caches the PNG under `userData/library-thumbs/<id>.png` (keyed by
-size+mtime, so an edited file gets a new picture). Chosen over a Node-side canvas because a canvas in Node needs a native
+size+mtime, so an edited file gets a new picture). The picture of an old version is deleted when it goes stale, when a file
+becomes cloud-only or too large, and when a file disappears; pictures no file claims are swept at startup. Chosen over a Node-side canvas because a canvas in Node needs a native
 module (`@napi-rs/canvas`) or a WASM renderer that pdf.js does not support out of the box; this needs no new dependency and
 no bundled binary. Cloud-only, password-protected and oversized files get a placeholder, never a picture.
 

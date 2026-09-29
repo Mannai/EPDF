@@ -65,6 +65,22 @@ comments and form filling, page assembly, accessibility extraction. They map to 
 * **Change / remove** = an ordinary edit (`editPdf`): one undo step ("Undo Change password protection",
   "Undo Remove password protection"). After removing, saving writes a plain file.
 
+### Version history and protection
+
+Every Save first copies the file that is on disk into Epdf's version history (`<userData>/versions/`, 20 per
+document, readable only by you on macOS/Linux: the copies are written with mode 0600). So when a document that was
+**not** protected is protected and saved, the history still holds the earlier, **unprotected** file. The snapshot is
+kept on purpose (it is how you get the previous file back), and after such a save Epdf offers to purge the
+document's history: every earlier version, the recovery copy and the library's page text and thumbnail of the file.
+The purge deletes each file before its record, so a copy that cannot be deleted (for example, held open by another
+program) stays listed and is reported, and purging again retries it. Recovery copies of a protected document are
+always written encrypted (see above), so only the version history needs the purge.
+
+Saving never replaces the file's identity where that would lose something: a file with several hard links, and on
+Windows a file with its own permissions or a "downloaded from the internet" mark, is rewritten in place after a
+private backup copy. A read-only file is refused with a clear message instead of being replaced, and a file another
+program changed since it was opened is not overwritten until you confirm.
+
 ## How it works (for maintainers)
 
 * `crypto/handler.ts`: password encoding (Latin-1 / UTF-8 candidates for R≤4; SASLprep + 127-byte truncation
