@@ -18,6 +18,10 @@ import { useInfoDialog, usePasswordPrompt, useProtectDialog } from './store'
  *  - in `accessByDoc`, which password level (owner/user) opened the document in this window.
  */
 
+/** Edit tags (see edit/session) of adding or changing, and of removing, the protection. */
+export const PROTECT_TAG = 'protect'
+export const UNPROTECT_TAG = 'unprotect'
+
 const accessByDoc = new Map<string, DocAccess>()
 
 export const getAccess = (docId: string): DocAccess | undefined => accessByDoc.get(docId)
@@ -76,8 +80,9 @@ export async function unlockForEditing(docId: string, bytes: Uint8Array): Promis
   if (!probe) return null
   const access = await obtainAccess(docId, probe.info, 'edit')
   if (!access) return null
-  setAccess(docId, { kind: access.kind, P: probe.info.P, R: probe.info.R })
-  if (!mayEdit(access.kind, probe.info.P)) {
+  // access.P, not /P: for AES-256 the permissions come from the encrypted /Perms block (a changed /P is ignored).
+  setAccess(docId, { kind: access.kind, P: access.P, R: probe.info.R })
+  if (!mayEdit(access.kind, access.P)) {
     notify(
       'error',
       `“${tabName(docId)}” can’t be edited: its permissions do not allow changing the document. Open it with the owner password to edit it.`
@@ -105,7 +110,7 @@ async function ensureOwner(docId: string, prot: Protection): Promise<boolean> {
   if (getAccess(docId)?.kind === 'owner') return true
   const access = await obtainAccess(docId, prot.info, 'owner')
   if (!access) return false
-  setAccess(docId, { kind: 'owner', P: prot.info.P, R: prot.info.R })
+  setAccess(docId, { kind: 'owner', P: access.P, R: prot.info.R })
   return true
 }
 
@@ -126,16 +131,21 @@ export async function protectFlow(docId: string): Promise<void> {
       : DEFAULT_SETTINGS
     const settings = await useProtectDialog.getState().ask({ docId, fileName: tabName(docId), changing: !!current, initial })
     if (!settings) return
-    await editPdf(docId, current ? 'Change password protection' : 'Protect with password', async (pdf) => {
-      const protection = await makeProtection(pdf, {
-        algorithm: settings.algorithm,
-        userPassword: settings.userPassword,
-        ownerPassword: settings.ownerPassword,
-        P: permissionsToP(settings.permissions),
-        encryptMetadata: settings.encryptMetadata
-      })
-      embedMarker(pdf, protection)
-    })
+    await editPdf(
+      docId,
+      current ? 'Change password protection' : 'Protect with password',
+      async (pdf) => {
+        const protection = await makeProtection(pdf, {
+          algorithm: settings.algorithm,
+          userPassword: settings.userPassword,
+          ownerPassword: settings.ownerPassword,
+          P: permissionsToP(settings.permissions),
+          encryptMetadata: settings.encryptMetadata
+        })
+        embedMarker(pdf, protection)
+      },
+      { tags: [PROTECT_TAG] }
+    )
     // The person who just chose the passwords has full control in this window.
     const after = await currentProtection(docId)
     if (after) setAccess(docId, { kind: 'owner', P: after.info.P, R: after.info.R })
@@ -165,9 +175,14 @@ export async function removeFlow(docId: string): Promise<void> {
       cancelValue: 'cancel'
     })
     if (choice !== 'remove') return
-    await editPdf(docId, 'Remove password protection', (pdf) => {
-      removeMarker(pdf)
-    })
+    await editPdf(
+      docId,
+      'Remove password protection',
+      (pdf) => {
+        removeMarker(pdf)
+      },
+      { tags: [UNPROTECT_TAG] }
+    )
     forgetAccess(docId)
     notify('success', 'Password protection removed. Save the document to write it without protection.')
   } catch (err) {

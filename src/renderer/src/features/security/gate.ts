@@ -16,9 +16,6 @@ import { forgetAccess, getAccess, setAccess } from './session'
  * Opened with the owner password, everything is allowed. These flags are advisory in other software.
  */
 
-const PDFJS_PRINT = 0x04
-const PDFJS_COPY = 0x10
-
 type What = Restricted
 
 const MESSAGES: Record<What, string> = {
@@ -39,8 +36,10 @@ export function checkAllowed(what: What): boolean {
 const probed = new Set<string>()
 
 /**
- * For a freshly opened, restricted document, work out whether the password used was the owner's. PDF.js already
- * opened the document; here we only need the /Encrypt parameters and the password it accepted (both in memory).
+ * For a freshly opened, encrypted document, work out which password opened it and which permissions apply. PDF.js
+ * already opened the document; here we only need the /Encrypt parameters and the password it accepted (both in
+ * memory). Every encrypted document is checked, even one whose /P looks unrestricted: for AES-256 the permissions
+ * that count are the ones in the encrypted /Perms block, and /P may have been changed to hide them.
  */
 async function probeOpened(docId: string, loadSeq: number): Promise<void> {
   const key = `${docId}:${loadSeq}`
@@ -49,16 +48,14 @@ async function probeOpened(docId: string, loadSeq: number): Promise<void> {
   forgetAccess(docId)
   const doc = getLoaded(docId)?.doc
   if (!doc) return
-  const raw = (await doc.getPermissions().catch(() => null)) as Iterable<number> | null // an array or a Set, depending on the PDF.js version
+  const raw = (await doc.getPermissions().catch(() => null)) as Iterable<number> | null
   if (!raw) return // not encrypted
-  const allowed = new Set<number>(raw)
-  if (allowed.has(PDFJS_PRINT) && allowed.has(PDFJS_COPY)) return // nothing to enforce here
   try {
     const probe = await inspectEncryption(await currentBytes(docId))
     if (!probe) return
     const pw = getAcceptedPassword(docId) ?? ''
     const access = (await authenticate(probe.info, pw)) ?? (await authenticate(probe.info, ''))
-    if (access) setAccess(docId, { kind: access.kind, P: probe.info.P, R: probe.info.R })
+    if (access) setAccess(docId, { kind: access.kind, P: access.P, R: probe.info.R })
   } catch (err) {
     console.warn('could not read the document permissions', err)
   }

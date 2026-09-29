@@ -2,9 +2,11 @@ import { activeTab } from '../../state/actions'
 import { useTabs } from '../../state/tabs'
 import { registerEditHooks } from '../../edit/hooks'
 import { registerCommand, registerDialog } from '../api'
+import { onSaveCompleted } from '../core/save'
 import { SecurityDialogs } from './Dialogs'
 import { applyMarkerProtection } from './crypto/document'
 import { installGates } from './gate'
+import { protectionSaved } from './saved'
 import { forgetAccess, infoFlow, protectFlow, removeFlow, unlockForEditing } from './session'
 
 /**
@@ -35,6 +37,9 @@ registerCommand({ id: 'security.remove', label: 'Remove Password Protection', ru
 registerCommand({ id: 'security.info', label: 'Document Security', run: withTab(infoFlow) })
 
 installGates()
+
+// Saved with new protection: offer to purge the unprotected copies in the version history.
+onSaveCompleted(protectionSaved)
 
 // Forget what we know about a document when its tab closes.
 useTabs.subscribe((state, prev) => {

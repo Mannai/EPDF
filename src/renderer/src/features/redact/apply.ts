@@ -72,7 +72,7 @@ export async function applyRedactions(docId: string, marks: readonly UiMark[], o
       const trial = await pdf.save()
       const findings = await verifyRedaction(verifyInput(outcome, trial))
       if (findings.length) throw new VerifyFailed(findings)
-    })
+    }, { tags: ['redaction'] }) // REDACTION_TAG in ./purge: a save of this state offers the history purge
   } catch (e) {
     if (e instanceof VerifyFailed) return { ok: false, kind: 'verify', message: e.message, findings: e.findings }
     if (e instanceof RedactRefused) return { ok: false, kind: 'refused', message: e.message }
