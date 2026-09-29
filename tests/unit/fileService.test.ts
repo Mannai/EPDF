@@ -48,9 +48,9 @@ afterEach(() => {
   // A test may leave a read-only file behind.
   for (const f of readdirSync(dir, { recursive: true }) as string[]) {
     try {
-      chmodSync(join(dir, f), 0o666)
+      if (statSync(join(dir, f)).isFile()) chmodSync(join(dir, f), 0o666)
     } catch {
-      /* directories, links */
+      /* links, streams */
     }
   }
   rmSync(dir, { recursive: true, force: true })
