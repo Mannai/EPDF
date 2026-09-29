@@ -2,7 +2,9 @@ import { PDFDocument } from 'pdf-lib'
 import { create } from 'zustand'
 import { useTabs } from '../state/tabs'
 import { runBeforeWrite, runDecrypt } from './hooks'
-import { History } from './history'
+import { History, type Tagged } from './history'
+
+export type { Tagged } from './history'
 
 /**
  * The edit pipeline every feature goes through. Each document has a linear history of full-file byte
@@ -11,7 +13,15 @@ import { History } from './history'
  *
  *   await editPdf(docId, 'Rotate page', (pdf) => { pdf.getPage(0).setRotation(degrees(90)) })
  *   replaceBytes(docId, 'Compress', compressedBytes)   // for results produced elsewhere (jobs, qpdf, ...)
+ *
+ * An edit can carry tags (`{ tags: ['redaction'] }`) that say what kind of change it was; they stay with the state
+ * through undo/redo, and a save reports the tags of the state it wrote (its lineage), so features can react to
+ * "a redaction is now on disk" whatever other edits came after it.
  */
+
+export interface EditOptions {
+  tags?: readonly string[]
+}
 
 export interface EditInfo {
   dirty: boolean
@@ -101,8 +111,8 @@ async function readCurrent(docId: string): Promise<Uint8Array> {
   return h.original
 }
 
-function commit(docId: string, label: string, bytes: Uint8Array): void {
-  historyOf(docId).push(label, bytes)
+function commit(docId: string, label: string, bytes: Uint8Array, opts?: EditOptions): void {
+  historyOf(docId).push(label, bytes, opts?.tags)
   publish(docId)
   useTabs.getState().contentChanged(docId)
 }
@@ -144,9 +154,33 @@ export function ensureEditable(docId: string): Promise<boolean> {
   })
 }
 
+/** What `snapshotForWriting` captured: the bytes to write and exactly which state they are. */
+export interface WriteSnapshot {
+  bytes: Uint8Array
+  /** Revision of the state the bytes were read from; pass it to `markSaved` once they are on disk. */
+  revision: number
+  /** The tags of every edit that led to that state (see `EditOptions`). */
+  lineage: Tagged[]
+}
+
+/**
+ * The bytes to write to disk for this document (current state, re-protected if needed), together with the revision
+ * and lineage of the state they came from. Bytes, revision and lineage are read at the same moment, in the edit queue,
+ * so an edit or undo made while the write is still running can never be mistaken for part of it.
+ */
+export async function snapshotForWriting(docId: string): Promise<WriteSnapshot> {
+  const snap = await enqueue(docId, async () => {
+    const bytes = await readCurrent(docId)
+    const h = historyOf(docId)
+    return { bytes, revision: h.revision, lineage: h.lineage }
+  })
+  // Outside the queue: a hook may itself read the document.
+  return { ...snap, bytes: await runBeforeWrite(docId, snap.bytes) }
+}
+
 /** The bytes to write to disk (or the recovery folder) for this document: current state, re-protected if needed. */
 export async function bytesForWriting(docId: string): Promise<Uint8Array> {
-  return runBeforeWrite(docId, await currentBytes(docId))
+  return (await snapshotForWriting(docId)).bytes
 }
 
 /**
@@ -156,7 +190,8 @@ export async function bytesForWriting(docId: string): Promise<Uint8Array> {
 export function editPdf(
   docId: string,
   label: string,
-  fn: (pdf: PDFDocument) => void | Promise<void>
+  fn: (pdf: PDFDocument) => void | Promise<void>,
+  opts?: EditOptions
 ): Promise<void> {
   return enqueue(docId, async () => {
     let bytes = await readCurrent(docId)
@@ -178,13 +213,13 @@ export function editPdf(
     await fn(pdf)
     pdf.setProducer('Epdf')
     pdf.setModificationDate(new Date())
-    commit(docId, label, await pdf.save())
+    commit(docId, label, await pdf.save(), opts)
   })
 }
 
 /** Records externally produced bytes (a compressed/OCR'd/redacted copy, a restored version, ...) as an edit. */
-export function replaceBytes(docId: string, label: string, bytes: Uint8Array): Promise<void> {
-  return enqueue(docId, async () => commit(docId, label, bytes))
+export function replaceBytes(docId: string, label: string, bytes: Uint8Array, opts?: EditOptions): Promise<void> {
+  return enqueue(docId, async () => commit(docId, label, bytes, opts))
 }
 
 export const canUndo = (docId: string): boolean => histories.get(docId)?.canUndo ?? false
@@ -216,11 +251,29 @@ export const dirtyDocIds = (): string[] =>
     .filter(([, i]) => i.dirty)
     .map(([id]) => id)
 
-/** Call after the current bytes were written to disk. */
-export function markSaved(docId: string): void {
-  if (!histories.get(docId)) return
-  histories.get(docId)!.markSaved()
+/**
+ * Call once the bytes of `revision` (from `snapshotForWriting`) are on disk. Returns false, and changes nothing, if
+ * that revision is not part of the document's current history (its edits were discarded while it was being saved).
+ */
+export function markSaved(docId: string, revision: number): boolean {
+  const h = histories.get(docId)
+  if (!h?.markSaved(revision)) return false
   publish(docId)
+  return true
+}
+
+/**
+ * Drops the undo and redo steps (after any edit in flight has landed): the current state becomes the new starting
+ * point. Used once something irreversible (a redaction) is on disk, so undo cannot bring the old content back. Edits
+ * made since the save stay, and stay unsaved.
+ */
+export function clearUndoSteps(docId: string): Promise<void> {
+  return enqueue(docId, async () => {
+    const h = histories.get(docId)
+    if (!h) return
+    h.clearSteps()
+    publish(docId)
+  })
 }
 
 /**

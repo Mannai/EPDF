@@ -1,10 +1,60 @@
-import { bytesForWriting, isDirty, markSaved, whenEditsSettled } from '../../edit/session'
+import { bytesForWriting, isDirty, markSaved, snapshotForWriting, whenEditsSettled, type Tagged } from '../../edit/session'
 import { askConfirm } from '../../state/confirm'
 import { errorMessage, notify } from '../../state/notify'
 import { useTabs } from '../../state/tabs'
 import { runBeforeSave } from '../api'
 
 const tabOf = (docId: string) => useTabs.getState().tabs.find((t) => t.docId === docId)
+
+/** What a finished Save / Save As wrote. */
+export interface SaveCompleted {
+  docId: string
+  /** The edit-history revision that is now on disk. */
+  revision: number
+  /** The tags of every edit in that revision (e.g. a redaction), oldest first. */
+  lineage: Tagged[]
+  /** The file the tab represented before the save, and the file that was written. Equal unless `saveAs`. */
+  oldPath: string
+  newPath: string
+  saveAs: boolean
+}
+
+const saveCompletedListeners = new Set<(e: SaveCompleted) => void>()
+
+/**
+ * Called after a Save or Save As has written the file, marked the document saved and updated the tab. Returns an
+ * unsubscribe function.
+ */
+export function onSaveCompleted(listener: (e: SaveCompleted) => void): () => void {
+  saveCompletedListeners.add(listener)
+  return () => void saveCompletedListeners.delete(listener)
+}
+
+function emitSaveCompleted(e: SaveCompleted): void {
+  for (const l of [...saveCompletedListeners]) {
+    try {
+      l(e)
+    } catch (err) {
+      console.error('save listener failed', err)
+    }
+  }
+}
+
+/**
+ * Saves of one document run one after another: a second Save (a double click, Save then Ctrl+S, closing while a save
+ * runs) waits for the first and then saves whatever is still unsaved.
+ */
+const saveLocks = new Map<string, Promise<unknown>>()
+
+function withSaveLock<T>(docId: string, work: () => Promise<T>): Promise<T> {
+  const run = (saveLocks.get(docId) ?? Promise.resolve()).then(work, work)
+  const tail = run.catch(() => undefined)
+  saveLocks.set(docId, tail)
+  void tail.then(() => {
+    if (saveLocks.get(docId) === tail) saveLocks.delete(docId)
+  })
+  return run
+}
 
 /** Features' before-save steps (Fill & sign locking, ...). For Save / Save As they edit the document itself. */
 async function beforeSaving(docId: string): Promise<boolean> {
@@ -18,7 +68,16 @@ async function beforeSaving(docId: string): Promise<boolean> {
  * Saves the document back to its own file. Returns true if there is nothing left unsaved afterwards.
  * Failures are reported to the user (with a Save As… shortcut) rather than thrown.
  */
-export async function saveDoc(docId: string): Promise<boolean> {
+export function saveDoc(docId: string): Promise<boolean> {
+  return withSaveLock(docId, () => saveDocLocked(docId))
+}
+
+/** Save As…: asks for a new file; the tab then represents that file. Returns false if cancelled or failed. */
+export function saveDocAs(docId: string): Promise<boolean> {
+  return withSaveLock(docId, () => saveDocAsLocked(docId))
+}
+
+async function saveDocLocked(docId: string): Promise<boolean> {
   const tab = tabOf(docId)
   if (!tab) return false
   await whenEditsSettled(docId) // "rotate, then immediately save" must save the rotation
@@ -35,17 +94,20 @@ export async function saveDoc(docId: string): Promise<boolean> {
       ],
       cancelValue: 'cancel'
     })
-    if (choice === 'saveAs') return saveDocAs(docId)
+    if (choice === 'saveAs') return saveDocAsLocked(docId) // already holding the lock
     if (choice !== 'overwrite') return false
   }
 
   if (!(await beforeSaving(docId))) return false
   try {
-    const bytes = await bytesForWriting(docId)
-    await window.epdf.saveFile(docId, bytes)
-    markSaved(docId)
+    const snap = await snapshotForWriting(docId)
+    await window.epdf.saveFile(docId, snap.bytes)
+    const path = tabOf(docId)?.path ?? tab.path
+    // Exactly the state that was written: an edit or undo made meanwhile stays unsaved.
+    markSaved(docId, snap.revision)
     useTabs.getState().patchTab(docId, { changedOnDisk: false })
-    return true
+    emitSaveCompleted({ docId, revision: snap.revision, lineage: snap.lineage, oldPath: path, newPath: path, saveAs: false })
+    return !isDirty(docId)
   } catch (err) {
     notify('error', `Couldn’t save “${tab.name}”: ${errorMessage(err)}`, {
       label: 'Save As…',
@@ -55,17 +117,18 @@ export async function saveDoc(docId: string): Promise<boolean> {
   }
 }
 
-/** Save As…: asks for a new file; the tab then represents that file. Returns false if cancelled or failed. */
-export async function saveDocAs(docId: string): Promise<boolean> {
+async function saveDocAsLocked(docId: string): Promise<boolean> {
   const tab = tabOf(docId)
   if (!tab) return false
   if (!(await beforeSaving(docId))) return false
   try {
-    const bytes = await bytesForWriting(docId)
-    const res = await window.epdf.saveFileAs(docId, bytes)
+    const snap = await snapshotForWriting(docId)
+    const res = await window.epdf.saveFileAs(docId, snap.bytes)
     if (!res) return false
-    markSaved(docId)
+    const oldPath = tabOf(docId)?.path ?? tab.path
+    markSaved(docId, snap.revision)
     useTabs.getState().patchTab(docId, { path: res.path, name: res.name, changedOnDisk: false })
+    emitSaveCompleted({ docId, revision: snap.revision, lineage: snap.lineage, oldPath, newPath: res.path, saveAs: true })
     return true
   } catch (err) {
     notify('error', `Couldn’t save a copy of “${tab.name}”: ${errorMessage(err)}`)

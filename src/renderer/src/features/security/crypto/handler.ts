@@ -48,7 +48,18 @@ export interface Access {
   kind: 'user' | 'owner'
   /** The file encryption key. */
   key: Uint8Array
+  /**
+   * The permissions to enforce (signed 32-bit, like /P). R2-R4 bind /P into the key, so it is /P itself. For R5/R6 it
+   * comes from the encrypted /Perms block, which /P cannot be changed without: a /P that disagrees with it is ignored,
+   * and a missing or undecryptable /Perms block means view-only.
+   */
+  P: number
+  /** False if /P or /EncryptMetadata disagree with the /Perms block, or that block is missing or damaged (R5/R6). */
+  permsIntact: boolean
 }
+
+/** Permissions of a document whose /Perms block cannot be trusted: nothing but viewing (all reserved bits set). */
+export const VIEW_ONLY_P = 0xfffff0c0 | 0
 
 /** The 32-byte padding string of Algorithm 2 (step a). */
 const PAD = Uint8Array.from([
@@ -144,10 +155,11 @@ export function legacyAuthenticate(info: EncryptionInfo, passwordBytes: Uint8Arr
   if (info.R === 2) t = rc4(ok, t)
   else for (let i = 19; i >= 0; i--) t = rc4(xorKey(ok, i), t)
   const viaOwner = legacyFileKey(info, t)
-  if (checkLegacyUser(info, viaOwner)) return { kind: 'owner', key: viaOwner }
+  // /P is part of the key derivation: a changed /P gives a key that fails the check below.
+  if (checkLegacyUser(info, viaOwner)) return { kind: 'owner', key: viaOwner, P: info.P | 0, permsIntact: true }
   // User password (Algorithm 6).
   const key = legacyFileKey(info, passwordBytes)
-  if (checkLegacyUser(info, key)) return { kind: 'user', key }
+  if (checkLegacyUser(info, key)) return { kind: 'user', key, P: info.P | 0, permsIntact: true }
   return null
 }
 
@@ -163,20 +175,35 @@ export async function modernAuthenticate(info: EncryptionInfo, passwordBytes: Ui
   const u48 = info.U.subarray(0, 48)
   if (info.O.length >= 48 && info.OE && equalBytes(await hash(passwordBytes, info.O.subarray(32, 40), u48), info.O.subarray(0, 32))) {
     const ik = await hash(passwordBytes, info.O.subarray(40, 48), u48)
-    return { kind: 'owner', key: cbcDecryptRaw(ik, ZERO_IV, info.OE.subarray(0, 32)) }
+    return withPermissions(info, 'owner', cbcDecryptRaw(ik, ZERO_IV, info.OE.subarray(0, 32)))
   }
   if (info.U.length >= 48 && info.UE && equalBytes(await hash(passwordBytes, info.U.subarray(32, 40)), info.U.subarray(0, 32))) {
     const ik = await hash(passwordBytes, info.U.subarray(40, 48))
-    return { kind: 'user', key: cbcDecryptRaw(ik, ZERO_IV, info.UE.subarray(0, 32)) }
+    return withPermissions(info, 'user', cbcDecryptRaw(ik, ZERO_IV, info.UE.subarray(0, 32)))
   }
   return null
 }
 
+/** The decrypted /Perms block (Algorithm 2.A step h), or null if it is missing or does not carry the 'adb' marker. */
+function readPerms(info: EncryptionInfo, key: Uint8Array): { P: number; encryptMetadata: boolean | null } | null {
+  if (!info.Perms || info.Perms.length < 16) return null
+  const b = ecbDecryptBlock(key, info.Perms.subarray(0, 16))
+  if (b[9] !== 0x61 || b[10] !== 0x64 || b[11] !== 0x62) return null
+  const meta = b[8] === 0x54 ? true : b[8] === 0x46 ? false : null // 'T' / 'F'
+  return { P: b[0] | (b[1] << 8) | (b[2] << 16) | (b[3] << 24), encryptMetadata: meta }
+}
+
+/** R5/R6: the permissions come from /Perms, which is encrypted with the file key and so cannot be edited like /P. */
+function withPermissions(info: EncryptionInfo, kind: Access['kind'], key: Uint8Array): Access {
+  const perms = readPerms(info, key)
+  if (!perms || perms.encryptMetadata !== info.encryptMetadata) return { kind, key, P: VIEW_ONLY_P, permsIntact: false }
+  return { kind, key, P: perms.P, permsIntact: perms.P === (info.P | 0) }
+}
+
 /** /Perms check (Algorithm 2.A step h): does the permission block decrypt to something that matches /P? */
 export function permsMatch(info: EncryptionInfo, key: Uint8Array): boolean {
-  if (!info.Perms || info.Perms.length < 16) return false
-  const b = ecbDecryptBlock(key, info.Perms.subarray(0, 16))
-  return b[9] === 0x61 && b[10] === 0x64 && b[11] === 0x62 && (b[0] | (b[1] << 8) | (b[2] << 16) | (b[3] << 24)) === (info.P | 0)
+  const perms = readPerms(info, key)
+  return !!perms && perms.P === (info.P | 0)
 }
 
 // ---------------------------------------------------------------------------------------------------------------

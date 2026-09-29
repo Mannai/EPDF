@@ -6,8 +6,11 @@ import { PDFDocument } from 'pdf-lib'
 import { afterAll, describe, expect, it } from 'vitest'
 import { ALL_PERMISSIONS, permissionsToP, type Algorithm, type Permissions } from '@shared/features/security'
 import { protectBytes, inspectEncryption } from '../../src/renderer/src/features/security/crypto/document'
-import { authenticate, permsMatch } from '../../src/renderer/src/features/security/crypto/handler'
-import { expectFixturePlaintext, fixtureBytes, openWith } from './helpers/securityHelpers'
+import { authenticate, permsMatch, VIEW_ONLY_P, type Protection } from '../../src/renderer/src/features/security/crypto/handler'
+import { toHex } from '../../src/renderer/src/features/security/crypto/bytes'
+import { isAllowed, mayEdit } from '../../src/renderer/src/features/security/logic'
+import { allStreamText, expectFixturePlaintext, fixtureBytes, openWith } from './helpers/securityHelpers'
+import { assemble, encryptDictText, pageObjects, rawEncryption, showText, streamObject } from './helpers/rawPdf'
 import { QPDF } from '../support/tools'
 
 const haveQpdf = existsSync(QPDF)
@@ -92,6 +95,72 @@ describe('files we encrypt: round trip through our own decryptor', () => {
     // A wrong key or a changed /P fails the check.
     expect(permsMatch(ours.info, new Uint8Array(32))).toBe(false)
     expect(permsMatch({ ...ours.info, P: ours.info.P ^ 4 }, ours.access.key)).toBe(false)
+  })
+
+  describe('AES-256: the permissions come from /Perms, not from an editable /P', () => {
+    const P_NONE = permissionsToP(NO_PERMS)
+    const P_ALL = permissionsToP(ALL_PERMISSIONS)
+
+    /** A one-page aes256 file whose /Encrypt dictionary is written from `tamper(info)`. */
+    async function build(tamper: (info: Protection['info']) => Protection['info']): Promise<Uint8Array> {
+      const enc = await rawEncryption({ algorithm: 'aes256', userPassword: 'uu', ownerPassword: 'oo', P: P_NONE, encryptMetadata: true })
+      const dict = encryptDictText({ ...enc.protection, info: tamper({ ...enc.protection.info }) })
+      const id = toHex(enc.protection.info.id0)
+      return assemble(pageObjects(streamObject('', enc.stream(4, showText('Restricted text'))), [{ num: 8, body: dict }]), `/Root 1 0 R /Encrypt 8 0 R /ID [<${id}> <${id}>]`).bytes
+    }
+
+    it('untouched: /P and /Perms agree', async () => {
+      const probe = (await inspectEncryption(await build((i) => i)))!
+      const a = (await authenticate(probe.info, 'uu'))!
+      expect(a.kind).toBe('user')
+      expect(a.P).toBe(P_NONE)
+      expect(a.permsIntact).toBe(true)
+      expect(mayEdit(a.kind, a.P)).toBe(false)
+    })
+
+    it('a /P changed to allow everything is ignored: the restrictions in /Perms still apply', async () => {
+      const bytes = await build((i) => ({ ...i, P: P_ALL }))
+      const probe = (await inspectEncryption(bytes))!
+      expect(probe.info.P).toBe(P_ALL) // what the file claims
+      const a = (await authenticate(probe.info, 'uu'))!
+      expect(a.kind).toBe('user')
+      expect(a.P).toBe(P_NONE)
+      expect(a.permsIntact).toBe(false)
+      expect(mayEdit(a.kind, a.P)).toBe(false)
+      expect(isAllowed({ kind: a.kind, P: a.P, R: probe.info.R }, 'print')).toBe(false)
+      expect(isAllowed({ kind: a.kind, P: a.P, R: probe.info.R }, 'copy')).toBe(false)
+      // The document still decrypts; the owner keeps every permission.
+      expect(await allStreamText((await openWith(bytes, 'uu')).plain)).toContain('Restricted text')
+      expect((await authenticate(probe.info, 'oo'))?.kind).toBe('owner')
+    })
+
+    it('a damaged or missing /Perms block, or an /EncryptMetadata that disagrees with it, means view-only', async () => {
+      const cases: ((i: Protection['info']) => Protection['info'])[] = [
+        (i) => ({ ...i, P: P_ALL, Perms: new Uint8Array(16).fill(7) }),
+        (i) => ({ ...i, P: P_ALL, Perms: undefined }),
+        (i) => ({ ...i, P: P_ALL, encryptMetadata: false })
+      ]
+      for (const tamper of cases) {
+        const probe = (await inspectEncryption(await build(tamper)))!
+        const a = (await authenticate(probe.info, 'uu'))!
+        expect(a.kind).toBe('user')
+        expect(a.P).toBe(VIEW_ONLY_P)
+        expect(a.permsIntact).toBe(false)
+        expect(mayEdit(a.kind, a.P)).toBe(false)
+        expect(isAllowed({ kind: a.kind, P: a.P, R: probe.info.R }, 'print')).toBe(false)
+        expect(isAllowed({ kind: a.kind, P: a.P, R: probe.info.R }, 'copy')).toBe(false)
+      }
+    })
+
+    it('RC4 / AES-128: /P is bound into the key, so a changed /P no longer opens the file', async () => {
+      for (const algorithm of ['aes128', 'rc4-128'] as Algorithm[]) {
+        const enc = await rawEncryption({ algorithm, userPassword: 'uu', ownerPassword: 'oo', P: P_NONE, encryptMetadata: true })
+        const ok = (await authenticate(enc.protection.info, 'uu'))!
+        expect(ok.P).toBe(P_NONE)
+        expect(ok.permsIntact).toBe(true)
+        expect(await authenticate({ ...enc.protection.info, P: P_ALL }, 'uu')).toBeNull()
+      }
+    })
   })
 
   it('EncryptMetadata=false: the XMP stream stays readable, everything else is encrypted (AES-128 and AES-256)', async () => {
