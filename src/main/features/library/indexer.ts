@@ -23,6 +23,8 @@ export interface SyncDeps {
   extraDelayMs?: number
   exists?: (path: string) => Promise<boolean>
   now?: () => number
+  /** Deletes the cached thumbnails of these files (their content is no longer indexed, or they are gone). */
+  removeThumbs?: (ids: number[]) => Promise<void>
 }
 
 export interface SyncProgress {
@@ -119,13 +121,16 @@ export async function syncRoot(deps: SyncDeps, rootId: number, opts: SyncOptions
     }
 
     // 4. record what cannot be read, insert the new files as `pending` so they show up at once
+    const unthumbed: number[] = []
     repo.db.transaction(() => {
       for (const f of plan.toFlag) repo.setCloudFlag(f.known.id, f.cloud)
       for (const r of plan.toRecord) {
         const note = r.state === 'cloud' ? CLOUD_NOTE : tooLargeNote(settings.maxFileMb)
         try {
-          if (r.known) repo.applyRecorded(r.known.id, r.entry, r.state, note)
-          else {
+          if (r.known) {
+            repo.applyRecorded(r.known.id, r.entry, r.state, note)
+            unthumbed.push(r.known.id)
+          } else {
             repo.insertFile(rootId, r.entry, r.state, note, now())
             summary.added++
           }
@@ -147,6 +152,7 @@ export async function syncRoot(deps: SyncDeps, rootId: number, opts: SyncOptions
         } else summary.changed++
       }
     })()
+    if (unthumbed.length > 0) await deps.removeThumbs?.(unthumbed).catch(() => undefined)
     plan.toIndex = plan.toIndex.filter((i) => i.known)
     opts.onChanged?.()
 
@@ -182,7 +188,10 @@ export async function syncRoot(deps: SyncDeps, rootId: number, opts: SyncOptions
     // 6. forget files that are really gone (a stat, not just "the scan did not list it": a scan can be incomplete)
     const gone: number[] = []
     for (const m of missing) if (!(await exists(m.path))) gone.push(m.id)
-    if (gone.length > 0) repo.deleteFiles(gone)
+    if (gone.length > 0) {
+      repo.deleteFiles(gone)
+      await deps.removeThumbs?.(gone).catch(() => undefined)
+    }
     summary.removed = gone.length
 
     repo.setRootScan(rootId, { status: 'ok', note: scan.note, at: now() })

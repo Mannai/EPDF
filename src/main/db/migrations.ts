@@ -152,6 +152,14 @@ export const MIGRATIONS: { version: number; sql: string }[] = [
       -- diacritics; the application spaces out CJK characters before indexing.
       CREATE VIRTUAL TABLE library_text USING fts5(text, tokenize = 'unicode61 remove_diacritics 2');
     `
+  },
+  {
+    version: 6,
+    sql: `
+      -- Deleting a page's text also removes its words from the full-text index (otherwise they stay in the index
+      -- segments until a merge). A persistent FTS5 option, stored in the table's config.
+      INSERT INTO library_text(library_text, rank) VALUES('secure-delete', 1);
+    `
   }
 ]
 

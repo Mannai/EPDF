@@ -1,5 +1,5 @@
 import { realpathSync, watch, type FSWatcher } from 'node:fs'
-import { readFile, rm, mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   DEFAULT_LIBRARY_SETTINGS,
@@ -127,6 +127,11 @@ export class LibraryService {
     } else {
       this.repo.forget()
       await rm(this.ports.thumbsDir, { recursive: true, force: true }).catch(() => undefined)
+      try {
+        this.repo.compact()
+      } catch (err) {
+        console.warn('the library index could not be compacted', err) // e.g. another statement is still reading
+      }
       this.refreshWatchers()
     }
     this.changed(true)
@@ -190,7 +195,15 @@ export class LibraryService {
         const root = this.repo.getRoot(rootId)
         if (!root) continue
         const summary = await syncRoot(
-          { repo: this.repo, engine, settings: this.settings(), assets: this.ports.assets(), throttle: true, extraDelayMs: this.ports.extraDelayMs },
+          {
+            repo: this.repo,
+            engine,
+            settings: this.settings(),
+            assets: this.ports.assets(),
+            throttle: true,
+            extraDelayMs: this.ports.extraDelayMs,
+            removeThumbs: (ids) => this.removeThumbs(ids)
+          },
           rootId,
           {
             signal: job.signal,
@@ -237,6 +250,7 @@ export class LibraryService {
       this.watchGuardNote = 'Folder watching was switched off because the app stopped unexpectedly while starting it. Folders are still rescanned regularly; turn watching back on in the Library settings.'
     }
     setTimeout(() => this.enqueue(), initialDelayMs).unref()
+    void this.sweepThumbs()
     this.refreshWatchers()
     const every = this.ports.rescanIntervalMs ?? 10 * 60_000
     this.timer = setInterval(() => {
@@ -384,7 +398,8 @@ export class LibraryService {
       const f = this.repo.getFile(id)
       if (!f || f.hidden || !f.thumbKey) continue
       if (f.thumbKey !== this.thumbKey(f)) {
-        this.repo.setThumbKey(id, null)
+        // The file changed: its old picture goes (then the key, so a failed delete is retried next time).
+        if (await this.deleteThumb(id)) this.repo.setThumbKey(id, null)
         continue
       }
       try {
@@ -410,6 +425,59 @@ export class LibraryService {
   }
 
   async removeThumbs(ids: number[]): Promise<void> {
-    for (const id of ids) await rm(this.thumbPath(id), { force: true }).catch(() => undefined)
+    for (const id of ids) await this.deleteThumb(id)
+  }
+
+  /** True when the picture is gone (or never existed). */
+  private async deleteThumb(id: number): Promise<boolean> {
+    return rm(this.thumbPath(id), { force: true }).then(
+      () => true,
+      () => false
+    )
+  }
+
+  /**
+   * Deletes cached pictures no library file claims any more (left by older versions, or by a crash between writing
+   * a picture and recording it). Pictures younger than a minute are left alone: they may be being recorded.
+   */
+  async sweepThumbs(now = Date.now()): Promise<number> {
+    let removed = 0
+    const names = await readdir(this.ports.thumbsDir).catch(() => [] as string[])
+    for (const name of names) {
+      const m = /^(\d+)\.png$/.exec(name)
+      const f = m ? this.repo.getFile(Number(m[1])) : null
+      if (f?.thumbKey && !f.hidden) continue
+      const p = join(this.ports.thumbsDir, name)
+      const st = await stat(p).catch(() => null)
+      if (!st?.isFile() || now - st.mtimeMs < 60_000) continue
+      if (await rm(p, { force: true }).then(() => true, () => false)) removed++
+    }
+    return removed
+  }
+
+  /**
+   * Forgets what the library read from the file at `path` (page text, thumbnail) and marks it to be read again, so
+   * a watched folder indexes its current (for example redacted) content on the next sync. Returns how many pictures
+   * could not be deleted.
+   */
+  async forgetPath(path: string): Promise<{ failed: number }> {
+    const caseInsensitive = process.platform === 'win32' || process.platform === 'darwin'
+    let failed = 0
+    // Library paths are canonical (watched folders are stored by their real path); the document may be spelled otherwise.
+    const real = await realpath(path).catch(() => path)
+    const rows = [...new Map([...this.repo.filesByPath(path, caseInsensitive), ...this.repo.filesByPath(real, caseInsensitive)].map((f) => [f.id, f])).values()]
+    for (const f of rows) {
+      if (!(await this.deleteThumb(f.id))) failed++
+      this.repo.forgetContent(f.id)
+    }
+    if (rows.length > 0) {
+      try {
+        this.repo.checkpoint() // the log still holds the text as it was
+      } catch {
+        /* a reader is active; the next checkpoint gets it */
+      }
+      this.changed(true)
+    }
+    return { failed }
   }
 }

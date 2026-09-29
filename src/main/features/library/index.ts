@@ -32,6 +32,7 @@ import {
 import { isInside } from '../../../shared/features/library/plan'
 import type { DocHandle } from '../../../shared/types'
 import { commandItem, contributeMenu } from '../../menu/contributions'
+import { registerTraceSource } from '../../services/traces'
 import { registerFeatureChannel, sendFeatureEvent, type MainContext } from '../api'
 import { resolveTarget } from './access'
 import { WorkerEngine } from './engine'
@@ -76,6 +77,8 @@ export function register(ctx: MainContext): void {
   ctx.jobs.register('library:sync', 'Indexing library', SyncJobSchema, (payload, job) => service.runJob(payload, job))
   service.start(envNumber('EPDF_LIBRARY_START_MS') ?? 1500)
   app.once('will-quit', () => service.dispose())
+  // Purging a document's history (after redacting it) also drops its page text and thumbnail from the library.
+  registerTraceSource('library', (path) => service.forgetPath(path))
 
   const suggestions = (): Suggestion[] =>
     detectFolders(
