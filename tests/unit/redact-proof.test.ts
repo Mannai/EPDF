@@ -54,7 +54,8 @@ describe('the redacted file', () => {
     expect(report.textRuns).toBeGreaterThanOrEqual(9)
     expect(report.images).toBe(2)
     expect(report.forms).toBe(2) // the shared form, once per page it is used on
-    expect(report.paths + report.pathsClipped).toBeGreaterThanOrEqual(2)
+    expect(report.paths).toBeGreaterThanOrEqual(2) // one rectangle inside the mark, one cut along it
+    expect(report.pathsCollateral).toBe(0)
     expect(report.scrub.annotations).toBeGreaterThanOrEqual(2)
     expect(secrets).toContain(SECRET.toLowerCase())
   })

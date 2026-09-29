@@ -75,6 +75,8 @@ async function applyThroughDialog(page: Page, opts: { overlay?: RegExp; metadata
   if (opts.preview) {
     await page.getByTestId('redact-preview-button').click()
     await expect(page.getByTestId('redact-selfcheck')).toContainText('Self-check passed', { timeout: 60_000 })
+    // the test documents' drawings are either inside a mark or cut along it: nothing is removed beyond the marks
+    await expect(page.getByTestId('redact-collateral')).toHaveCount(0)
   }
   await page.getByTestId('redact-apply-button').click()
   await expect(dialog(page)).toHaveCount(0, { timeout: 60_000 })

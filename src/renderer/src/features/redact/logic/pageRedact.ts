@@ -170,6 +170,7 @@ export function redactPage(pdf: PDFDocument, pageIndex: number, marks: readonly 
   const disjoint = disjointRects(marks.map((m) => m.rect))
   const shapes: Quad[] = marks.map((m) => m.quad ?? rectQuad(m.rect))
   const walker = new Walker(pdf, { marks: disjoint, shapes, edit: true, fill: opts.fill }, stats)
+  const collateralBefore = stats.pathsCollateral + stats.shadingsCollateral
   const res = new ResEdit(ctx, src.resources, walker.owned)
   let out: ReturnType<Walker['process']>
   try {
@@ -178,6 +179,13 @@ export function redactPage(pdf: PDFDocument, pageIndex: number, marks: readonly 
     if (e instanceof RedactRefused) throw new RedactRefused(`Page ${pageIndex + 1}: ${e.message}`)
     throw e
   }
+  const collateral = stats.pathsCollateral + stats.shadingsCollateral - collateralBefore
+  if (collateral > 0)
+    walker.warnings.push(
+      collateral === 1
+        ? '1 drawn shape that crosses the edge of a mark was removed entirely; it may also disappear outside the marked area.'
+        : `${collateral} drawn shapes that cross the edge of a mark were removed entirely; they may also disappear outside the marked area.`
+    )
 
   const gsDict = ctx.obj({ Type: 'ExtGState', CA: 1, ca: 1, BM: 'Normal', SMask: 'None', AIS: false })
   const gsName = res.add('ExtGState', 'EpdfRdGS', gsDict)

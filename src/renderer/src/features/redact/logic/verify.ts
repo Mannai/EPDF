@@ -10,6 +10,7 @@ import { glyphBand, runQuad } from './interp'
 import { decodeImage, pixelSpans } from './imageRedact'
 import { decodeTextString } from './pdfconv'
 import { OVERLAY_FONT_PREFIX } from './pageRedact'
+import { checkPageVectors } from './verifyVector'
 
 /**
  * The independent self-check. It re-reads the finished file from its BYTES (not from the objects the redaction
@@ -18,7 +19,8 @@ import { OVERLAY_FONT_PREFIX } from './pageRedact'
  *   1. text glyphs still lying under a mark (read with the original text-edit engine, a separate implementation
  *      of text positioning from the one that removed them),
  *   2. images under a mark whose pixels there are not black,
- *   3. annotations still under a mark,
+ *   3. annotations still under a mark, and drawn shapes (subpaths of page, form and soft-mask content) with
+ *      geometry under a mark — see verifyVector.ts,
  *   4. the redacted strings anywhere: page/form/appearance text (decoded with the fonts), the literal, UTF-16BE
  *      and hex forms inside every decompressed stream and every text string of the file, and the raw file bytes,
  *   5. objects that are not reachable from the trailer (leftovers of earlier revisions or replaced streams),
@@ -298,6 +300,10 @@ export async function verifyRedaction(input: VerifyInput): Promise<Finding[]> {
         // JPEG blocks at the edge of a region may ring slightly; anything more than a sliver is a failure
         if (bad > (jpeg ? total * 0.03 : 0)) add(`page ${pi + 1}`, 'Image pixels under a redaction mark are not black, so they were not destroyed.')
       }
+      const vec = checkPageVectors(pdf, pi, marks)
+      if (vec.error) add(`page ${pi + 1}`, `The drawings on the page could not be re-read to confirm the redaction (${vec.error}).`)
+      else if (vec.leaks)
+        add(`page ${pi + 1}`, `${vec.leaks === 1 ? 'A drawn shape still has' : `${vec.leaks} drawn shapes still have`} geometry under a redaction mark, so ${vec.leaks === 1 ? 'it' : 'they'} could be recovered from the file.`)
       const annots = pages[pi].node.Annots()
       if (annots) {
         for (let i = 0; i < annots.size(); i++) {
