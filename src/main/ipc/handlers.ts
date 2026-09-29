@@ -3,6 +3,7 @@ import { basename, dirname, join } from 'node:path'
 import type { DocHandle, OpenedDoc } from '../../shared/types'
 import type { Controller } from '../controller'
 import { callFeatureChannel } from '../features/api'
+import { FileChangedError } from '../services/fileService'
 import { APP_ORIGIN } from '../services/protocol'
 import { handle } from './registry'
 
@@ -48,9 +49,23 @@ export function registerIpcHandlers(c: Controller): void {
 
   handle('file:save', async (req) => {
     const path = pathOrThrow(req.docId)
-    const { size, mtime } = await c.files.save(path, req.bytes)
-    c.registry.noteWritten(req.docId, size, mtime)
-    return { path, name: basename(path), size, mtime }
+    c.registry.beginWrite(req.docId)
+    try {
+      // Only overwrite the file this document was read from (or last saved): not one another program put there since.
+      const { size, mtime, identity } = await c.files.save(path, req.bytes, '', c.registry.identityOf(req.docId))
+      c.registry.noteWritten(req.docId, size, mtime, identity)
+      return { path, name: basename(path), size, mtime }
+    } catch (err) {
+      if (err instanceof FileChangedError) {
+        // The document now knows the file on disk, so after the usual "changed on disk" question (asked on the next
+        // Save), Overwrite goes through.
+        await c.registry.recordDiskState(req.docId)
+        c.windows.broadcast('doc:changedOnDisk', { docId: req.docId })
+      }
+      throw err
+    } finally {
+      c.registry.endWrite(req.docId)
+    }
   })
 
   const askSavePath = async (docId: string, suggestedName: string | undefined, e: IpcMainInvokeEvent): Promise<string | null> => {
@@ -69,8 +84,8 @@ export function registerIpcHandlers(c: Controller): void {
     const oldPath = pathOrThrow(req.docId)
     const target = await askSavePath(req.docId, req.suggestedName, e)
     if (!target) return null
-    const { size, mtime } = await c.files.writeNew(target, req.bytes)
-    c.registry.rebind(req.docId, target, size, mtime)
+    const { size, mtime, identity } = await c.files.writeNew(target, req.bytes)
+    c.registry.rebind(req.docId, target, size, mtime, identity)
     // The old file keeps its on-disk content, so its autosaved edits no longer apply to it.
     if (oldPath !== target) await c.files.clearRecovery(oldPath)
     await c.files.clearRecovery(target)
@@ -88,7 +103,9 @@ export function registerIpcHandlers(c: Controller): void {
 
   handle('recovery:write', (req) => c.files.writeRecovery(pathOrThrow(req.docId), req.bytes))
   handle('recovery:read', (req) => c.files.readRecovery(pathOrThrow(req.docId)))
-  handle('recovery:clear', (req) => c.files.clearRecovery(pathOrThrow(req.docId)))
+  handle('recovery:clear', async (req) => {
+    await c.files.clearRecovery(pathOrThrow(req.docId))
+  })
   handle('versions:list', (req) => c.files.listVersions(pathOrThrow(req.docId)))
   handle('versions:read', (req) => c.files.readVersion(pathOrThrow(req.docId), req.versionId))
 

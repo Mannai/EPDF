@@ -68,13 +68,31 @@ describe('VersionsRepo', () => {
     expect(v.list('/a.pdf').map((x) => x.snapshotPath)).toEqual(['/v/2', '/v/1'])
     expect(v.list('/b.pdf')).toHaveLength(1)
   })
-  it('prunes to the newest N and returns the files to delete', () => {
+  it('lists the versions beyond the newest N without deleting them; records go one by one', () => {
     const v = new VersionsRepo(db)
     for (let i = 1; i <= 5; i++) v.add('/a.pdf', `/v/${i}`, i, '', i)
     v.add('/other.pdf', '/v/other', 1, '', 1)
-    expect(v.prune('/a.pdf', 2).sort()).toEqual(['/v/1', '/v/2', '/v/3'])
+    const old = v.beyond('/a.pdf', 2)
+    expect(old.map((x) => x.snapshotPath)).toEqual(['/v/3', '/v/2', '/v/1'])
+    expect(v.list('/a.pdf')).toHaveLength(5) // nothing is dropped until the caller has deleted the file
+    for (const x of old) v.remove(x.id)
     expect(v.list('/a.pdf').map((x) => x.snapshotPath)).toEqual(['/v/5', '/v/4'])
     expect(v.list('/other.pdf')).toHaveLength(1)
+    expect(v.docPaths().sort()).toEqual(['/a.pdf', '/other.pdf'])
+    expect(v.allSnapshotPaths().sort()).toEqual(['/v/4', '/v/5', '/v/other'])
+  })
+})
+
+describe('RecoveryRepo lookups', () => {
+  it('finds every document that points to one recovery file', () => {
+    const r = new RecoveryRepo(db)
+    r.set('/a/Doc.pdf', '/rec/x.pdf', 100)
+    r.set('/a/doc.pdf', '/rec/x.pdf', 200)
+    r.set('/b.pdf', '/rec/y.pdf', 50)
+    expect(r.usersOf('/rec/x.pdf')).toEqual(expect.arrayContaining([{ docPath: '/a/Doc.pdf', savedAt: 100 }, { docPath: '/a/doc.pdf', savedAt: 200 }]))
+    expect(r.usersOf('/rec/none.pdf')).toEqual([])
+    expect(r.allPaths().sort()).toEqual(['/rec/x.pdf', '/rec/x.pdf', '/rec/y.pdf'])
+    expect(r.all()[0]).toEqual({ docPath: '/a/doc.pdf', recoveryPath: '/rec/x.pdf', savedAt: 200 })
   })
 })
 
