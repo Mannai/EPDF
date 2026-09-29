@@ -29,7 +29,7 @@ import type { MainContext } from '../api'
 import { registerFeatureChannel, sendFeatureEvent } from '../api'
 import { chooseBackend } from './backends'
 import { ScanError } from './errors'
-import { listLanAddresses } from './lan'
+import { listLanAddresses, phoneAddresses } from './lan'
 import { PhoneUploadServer } from './phoneServer'
 
 /**
@@ -42,6 +42,9 @@ interface Session {
   window: ManagedWindow
   phone: PhoneUploadServer | null
 }
+
+/** `scan:phoneStart` may name the one address to listen on (one of those the computer has; see `phoneAddresses`). */
+const PhoneStartMainSchema = PhoneStartSchema.extend({ address: z.string().min(1).max(64).optional() })
 
 export function register(ctx: MainContext): void {
   const choice = chooseBackend({ platform: process.platform, macHelperPath: process.platform === 'darwin' ? resolveTool('epdf-mac-scan') : null })
@@ -104,15 +107,17 @@ export function register(ctx: MainContext): void {
   })
 
   // ---- phone over the local network ------------------------------------------------------------------------------
-  registerFeatureChannel('scan:phoneStart', PhoneStartSchema, async ({ sessionId }): Promise<PhoneStartResult> => {
+  registerFeatureChannel('scan:phoneStart', PhoneStartMainSchema, async ({ sessionId, address }): Promise<PhoneStartResult> => {
     const session = sessionOf(sessionId)
     session.phone?.close('closed')
     session.phone = null
     const override = process.env['EPDF_PHONE_ADDRESSES']
-    const lan = override ? override.split(',').map((a) => ({ address: a.trim(), interfaceName: 'test', likelyVirtual: false })) : listLanAddresses()
-    if (lan.length === 0) {
+    const found = override ? override.split(',').map((a) => ({ address: a.trim(), interfaceName: 'test', likelyVirtual: false })) : listLanAddresses()
+    if (found.length === 0) {
       throw new Error('Epdf found no local network to use. Connect this computer to the same Wi-Fi or network as your phone (guest networks and VPNs often block it), then try again.')
     }
+    const lan = phoneAddresses(found, address)
+    if (lan.length === 0) throw new Error('That network address is no longer available on this computer. Start the phone upload again.')
     const server = await PhoneUploadServer.start({
       addresses: lan.map((l) => l.address),
       onUpload: (img) => {
