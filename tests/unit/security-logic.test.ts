@@ -75,7 +75,8 @@ describe('the security info dialog content', () => {
   })
 
   it('lists each restriction and the weak-cipher / draft-revision / unsaved / access notes', async () => {
-    const d = await describeProtection('a.pdf', await info('no-permissions-aes128'), { unsaved: true, access: { kind: 'user', P: 0, R: 4 } })
+    const np = await info('no-permissions-aes128')
+    const d = await describeProtection('a.pdf', np, { unsaved: true, access: { kind: 'user', P: np.P, R: np.R } })
     const byLabel = Object.fromEntries(d.permissions.map((p) => [p.label, p]))
     expect(byLabel['Printing'].allowed).toBe(false)
     expect(byLabel['Printing'].detail).toBe('Not allowed')
@@ -90,6 +91,15 @@ describe('the security info dialog content', () => {
     expect(r5.notes.some((n) => n.includes('revision 5'))).toBe(true)
     const low = await describeProtection('a.pdf', await info('lowres-print-rc4-128'))
     expect(low.permissions.find((p) => p.label === 'Printing')!.detail).toBe('Low resolution only')
+  })
+
+  it('shows the enforced permissions when they differ from the open /P, with a note', async () => {
+    const open = await info('aes-256-r6') // /P allows everything
+    const d = await describeProtection('a.pdf', open, { access: { kind: 'user', P: 0xfffff0c0 | 0, R: 6 } })
+    expect(d.permissions.find((p) => p.label === 'Printing')!.allowed).toBe(false)
+    expect(d.notes.some((n) => n.includes('do not match its protected copy'))).toBe(true)
+    const same = await describeProtection('a.pdf', open, { access: { kind: 'user', P: open.P, R: 6 } })
+    expect(same.notes.some((n) => n.includes('do not match'))).toBe(false)
   })
 
   it('metadata-cleartext files say so', async () => {
