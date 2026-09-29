@@ -10,6 +10,7 @@ import { ScanError, codeFromHresult, errorFromMessage, hresultInText } from '../
 import { runHelper } from '../../src/main/features/scan/helper'
 import { LineParser } from '../../src/main/features/scan/protocol'
 import { WIA_SCRIPT, buildWiaSpec, encodeScript, offeredResolutions, powershellPath } from '../../src/main/features/scan/wia'
+import { POWERSHELL_ARGS, icaclsPath } from '../../src/main/services/windowsTools'
 import { makePng, solid } from '../support/images'
 
 const STUB_HELPER = resolve('tests/fixtures/scan-stub-helper.mjs')
@@ -94,6 +95,14 @@ describe('WIA command construction (no shell, no interpolation)', () => {
 
   it('powershell path is absolute and falls back to C:\\Windows', () => {
     expect(powershellPath({})).toMatch(/^C:\\Windows\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe$/i)
+    expect(powershellPath({ SystemRoot: 'D:\\Win' })).toBe('D:\\Win\\System32\\WindowsPowerShell\\v1.0\\powershell.exe')
+    expect(icaclsPath({ SystemRoot: 'D:\\Win' })).toBe('D:\\Win\\System32\\icacls.exe')
+  })
+
+  it('leaves the machine’s PowerShell execution policy alone', () => {
+    const spec = buildWiaSpec({ command: 'list' }, { SystemRoot: 'C:\\Windows' })
+    expect(spec.args.slice(0, 2)).toEqual([...POWERSHELL_ARGS])
+    expect(spec.args.join(' ')).not.toMatch(/ExecutionPolicy|Bypass/i)
   })
 
   it('offers standard resolutions the device supports, with sane fallbacks', () => {

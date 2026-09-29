@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { POWERSHELL_ARGS, powershellPath } from '../../services/windowsTools'
 
 /**
  * Windows file attribute words for a batch of paths, via PowerShell's `Get-Item` (which reads metadata only and
@@ -28,8 +29,8 @@ export async function readWindowsAttributes(paths: string[], timeoutMs = 30_000)
       await writeFile(file, chunk.join('\n'), 'utf8')
       const stdout = await new Promise<string>((resolve, reject) => {
         execFile(
-          'powershell.exe',
-          ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', SCRIPT],
+          powershellPath(),
+          [...POWERSHELL_ARGS, '-Command', SCRIPT],
           { windowsHide: true, timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, EPDF_PATHS_FILE: file } },
           (err, so) => (err ? reject(err) : resolve(String(so)))
         )
