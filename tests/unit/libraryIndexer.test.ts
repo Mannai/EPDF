@@ -57,6 +57,21 @@ describe('syncing a watched folder', () => {
     expect(repo.listRoots()[0]).toMatchObject({ status: 'ok', files: 2, indexed: 2 })
   })
 
+  it('asks for the thumbnails of deleted files, and of files that are no longer read, to be deleted', async () => {
+    const gone = await put('gone.pdf', ['soon deleted'])
+    const big = await put('big.pdf', ['x'.repeat(10)])
+    await sync()
+    const idOf = (name: string): number => Number(files().find((f) => f.name === name)!.ref.slice(1))
+    const bigId = idOf('big.pdf')
+    const goneId = idOf('gone.pdf')
+    const asked: number[][] = []
+    const removeThumbs = async (ids: number[]): Promise<void> => void asked.push(ids)
+    unlinkSync(gone)
+    writeFileSync(big, Buffer.concat([await makeTextPdf(['bigger now']), Buffer.alloc(2 * 1024 * 1024)]))
+    await sync({ removeThumbs, settings: { ...DEFAULT_LIBRARY_SETTINGS, maxFileMb: 1 } })
+    expect(asked.flat().sort()).toEqual([bigId, goneId].sort())
+  })
+
   it('is incremental: a second run with nothing changed reads nothing', async () => {
     await put('a.pdf', ['one'])
     await put('b.pdf', ['two'])

@@ -254,6 +254,46 @@ export class LibraryRepo {
     })()
   }
 
+  /**
+   * After "Forget everything": rewrites the database file without the freed pages and empties the write-ahead log,
+   * so no deleted page text is left in `epdf.db` or `epdf.db-wal`. (secure_delete already zeroes freed content; this
+   * also drops the old copies the log still holds.)
+   */
+  compact(): void {
+    this.db.exec('VACUUM')
+    this.checkpoint()
+  }
+
+  /** Copies everything from the write-ahead log into the database and truncates the log. */
+  checkpoint(): void {
+    this.db.pragma('wal_checkpoint(TRUNCATE)')
+  }
+
+  /** Library rows for a path (ignoring case where the file system does). */
+  filesByPath(path: string, caseInsensitive: boolean): FileRow[] {
+    if (!caseInsensitive) {
+      const f = this.getFileByPath(path)
+      return f ? [f] : []
+    }
+    // SQLite's NOCASE folds ASCII only, so compare in JS (one pass over the paths; used rarely).
+    const want = path.toLowerCase()
+    const ids = (this.db.prepare('SELECT id, path FROM library_files').all() as { id: number; path: string }[]).filter((r) => r.path.toLowerCase() === want).map((r) => r.id)
+    return ids.map((id) => this.getFile(id)).filter((f): f is FileRow => f !== null)
+  }
+
+  /**
+   * Forgets what was read from a file (its page text, page count, hash, thumbnail key) and marks it pending, so a
+   * watched folder reads it again on its next sync. Used after the file was redacted.
+   */
+  forgetContent(id: number): void {
+    this.db.transaction(() => {
+      this.deleteText(id)
+      this.db
+        .prepare("UPDATE library_files SET state = 'pending', hash = NULL, index_version = 0, note = '', pages = NULL, words = 0, thumb_key = NULL, indexed_at = NULL WHERE id = ?")
+        .run(id)
+    })()
+  }
+
   /** "Rebuild index": drops all indexed text and marks every file to be read again; keeps favorites, folders, thumbnails. */
   rebuild(): void {
     this.db.transaction(() => {

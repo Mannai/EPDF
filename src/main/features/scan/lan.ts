@@ -32,3 +32,14 @@ export function listLanAddresses(ifaces: NodeJS.Dict<NetworkInterfaceInfo[]> = n
   const rank = (a: LanAddress): number => (a.likelyVirtual ? 10 : 0) + (a.address.startsWith('192.168.') ? 0 : a.address.startsWith('10.') ? 1 : 2)
   return out.sort((a, b) => rank(a) - rank(b) || a.address.localeCompare(b.address))
 }
+
+/**
+ * The addresses the phone-upload server listens on: the one asked for (only if the computer has it), or else the
+ * ones that are not virtual adapters (WSL, Hyper-V, Docker, VPN), so the upload page is not reachable from networks
+ * the phone is not on. When every address looks virtual, all of them are used (the name heuristic can be wrong).
+ */
+export function phoneAddresses(found: LanAddress[], address?: string): LanAddress[] {
+  if (address) return found.filter((l) => l.address === address)
+  const real = found.filter((l) => !l.likelyVirtual)
+  return real.length > 0 ? real : found
+}

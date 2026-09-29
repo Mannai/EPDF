@@ -70,6 +70,21 @@ export class RecoveryRepo {
     this.db.prepare('DELETE FROM recovery_files WHERE doc_path = ?').run(docPath)
     return cur?.recoveryPath ?? null
   }
+
+  /** The documents whose record points to this recovery file (more than one only for names from before 1.1). */
+  usersOf(recoveryPath: string): { docPath: string; savedAt: number }[] {
+    const rows = this.db.prepare('SELECT doc_path, saved_at FROM recovery_files WHERE recovery_path = ?').all(recoveryPath) as { doc_path: string; saved_at: number }[]
+    return rows.map((r) => ({ docPath: r.doc_path, savedAt: r.saved_at }))
+  }
+
+  all(): { docPath: string; recoveryPath: string; savedAt: number }[] {
+    const rows = this.db.prepare('SELECT doc_path, recovery_path, saved_at FROM recovery_files ORDER BY saved_at DESC').all() as { doc_path: string; recovery_path: string; saved_at: number }[]
+    return rows.map((r) => ({ docPath: r.doc_path, recoveryPath: r.recovery_path, savedAt: r.saved_at }))
+  }
+
+  allPaths(): string[] {
+    return this.all().map((r) => r.recoveryPath)
+  }
 }
 
 export interface VersionRow extends VersionInfo {
@@ -116,12 +131,25 @@ export class VersionsRepo {
       : null
   }
 
-  /** Deletes all but the newest `keep` versions of a document; returns the snapshot files to unlink. */
-  prune(docPath: string, keep = MAX_VERSIONS_PER_DOC): string[] {
-    const old = this.list(docPath).slice(keep)
-    const del = this.db.prepare('DELETE FROM versions WHERE id = ?')
-    for (const v of old) del.run(v.id)
-    return old.map((v) => v.snapshotPath)
+  /**
+   * The versions of a document beyond the newest `keep`, oldest last. The caller deletes each snapshot file and only
+   * then its record (`remove`), so a file that could not be deleted is never forgotten.
+   */
+  beyond(docPath: string, keep = MAX_VERSIONS_PER_DOC): VersionRow[] {
+    return this.list(docPath).slice(keep)
+  }
+
+  remove(id: number): void {
+    this.db.prepare('DELETE FROM versions WHERE id = ?').run(id)
+  }
+
+  /** Every document path that has versions. */
+  docPaths(): string[] {
+    return (this.db.prepare('SELECT DISTINCT doc_path FROM versions').all() as { doc_path: string }[]).map((r) => r.doc_path)
+  }
+
+  allSnapshotPaths(): string[] {
+    return (this.db.prepare('SELECT snapshot_path FROM versions').all() as { snapshot_path: string }[]).map((r) => r.snapshot_path)
   }
 }
 

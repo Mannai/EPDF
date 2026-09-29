@@ -3,7 +3,7 @@ import { connect, type Socket } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.setConfig({ testTimeout: 30_000 })
-import { isPrivateIPv4, listLanAddresses } from '../../src/main/features/scan/lan'
+import { isPrivateIPv4, listLanAddresses, phoneAddresses } from '../../src/main/features/scan/lan'
 import { MultipartError, boundaryFrom, parseMultipart, sniffImage } from '../../src/main/features/scan/multipart'
 import { PhoneUploadServer, listenProblem, type PhoneServerOptions, type UploadedImage } from '../../src/main/features/scan/phoneServer'
 import { makeFakeJpeg, makePng, solid } from '../support/images'
@@ -101,6 +101,16 @@ describe('LAN address discovery', () => {
     })
     expect(out.map((a) => a.address)).toEqual(['192.168.0.77', '10.1.2.3', '172.20.16.1'])
     expect(out.map((a) => a.likelyVirtual)).toEqual([false, false, true])
+  })
+
+  it('listens on the real networks only, or on the one address asked for, and never on one the computer lacks', () => {
+    const wifi = { address: '192.168.0.77', interfaceName: 'Wi-Fi', likelyVirtual: false }
+    const eth = { address: '10.1.2.3', interfaceName: 'Ethernet', likelyVirtual: false }
+    const wsl = { address: '172.20.16.1', interfaceName: 'vEthernet (WSL)', likelyVirtual: true }
+    expect(phoneAddresses([wifi, eth, wsl])).toEqual([wifi, eth])
+    expect(phoneAddresses([wsl])).toEqual([wsl]) // everything looks virtual: the heuristic may be wrong, offer it anyway
+    expect(phoneAddresses([wifi, eth, wsl], '172.20.16.1')).toEqual([wsl])
+    expect(phoneAddresses([wifi, eth, wsl], '8.8.8.8')).toEqual([])
   })
 })
 

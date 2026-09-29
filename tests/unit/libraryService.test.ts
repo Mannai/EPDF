@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { existsSync, mkdtempSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -378,10 +378,11 @@ describe('thumbnails cache', () => {
     const got = await svc.readThumbs([id])
     expect(got[`f${id}`]).toMatch(/^data:image\/png;base64,/)
     expect(repo.getFile(id)!.pages).toBe(7) // learned the page count from the renderer
-    // file changed -> stale
+    // file changed -> stale: the picture of the old content is deleted, not just forgotten
     db.prepare('UPDATE library_files SET size = 999 WHERE id = ?').run(id)
     expect(await svc.readThumbs([id])).toEqual({})
     expect(repo.getFile(id)!.thumbKey).toBeNull()
+    expect(existsSync(join(ports.thumbsDir, `${id}.png`))).toBe(false)
     await svc.saveThumb(id, PNG)
     await svc.removeThumbs([id])
     expect(await svc.readThumbs([id])).toEqual({})
@@ -397,6 +398,48 @@ describe('thumbnails cache', () => {
     await expect(svc.saveThumb(id, new Uint8Array(500_000))).rejects.toThrow(/too large/)
     expect(await svc.saveThumb(99999, PNG)).toBe(false)
     expect(existsSync(ports.thumbsDir) ? readdirSync(ports.thumbsDir) : []).toEqual([])
+    svc.dispose()
+  })
+
+  it('deletes pictures no file claims any more, at start (but not a fresh one being recorded)', async () => {
+    const { svc, ports } = makeService()
+    const kept = fileRow(join(dir, 'kept.pdf'), 'kept.pdf')
+    const hidden = fileRow(join(dir, 'hidden.pdf'), 'hidden.pdf')
+    await svc.saveThumb(kept, PNG)
+    await svc.saveThumb(hidden, PNG)
+    repo.hideFile(hidden)
+    const unknown = join(ports.thumbsDir, '99999.png')
+    const fresh = join(ports.thumbsDir, '88888.png')
+    writeFileSync(unknown, PNG)
+    writeFileSync(fresh, PNG)
+    const old = new Date(Date.now() - 5 * 60_000)
+    for (const n of [`${kept}.png`, `${hidden}.png`, '99999.png']) utimesSync(join(ports.thumbsDir, n), old, old)
+    expect(await svc.sweepThumbs()).toBe(2)
+    expect(readdirSync(ports.thumbsDir).sort()).toEqual([`${kept}.png`, '88888.png'].sort())
+    rmSync(ports.thumbsDir, { recursive: true, force: true })
+    svc.dispose()
+  })
+
+  it('forgetting one file (after it was redacted) drops its text and picture and queues it to be read again', async () => {
+    const { svc, ports, events } = makeService()
+    const p = join(dir, 'Secret.pdf')
+    const id = fileRow(p, 'Secret.pdf')
+    repo.applyIndex(id, { state: 'indexed', note: '', pages: 1, hash: 'h', words: 3, size: 10, mtime: 1, cloud: false, texts: [{ page: 1, text: 'account number 12345' }] })
+    const other = fileRow(join(dir, 'other.pdf'), 'other.pdf')
+    repo.applyIndex(other, { state: 'indexed', note: '', pages: 1, hash: 'h2', words: 2, size: 10, mtime: 1, cloud: false, texts: [{ page: 1, text: 'account overview' }] })
+    await svc.saveThumb(id, PNG)
+    const hits = (q: string): number => (repo.search({ query: q, scope: { kind: 'all' }, offset: 0, limit: 10 }) as { total: number }).total
+    expect(hits('12345')).toBe(1)
+    // Windows and macOS: the document may be open under another spelling of its path.
+    const asOpened = process.platform === 'win32' || process.platform === 'darwin' ? p.toUpperCase() : p
+    expect(await svc.forgetPath(asOpened)).toEqual({ failed: 0 })
+    expect(hits('12345')).toBe(0)
+    expect(hits('overview')).toBe(1) // other files keep their text
+    expect(repo.getFile(id)).toMatchObject({ state: 'pending', hash: null, pages: null, thumbKey: null })
+    expect(existsSync(join(ports.thumbsDir, `${id}.png`))).toBe(false)
+    expect(events.some((e) => e.channel === 'library:changed')).toBe(true)
+    expect(await svc.forgetPath(join(dir, 'not-in-library.pdf'))).toEqual({ failed: 0 })
+    rmSync(ports.thumbsDir, { recursive: true, force: true })
     svc.dispose()
   })
 

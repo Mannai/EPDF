@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { JobContext } from '../../jobs/JobManager'
 import { runProcess as defaultRunProcess } from '../../jobs/workerRunner'
+import { POWERSHELL_ARGS, powershellPath } from '../../services/windowsTools'
 
 /**
  * HEIC/HEIF -> JPEG through the operating system. No HEIF decoder is bundled: libheif is LGPL, and there is no
@@ -48,12 +49,11 @@ export interface HeicCommand {
 /** The command that converts `input` to `output` (JPEG) on this platform. Paths are passed as separate arguments or environment variables, never spliced into a script. */
 export function heicCommands(platform: NodeJS.Platform, input: string, output: string, env: NodeJS.ProcessEnv = process.env): HeicCommand[] {
   if (platform === 'win32') {
-    const root = env['SystemRoot'] ?? 'C:\\Windows'
     const encoded = Buffer.from(WINDOWS_SCRIPT, 'utf16le').toString('base64')
     return [
       {
-        file: join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
-        args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
+        file: powershellPath(env),
+        args: [...POWERSHELL_ARGS, '-EncodedCommand', encoded],
         env: { ...env, EPDF_HEIC_IN: input, EPDF_HEIC_OUT: output }
       }
     ]

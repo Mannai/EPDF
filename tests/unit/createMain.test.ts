@@ -190,6 +190,8 @@ describe('HEIC through the operating system', () => {
     const [win] = heicCommands('win32', 'C:\\t\\in\\picture.heic', 'C:\\t\\picture.jpg', { SystemRoot: 'C:\\Windows' })
     expect(win.file).toMatch(/powershell\.exe$/)
     expect(win.args).toEqual(expect.arrayContaining(['-NoProfile', '-NonInteractive', '-EncodedCommand']))
+    expect(win.args.join(' ')).not.toMatch(/ExecutionPolicy|Bypass/i)
+    expect(win.file).toBe('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe')
     expect(win.args.join(' ')).not.toContain('picture.heic')
     expect(win.env).toMatchObject({ EPDF_HEIC_IN: 'C:\\t\\in\\picture.heic', EPDF_HEIC_OUT: 'C:\\t\\picture.jpg' })
     const [mac] = heicCommands('darwin', '/t/in.heic', '/t/out.jpg')

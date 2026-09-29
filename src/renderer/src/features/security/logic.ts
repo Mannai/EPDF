@@ -68,9 +68,14 @@ export async function describeProtection(
   if (!info) {
     return { fileName, protectedDoc: false, summary: 'This document is not password protected.', rows: [], permissions: [], notes: [] }
   }
-  const perms = pToPermissions(info.P, info.R)
+  // Show the permissions Epdf enforces: for AES-256 files they come from the encrypted /Perms entry, not from /P.
+  const P = opts.access ? opts.access.P : info.P
+  const perms = pToPermissions(P, info.R)
   const opensFree = !!(await authenticate(info, ''))
   const notes: string[] = []
+  if (opts.access && (opts.access.P | 0) !== (info.P | 0)) {
+    notes.push('The permissions written openly in this file do not match its protected copy, so Epdf applies the protected ones shown below.')
+  }
   if (opts.unsaved) {
     notes.push('This is the protection the document has in Epdf now, with unsaved changes. It is written to the file when you save; the file on disk may still have different settings.')
   }

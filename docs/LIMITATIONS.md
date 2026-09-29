@@ -28,6 +28,10 @@ What Epdf 1.1.0-beta.1 does not do yet, and what has not been verified. Each fea
   uninstall entry, Explorer entries, full cleanup; NSIS and MSI). Not tested: an all-users (admin) install, other
   Windows versions. The MSI has no Explorer right-click entries. The installer's Arabic/French/German/Spanish wording
   is a draft that needs native review.
+- **Uninstalling keeps your Epdf data** (version history, recovery copies, library index and thumbnails, settings,
+  saved signatures) unless you tick "Also delete my Epdf data" in the NSIS uninstaller; updates never delete it. The
+  MSI, the Linux packages and removing the macOS app always leave it in place (`%APPDATA%\Epdf`,
+  `~/.config/Epdf`, `~/Library/Application Support/Epdf`).
 - **Epdf's own interface is in English.** Documents in any language work (below); translating the menus and dialogs
   is not in this release.
 
@@ -66,6 +70,13 @@ What Epdf 1.1.0-beta.1 does not do yet, and what has not been verified. Each fea
   it (the Apply dialog says how many); the content of tiling patterns, Type 3 glyph procedures and annotation
   appearances is not inspected shape by shape, and a harmless pattern or shading still used elsewhere on the page
   stays in the file. Copies outside Epdf's data folder (backups, the original left after Save As) are not controlled.
+- **Library cache** — the page text and thumbnails of indexed files stay in Epdf's profile folder until the file
+  leaves the library, is re-indexed, or you choose Forget everything (which also compacts the database). Copies of
+  the profile folder in backups or file-system snapshots are outside Epdf's control. See [Library](features/library.md).
+- **File permissions on save** — saving keeps a file's hard links and, on Windows, its own permissions and its
+  "downloaded from the internet" mark (Zone.Identifier) by rewriting it in place. Other alternate data streams on
+  Windows, and extended attributes and ACLs on macOS and Linux, are not detected and are lost when a save replaces the
+  file (permission bits and, where allowed, the owner are kept). Read-only files are refused rather than replaced.
 - **Compression** does not linearize ("Fast Web View").
 - **HEIC** pictures depend on the Windows HEIF extension (macOS: its built-in `sips`; Linux: `heif-convert` or
   ImageMagick); everything else is built in.

@@ -6,6 +6,7 @@ export interface PurgeSummary {
   deleted: number
   /** An autosaved recovery copy was removed. */
   recovery: boolean
-  /** Snapshots that could not be deleted (when reported; otherwise `versions - deleted`). */
+  /** Copies that could not be deleted; their records are kept, so a later purge retries them. Main always reports it;
+   *  when absent, the renderer falls back to `versions - deleted`. */
   failed?: number
 }

@@ -1,5 +1,5 @@
-import { win32 } from 'node:path'
 import type { ScanAcquireRequest } from '../../../shared/features/scan'
+import { POWERSHELL_ARGS, powershellPath } from '../../services/windowsTools'
 import type { HelperSpec } from './helper'
 
 /**
@@ -175,10 +175,7 @@ export type WiaCommand =
   | ({ command: 'scan'; dir: string } & Pick<ScanAcquireRequest, 'deviceId' | 'dpi' | 'colorMode' | 'source' | 'duplex' | 'maxPages'>)
 
 /** The `powershell.exe` in System32 (an absolute path, so a PATH entry cannot substitute another program). */
-export function powershellPath(env: NodeJS.ProcessEnv = process.env): string {
-  // A Windows path whatever platform builds it (the command only ever runs on Windows).
-  return win32.join(env['SystemRoot'] ?? env['windir'] ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-}
+export { powershellPath }
 
 /** `-EncodedCommand` payload: base64 of the UTF-16LE script text. */
 export function encodeScript(script: string): string {
@@ -189,7 +186,7 @@ export function encodeScript(script: string): string {
 export function buildWiaSpec(cmd: WiaCommand, env: NodeJS.ProcessEnv = process.env): HelperSpec {
   return {
     file: powershellPath(env),
-    args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encodeScript(WIA_SCRIPT)],
+    args: [...POWERSHELL_ARGS, '-EncodedCommand', encodeScript(WIA_SCRIPT)],
     env: { ...env, EPDF_SCAN_PARAMS: JSON.stringify(cmd) }
   }
 }

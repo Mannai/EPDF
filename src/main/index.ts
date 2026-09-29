@@ -80,6 +80,10 @@ async function start(): Promise<void> {
   }
   const c = new Controller(repos, app.getPath('userData'))
   c.applyTheme()
+  // Epdf's own copies: rename recovery copies from older versions (before a restored session asks for them), then,
+  // in the background, delete history and recovery files no record points to.
+  await c.files.migrateRecoveryNames().catch((err) => console.warn('recovery copies could not be renamed', err))
+  void c.files.sweepOrphans().catch((err) => console.warn('orphaned history files could not be removed', err))
 
   installSecurity()
   registerAppProtocol({

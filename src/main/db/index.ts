@@ -15,6 +15,8 @@ export function openRepos(file: string): Repos {
   const db = new Database(file)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
+  // Deleted content (library text, history records) is overwritten with zeros instead of lingering in free pages.
+  db.pragma('secure_delete = ON')
   migrate(db)
   return {
     db,

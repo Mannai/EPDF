@@ -108,3 +108,26 @@
   DeleteRegKey /ifempty SHCTX "Software\Classes\.pdf"
   System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 !macroend
+
+; An optional part of the uninstaller, off by default (the uninstaller then shows a components page with this box):
+; also delete the user's Epdf data, i.e. version history, recovery copies, the library index and thumbnails, settings
+; and saved signatures. An update runs the old uninstaller with --updated, which never deletes anything; a silent
+; uninstall leaves the box unticked.
+!macro customUnInstallSection
+  Section /o "un.Also delete my Epdf data (history, library index, settings, signatures)"
+    ${ifNot} ${isUpdated}
+      ; Electron keeps app data per user, also for an all-users install.
+      SetShellVarContext current
+      RMDir /r "$APPDATA\${APP_FILENAME}"
+      !ifdef APP_PRODUCT_FILENAME
+        RMDir /r "$APPDATA\${APP_PRODUCT_FILENAME}"
+      !endif
+      !ifdef APP_PACKAGE_NAME
+        RMDir /r "$APPDATA\${APP_PACKAGE_NAME}"
+      !endif
+      ${if} $installMode == "all"
+        SetShellVarContext all
+      ${endif}
+    ${endif}
+  SectionEnd
+!macroend
